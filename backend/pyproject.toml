@@ -1,0 +1,20 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "fastapi[standard]>=0.128.0",
+    "injector>=0.24.0",
+    "python-dotenv>=1.2.1",
+    "sqlmodel>=0.0.31",
+    "typer>=0.21.1",
+]
+
+[dependency-groups]
+dev = [
+    "isort>=7.0.0",
+    "yapf>=0.43.0",
+]

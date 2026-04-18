@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: ./backend/.env
+        required: false
+    working_dir: /app/backend
+    command:
+      - sh
+      - -c
+      - mkdir -p static && uv run python manage.py serve --host 0.0.0.0 --port 8000
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend/app:/app/backend/app
+      - ./backend/manage.py:/app/backend/manage.py
+
+  frontend:
+    image: node:22-bookworm-slim
+    working_dir: /app/frontend
+    command:
+      - sh
+      - -c
+      - if [ ! -x node_modules/.bin/vite ]; then npm ci; fi && npm run dev -- --host 0.0.0.0
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app/frontend
+      - frontend_node_modules:/app/frontend/node_modules
+
+volumes:
+  frontend_node_modules:
