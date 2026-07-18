@@ -27,8 +27,10 @@
 - Create: `backend/alembic/versions/20260418_0001_create_auth_tables.py`
 - Create: `backend/tests/unit/config/test_database_settings.py`
 - Create: `backend/tests/unit/libraries/test_database_engine.py`
+- Create: `backend/tests/unit/models/test_auth_models.py`
 - Create: `backend/tests/integration/conftest.py`
 - Create: `backend/tests/integration/test_auth_schema.py`
+- Create: `docker/postgres/init/01-create-test-database.sql`
 - Modify: `backend/app/config/__init__.py`
 - Modify: `backend/app/models/__init__.py`
 - Modify: `backend/pyproject.toml`
@@ -46,12 +48,12 @@
 - Modify: `backend/pyproject.toml`
 - Modify: `backend/.env.example`
 
-- [ ] **Step 1: 依存追加と PostgreSQL スキーマ追加の承認を取る**
+- [x] **Step 1: 依存追加と PostgreSQL スキーマ追加の承認を取る**
 
 Run: なし
 Expected: `uv add sqlalchemy alembic asyncpg` と `uv add --dev pytest pytest-asyncio`、および PostgreSQL 用の auth schema 追加についてユーザー承認が得られる。
 
-- [ ] **Step 2: 設定テストを先に書く**
+- [x] **Step 2: 設定テストを先に書く**
 
 ```python
 from app.config.database import DatabaseSettings
@@ -80,7 +82,7 @@ def test_database_settings_expose_urls_and_pool_defaults(monkeypatch):
 Run: `cd backend && uv run pytest tests/unit/config/test_database_settings.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'app.config.database'`
 
-- [ ] **Step 3: 設定面と pytest 設定を実装する**
+- [x] **Step 3: 設定面と pytest 設定を実装する**
 
 `backend/app/config/database.py`:
 
@@ -113,6 +115,7 @@ dependencies = [
     "alembic>=1.16.0",
     "asyncpg>=0.30.0",
     "fastapi[standard]>=0.128.0",
+    "greenlet>=3.3.0",
     "injector>=0.24.0",
     "python-dotenv>=1.2.1",
     "sqlalchemy>=2.0.41",
@@ -158,7 +161,7 @@ AUTH_RATE_LIMIT_ATTEMPTS_PER_IP=20
 - `aiosqlite` はこの auth 作業では削除しない
 - 既存テンプレートの非 auth 領域がまだ SQLite 前提の可能性があるため、削除は別タスクに分離する
 
-- [ ] **Step 4: 設定テストを再実行する**
+- [x] **Step 4: 設定テストを再実行する**
 
 Run: `cd backend && uv run pytest tests/unit/config/test_database_settings.py -v`
 Expected: PASS
@@ -177,7 +180,7 @@ git commit -m "feat(backend/auth): add database settings and pytest config"
 - Create: `backend/tests/unit/libraries/test_database_engine.py`
 - Modify: `backend/manage.py`
 
-- [ ] **Step 1: engine factory の失敗テストを書く**
+- [x] **Step 1: engine factory の失敗テストを書く**
 
 ```python
 from app.libraries.database_engine import build_engine_and_session_factory
@@ -195,7 +198,7 @@ def test_engine_factory_accepts_override_database_url():
 Run: `cd backend && uv run pytest tests/unit/libraries/test_database_engine.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'app.libraries.database_engine'`
 
-- [ ] **Step 2: engine / session factory と `manage.py` コマンドを実装する**
+- [x] **Step 2: engine / session factory と `manage.py` コマンドを実装する**
 
 `backend/app/libraries/database_engine.py`:
 
@@ -247,7 +250,7 @@ def db_downgrade(revision: str = "base"):
     command.downgrade(alembic_config, revision)
 ```
 
-- [ ] **Step 3: unit test と CLI help を確認する**
+- [x] **Step 3: unit test と CLI help を確認する**
 
 Run: `cd backend && uv run pytest tests/unit/libraries/test_database_engine.py -v`
 Expected: PASS
@@ -255,7 +258,7 @@ Expected: PASS
 Run: `cd backend && uv run python manage.py --help`
 Expected: `db-upgrade` と `db-downgrade` が表示される
 
-- [ ] **Step 4: Alembic 操作の正を文書化する**
+- [x] **Step 4: Alembic 操作の正を文書化する**
 
 Run: なし
 Expected: 以後の計画では upgrade / downgrade の主コマンドを `uv run python manage.py db-upgrade` / `db-downgrade` に統一し、`uv run alembic ...` は revision 生成の補助用途だけにする。
@@ -279,7 +282,7 @@ git commit -m "feat(backend/auth): add async database engine and alembic command
 - Create: `backend/alembic/versions/20260418_0001_create_auth_tables.py`
 - Modify: `backend/app/models/__init__.py`
 
-- [ ] **Step 1: model registry の契約を先に固定する**
+- [x] **Step 1: model registry の契約を先に固定する**
 
 `backend/app/models/__init__.py` は、Alembic が `SQLModel.metadata` から全テーブルを見つけられるよう、table model を必ず集約 import する責務を持つ。
 
@@ -300,7 +303,7 @@ __all__ = [
 Run: なし
 Expected: 以後、新規 table model を追加したら `backend/app/models/__init__.py` にも必ず追記するルールが固定される。
 
-- [ ] **Step 2: timezone-aware model を実装する**
+- [x] **Step 2: timezone-aware model を実装する**
 
 `backend/app/models/user.py`:
 
@@ -380,7 +383,7 @@ class AuthSession(SQLModel, table=True):
     )
 ```
 
-- [ ] **Step 3: Alembic は autogenerate 起点 + 手修正方針で作る**
+- [x] **Step 3: Alembic は autogenerate 起点 + 手修正方針で作る**
 
 `backend/alembic/env.py`:
 
@@ -458,7 +461,7 @@ op.create_table(
 - `build_engine_and_session_factory()` は top-level import 時ではなく、呼び出し時に settings を読む前提で使う
 - `auth_audit_logs.event_type` は PostgreSQL enum にせず `String(64)` に固定する。phase 1 では migration 変更コストより語彙の安定性を優先する
 
-- [ ] **Step 4: migration の up/down を通す**
+- [x] **Step 4: migration の up/down を通す**
 
 Run: `cd backend && uv run python manage.py db-upgrade`
 Expected: `head` まで migration が進む
@@ -483,7 +486,7 @@ git commit -m "feat(backend/auth): add auth models and initial alembic revision"
 - Create: `backend/tests/integration/test_auth_schema.py`
 - Modify: `docker-compose.yaml`
 
-- [ ] **Step 1: test fixture を先に書く**
+- [x] **Step 1: test fixture を先に書く**
 
 ```python
 import asyncio
@@ -551,7 +554,7 @@ async def async_session(async_engine) -> AsyncIterator[AsyncSession]:
 Run: `cd backend && TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_schema.py -v`
 Expected: FAIL because tables areまだ無い
 
-- [ ] **Step 2: schema test は raw SQL を `execute()` で検証する**
+- [x] **Step 2: schema test は raw SQL を `execute()` で検証する**
 
 ```python
 from sqlalchemy import text
@@ -596,7 +599,7 @@ async def test_users_email_has_lower_unique_index(async_session):
 Run: `cd backend && TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_schema.py -v`
 Expected: FAIL until migration is applied
 
-- [ ] **Step 3: compose に PostgreSQL と test DB を追加する**
+- [x] **Step 3: compose に PostgreSQL と test DB を追加する**
 
 `docker-compose.yaml`:
 
@@ -629,7 +632,7 @@ volumes:
 - `TEST_DATABASE_URL` は local / CI で別途注入する
 - `app_test` database を事前に作る方法は CI 手順へも明記する
 
-- [ ] **Step 4: PostgreSQL を起動して migration と integration test を通す**
+- [x] **Step 4: PostgreSQL を起動して migration と integration test を通す**
 
 Run: `docker compose up -d postgres`
 Expected: `postgres` service が起動する
@@ -652,7 +655,7 @@ git commit -m "feat(backend/auth): add postgres integration fixtures and schema 
 **Files:**
 - Modify: `backend/AGENTS.md`
 
-- [ ] **Step 1: backend ガイドの認証例外を明記する**
+- [x] **Step 1: backend ガイドの認証例外を明記する**
 
 `backend/AGENTS.md` には最低限次を反映する。
 
@@ -662,7 +665,7 @@ git commit -m "feat(backend/auth): add postgres integration fixtures and schema 
 - SQLite in-memory は auth 領域の DB integration test には使わない
 ```
 
-- [ ] **Step 2: backend 品質ゲートを通す**
+- [x] **Step 2: backend 品質ゲートを通す**
 
 Run: `cd backend && uv run pytest`
 Expected: PASS
@@ -670,7 +673,7 @@ Expected: PASS
 Run: `cd backend && uv run isort . --check-only && uv run yapf -dr app/`
 Expected: 差分なし
 
-- [ ] **Step 3: 手順と文書の整合を見直す**
+- [x] **Step 3: 手順と文書の整合を見直す**
 
 Run: なし
 Expected: `manage.py`, `alembic/env.py`, `backend/AGENTS.md`, `documents/plans/20260418-auth-delivery-notes.md` の記述が矛盾していない。

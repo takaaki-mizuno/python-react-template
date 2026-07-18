@@ -1,0 +1,102 @@
+import asyncio
+import os
+from collections.abc import AsyncIterator, Iterator
+
+import pytest
+import pytest_asyncio
+from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.ext.asyncio import (AsyncEngine, AsyncSession,
+                                    async_sessionmaker, create_async_engine)
+from sqlalchemy.pool import NullPool
+
+from app.bootstrap.create_app import create_app
+from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
+
+
+def require_test_database_url() -> str:
+    test_database_url = os.environ.get("TEST_DATABASE_URL")
+    if not test_database_url:
+        pytest.skip("TEST_DATABASE_URL is required for auth integration tests")
+    return test_database_url
+
+
+async def wait_for_database(database_url: str) -> None:
+    for _ in range(20):
+        engine = create_async_engine(database_url,
+                                     future=True,
+                                     poolclass=NullPool)
+        try:
+            async with engine.connect() as connection:
+                await connection.execute(text("select 1"))
+            return
+        except Exception:
+            await asyncio.sleep(1)
+        finally:
+            await engine.dispose()
+    raise RuntimeError(
+        "PostgreSQL did not become ready for auth integration tests")
+
+
+@pytest_asyncio.fixture
+async def async_engine() -> AsyncIterator[AsyncEngine]:
+    database_url = require_test_database_url()
+    await wait_for_database(database_url)
+    engine = create_async_engine(database_url,
+                                 future=True,
+                                 pool_pre_ping=True,
+                                 poolclass=NullPool)
+    yield engine
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def clean_auth_tables(async_engine: AsyncEngine) -> AsyncIterator[None]:
+    async with async_engine.begin() as connection:
+        await _truncate_auth_tables(connection)
+    yield
+    async with async_engine.begin() as connection:
+        await _truncate_auth_tables(connection)
+
+
+async def _truncate_auth_tables(connection) -> None:
+    try:
+        await connection.execute(
+            text(
+                "TRUNCATE TABLE auth_audit_logs, auth_sessions, users CASCADE")
+        )
+    except ProgrammingError as error:
+        if "UndefinedTableError" not in str(error):
+            raise
+
+
+@pytest_asyncio.fixture
+async def async_session(
+        async_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
+    session_factory = async_sessionmaker(
+        bind=async_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
+        yield session
+
+
+@pytest.fixture
+def client(monkeypatch) -> Iterator[TestClient]:
+    test_database_url = os.environ.get("TEST_DATABASE_URL")
+    if not test_database_url:
+        pytest.skip("TEST_DATABASE_URL is required for auth integration tests")
+
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    monkeypatch.setenv(
+        "ALEMBIC_DATABASE_URL",
+        test_database_url.replace("+asyncpg", ""),
+    )
+
+    app = create_app()
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.state.injector.get(InMemoryLoginRateLimiter).reset()

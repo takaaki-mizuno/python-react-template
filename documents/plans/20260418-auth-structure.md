@@ -151,6 +151,7 @@
 
 - `register` と `login` は、既存の `session_token` Cookie があればそれを revoke してから新規 session を発行する
 - `logout` は現在 session を revoke する
+- `register` / `login` / `logout` の状態変更と success audit は同一 DB transaction で確定し、途中失敗時は旧 session を含めて rollback する
 - phase 2 以降の `password change` は全 session revoke を前提にする
 
 ---
@@ -163,12 +164,16 @@
 - ローカル開発では Vite dev server から backend へ `/api` proxy を張る
 - browser auth の通常経路で CORS を前提にしない
 - `SameSite=Lax` を採りつつ、unsafe method では double-submit cookie 方式の CSRF 検証も行う
+- session がある unsafe method では、cookie/header の一致に加えて `auth_sessions.csrf_token_hash` と header token hash を照合する
+- `/api/auth/csrf` は既存 `csrf_token` cookie が session と整合する場合は同じ token を返し、不整合時だけ再発行して session へ再 bind する
+- `/api/auth/csrf` と認証済み `/api/auth/me` は `Cache-Control: no-store` を返す
 
 ### 理由
 
 - 本番配信経路は same-origin に寄せやすく、ここを正とする方が cookie 運用が単純
 - `SameSite=Lax` は有効だが、reverse proxy 設定ミスや same-site 判定の想定ズレまで完全に防げない
 - そのため、phase 1 でも CSRF token を明示的に検証して defense-in-depth を取る
+- session 付き request では CSRF token を session に bind し、攻撃者が一致する cookie/header pair を差し込んでも通らないようにする
 
 ### 実装上の含意
 
@@ -176,6 +181,7 @@
 - `fetch` は `credentials: 'include'` を基本にする
 - `session_token` Cookie は `HttpOnly`, `SameSite=Lax`, `Secure` は prod のみ必須にする
 - `csrf_token` Cookie は JS から読めるよう `HttpOnly` を付けず、unsafe method では `X-CSRF-Token` header と一致必須にする
+- `csrf_token` 比較は `secrets.compare_digest` を使う
 - CSRF 検証は controller 内の手書き関数ではなく、FastAPI `Depends` で共通化する
 
 ---
@@ -189,6 +195,7 @@
 - 基本値は「同一 IP + email に対して 15 分で 5 回」「同一 IP 全体で 15 分で 20 回」とする
 - phase 1 では `register` と `login` が同じ bucket を共有する。登録直後の login も同じ試行回数を消費する前提にする
 - これは single-process 前提の最小防御であり、multi-instance 本番では共有ストアへの置換が必要
+- client IP は application code で生の `X-Forwarded-For` を読まず、Uvicorn が `FORWARDED_ALLOW_IPS` に基づいて検証した `request.client.host` のみを正規化して使う
 
 ### audit event vocabulary
 
@@ -200,6 +207,7 @@
   - `logout`
   - `session_rejected`
 - `detail_json` は phase 1 では常に `NULL` とし、event_type ごとの追加情報は phase 2 以降で入れる
+- DB 増幅を避けるため、実在sessionへ関連付けられない任意の `session_token` は `session_rejected` auditへ永続化しない
 
 ### backend error semantics
 

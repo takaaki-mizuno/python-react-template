@@ -26,6 +26,7 @@ frontend/
 │   ├── components/
 │   │   ├── atoms/           # 最小単位 UI (atomic design): shadcn/ui のコンポーネントのみ
 │   │   ├── molecules/       # atoms の組み合わせ
+│   │   ├── organisms/       # Header / LandingPage / Auth などページ単位に近い複合 UI
 │   │   └── ui/              # shadcn/ui 生成コンポーネント
 │   ├── routes/              # TanStack Router file-based ルート
 │   ├── hooks/               # カスタムフック
@@ -35,6 +36,7 @@ frontend/
 ```
 
 新規 UI コンポーネントは **atomic design** に従って配置する。
+`components/organisms/` は正式な配置先として扱い、ページ構成に近い複合 UI を置く。
 
 ## 主要コマンド
 
@@ -69,11 +71,14 @@ npm install -D <pkg>   # devDependencies
 
 - file-based ルートを採用。`src/routes/` 配下のファイルがそのまま URL になる
 - 型安全な遷移を必ず使う (`<Link to="/...">`)
+- auth を使う route guard は TanStack Router `beforeLoad` で実装し、未ログイン時は `/login` へ redirect する
 
 ## データ取得 (TanStack Query)
 
 - サーバ状態は React Query で管理。`useState` での手動キャッシュは禁止
 - クエリキーは集約管理 (例: `src/lib/queryKeys.ts`)
+- frontend の API 呼び出しは相対 `/api/...` を正とし、same-origin 配信を前提にする
+- dev server では Vite proxy が `/api` を backend origin へ転送する
 
 ## スタイル (Tailwind + shadcn/ui)
 

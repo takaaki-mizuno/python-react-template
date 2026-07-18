@@ -110,10 +110,10 @@ phase 1 で使う環境変数は次に固定する。
 phase 1 の CI は、少なくとも次を満たす。
 
 1. PostgreSQL 17 service を起動する
-2. backend に対して `TEST_DATABASE_URL` を注入する
+2. backend に対して `TEST_DATABASE_URL` と test DB 向けの `ALEMBIC_DATABASE_URL` を注入する
 3. `cd backend && uv run python manage.py db-upgrade`
 4. `cd backend && uv run pytest`
-5. `cd backend && uv run isort . --check-only && uv run yapf -dr app/`
+5. `cd backend && uv run isort . --check-only && uv run yapf -dr app/ tests/ alembic/`
 6. `cd frontend && npm run check`
 7. `cd frontend && npm test`
 8. `cd frontend && npm run build`
@@ -123,6 +123,7 @@ pytest の運用:
 - 認証の PostgreSQL 依存テストには `integration` marker を付ける
 - auth 追加後も、fast path と full path を分けたければ `not integration` と `integration` を job 分離してよい
 - ただし template のデフォルト CI では、auth 領域は PostgreSQL 付きの full path を通す
+- CI で integration test を通す job では、`ALEMBIC_DATABASE_URL` を `TEST_DATABASE_URL` と同じ database の同期 URL (`postgresql://.../app_test`) に向けてから `db-upgrade` する
 
 ---
 
@@ -146,9 +147,10 @@ pytest の運用:
 
 - frontend と backend を same-origin で配信する
 - HTTPS 終端の位置を明確化する
-- `uvicorn --proxy-headers` 相当を正とし、reverse proxy から `X-Forwarded-Proto` を渡して `request.url.scheme` が HTTPS として解決されるようにする
+- Uvicorn の proxy header 処理を正とし、`FORWARDED_ALLOW_IPS` には実際の reverse proxy の IP / CIDR だけを設定する。application code は生の `X-Forwarded-For` を解釈せず、検証済みの `request.client.host` を使う
 - controller の `is_secure_request()` は proxy 設定漏れへの防御的 fallback として残す
 - `session_token` は本番で必ず `Secure=true`
+- production 環境では proxy header が欠落しても `Secure=true` に倒す。local / development / test のみ HTTP cookie を許容する
 - CORS はデフォルトで閉じ、same-origin 以外を不要に許可しない
 - in-memory rate limiter は multi-instance 本番では shared store に置き換える
 - `.env` 直置き secrets を本番へ持ち込まない

@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react'
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
 
+import { useAuthSession } from '@/hooks/useAuthSession'
 import { landingNavigation } from '@/routes/index.data'
 
 export default function Header() {
+  const navigate = useNavigate()
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+  const { user, logout } = useAuthSession()
   const [isOpen, setIsOpen] = useState(false)
   const menuId = 'site-menu'
+  const isLandingPage = pathname === '/'
+
+  const handleLogout = async () => {
+    await logout.mutateAsync()
+    await navigate({ to: '/login', search: { redirect: '/app' } })
+  }
 
   useEffect(() => {
     if (!isOpen) {
@@ -29,7 +42,7 @@ export default function Header() {
     <>
       <header className="site-header">
         <div className="landing-shell flex h-[var(--header-height)] items-center justify-between gap-4">
-          <a aria-label="ページ先頭へ移動" className="site-brand" href="#top">
+          <Link aria-label="ページ先頭へ移動" className="site-brand" to="/">
             <img
               alt=""
               aria-hidden="true"
@@ -37,29 +50,58 @@ export default function Header() {
               src="/site-mark.svg"
             />
             <span>python-react-template</span>
-          </a>
+          </Link>
 
-          <nav
-            aria-label="ページ内ナビゲーション"
-            className="hidden items-center gap-2 lg:flex"
-          >
-            {landingNavigation.map((item) => (
-              <a className="site-nav-link" href={item.href} key={item.href}>
-                {item.label}
-              </a>
-            ))}
-          </nav>
+          {isLandingPage ? (
+            <nav
+              aria-label="ページ内ナビゲーション"
+              className="hidden items-center gap-2 lg:flex"
+            >
+              {landingNavigation.map((item) => (
+                <a className="site-nav-link" href={item.href} key={item.href}>
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+          ) : null}
 
-          <button
-            aria-controls={menuId}
-            aria-expanded={isOpen}
-            aria-label="メニューを開く"
-            className="site-menu-toggle lg:hidden"
-            onClick={() => setIsOpen(true)}
-            type="button"
-          >
-            <Menu size={20} />
-          </button>
+          <div className="flex items-center gap-3">
+            {user ? (
+              <div className="flex items-center gap-3">
+                <span className="hidden text-sm text-landing-muted sm:inline">
+                  {user.email}
+                </span>
+                <button
+                  className="site-nav-link"
+                  onClick={handleLogout}
+                  type="button"
+                >
+                  ログアウト
+                </button>
+              </div>
+            ) : (
+              <Link
+                className="site-nav-link"
+                search={{ redirect: '/app' }}
+                to="/login"
+              >
+                ログイン
+              </Link>
+            )}
+
+            {isLandingPage ? (
+              <button
+                aria-controls={menuId}
+                aria-expanded={isOpen}
+                aria-label="メニューを開く"
+                className="site-menu-toggle lg:hidden"
+                onClick={() => setIsOpen(true)}
+                type="button"
+              >
+                <Menu size={20} />
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 

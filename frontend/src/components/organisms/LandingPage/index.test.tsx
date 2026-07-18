@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   RouterProvider,
   createMemoryHistory,
@@ -27,15 +28,29 @@ vi.mock('@tanstack/react-router-devtools', () => ({
 
 describe('LandingPage route', () => {
   test('トップページに主要セクションとアンカー CTA を表示する', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ message: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    )
+    const queryClient = new QueryClient()
     const router = createRouter({
       routeTree,
       history: createMemoryHistory({
         initialEntries: ['/'],
       }),
-      context: {},
+      context: { queryClient },
     })
 
-    const { container } = render(<RouterProvider router={router} />)
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    )
 
     await screen.findByText('FastAPI と React を、すぐ動かせる実用的なモノレポ')
 

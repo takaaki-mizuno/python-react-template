@@ -22,6 +22,7 @@
 - Create: `backend/app/usecases/auth_usecase.py`
 - Create: `backend/app/controllers/auth_controller.py`
 - Create: `backend/app/controllers/auth_dependencies.py`
+- Create: `backend/app/config/auth.py`
 - Create: `backend/app/libraries/password_hasher.py`
 - Create: `backend/app/libraries/session_tokens.py`
 - Create: `backend/app/libraries/auth_rate_limiter.py`
@@ -31,6 +32,7 @@
 - Create: `backend/tests/unit/libraries/test_session_tokens.py`
 - Create: `backend/tests/unit/libraries/test_password_hasher.py`
 - Create: `backend/tests/unit/libraries/test_auth_rate_limiter.py`
+- Create: `backend/tests/unit/config/test_auth_settings.py`
 - Create: `backend/tests/integration/test_auth_controller.py`
 - Modify: `backend/app/bootstrap/container.py`
 - Modify: `backend/app/bootstrap/route.py`
@@ -47,7 +49,7 @@
 - Create: `backend/tests/integration/test_auth_controller.py`
 - Modify: `backend/tests/integration/conftest.py`
 
-- [ ] **Step 1: `client` fixture が test DB を使うようにする**
+- [x] **Step 1: `client` fixture が test DB を使うようにする**
 
 `backend/tests/integration/conftest.py` に auth controller 向け fixture を追加する。
 
@@ -86,7 +88,7 @@ def client(monkeypatch) -> Iterator[TestClient]:
 Run: `cd backend && TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_controller.py -v`
 Expected: FAIL because auth routes are未実装
 
-- [ ] **Step 2: happy path と failure path の contract test を書く**
+- [x] **Step 2: happy path と failure path の contract test を書く**
 
 ```python
 def test_get_me_returns_401_without_session(client):
@@ -192,7 +194,7 @@ def test_logout_clears_cookie_and_rejects_subsequent_me(client):
 Run: `cd backend && TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_controller.py -v`
 Expected: FAIL with route not found or import error
 
-- [ ] **Step 3: コミットせず次タスクへ進む**
+- [x] **Step 3: コミットせず次タスクへ進む**
 
 Run: なし
 Expected: 欲しい API contract がコードより先に固定されている。
@@ -211,12 +213,12 @@ Expected: 欲しい API contract がコードより先に固定されている�
 - Create: `backend/tests/unit/libraries/test_password_hasher.py`
 - Create: `backend/tests/unit/libraries/test_auth_rate_limiter.py`
 
-- [ ] **Step 1: runtime 依存追加の承認を取る**
+- [x] **Step 1: runtime 依存追加の承認を取る**
 
 Run: なし
 Expected: `uv add 'pwdlib[argon2]' email-validator` 実施のユーザー承認が得られる。
 
-- [ ] **Step 2: unit test を先に書く**
+- [x] **Step 2: unit test を先に書く**
 
 ```python
 from app.config.auth import get_auth_settings
@@ -295,7 +297,7 @@ def test_rate_limiter_reset_clears_state():
 Run: `cd backend && uv run pytest tests/unit/config/test_auth_settings.py tests/unit/libraries/test_password_hasher.py tests/unit/libraries/test_session_tokens.py tests/unit/libraries/test_auth_rate_limiter.py -v`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装で library を通す**
+- [x] **Step 3: 最小実装で library を通す**
 
 `backend/app/libraries/password_hasher.py`:
 
@@ -435,7 +437,7 @@ def get_auth_settings() -> AuthSettings:
     return AuthSettings()
 ```
 
-- [ ] **Step 4: unit test を通す**
+- [x] **Step 4: unit test を通す**
 
 Run: `cd backend && uv run pytest tests/unit/config/test_auth_settings.py tests/unit/libraries/test_password_hasher.py tests/unit/libraries/test_session_tokens.py tests/unit/libraries/test_auth_rate_limiter.py -v`
 Expected: PASS
@@ -464,7 +466,7 @@ git commit -m "feat(backend/auth): add auth security libraries"
 - Modify: `backend/app/services/__init__.py`
 - Modify: `backend/app/usecases/__init__.py`
 
-- [ ] **Step 1: request / response schema を定義する**
+- [x] **Step 1: request / response schema を定義する**
 
 ```python
 from uuid import UUID
@@ -496,7 +498,7 @@ class CsrfTokenResponse(SQLModel):
 Run: `cd backend && uv run pytest tests/integration/test_auth_controller.py -v`
 Expected: FAIL
 
-- [ ] **Step 2: repository は per-call session で実装する**
+- [x] **Step 2: repository は per-call session で実装する**
 
 `backend/app/interfaces/services/auth_repository_interface.py`:
 
@@ -669,7 +671,7 @@ class AuthRepository(AuthRepositoryInterface):
 - ただし DB session を field に保持してはいけない
 - 各 method が自分で `async with self._session_factory() as session` を開閉する
 
-- [ ] **Step 3: usecase と controller を実装する**
+- [x] **Step 3: usecase と controller を実装する**
 
 `backend/app/usecases/auth_usecase.py` の重要部分:
 
@@ -1225,7 +1227,7 @@ def configure(binder: Binder):
 - `authenticate_session()` が `last_seen_at` と `expires_at` を更新することで、idle 24h / absolute 7d の sliding renewal を表現する
 - `register()` / `login()` は session fixation 対策として、既存 session があれば必ず revoke してから新しい cookie を発行する
 
-- [ ] **Step 4: contract test を通す**
+- [x] **Step 4: contract test を通す**
 
 Run: `cd backend && TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_controller.py -v`
 Expected: register / me / invalid login / logout の contract test が PASS する
@@ -1247,7 +1249,7 @@ git commit -m "feat(backend/auth): implement auth repository usecase and control
 - Modify: `backend/tests/integration/conftest.py`
 - Modify: `backend/tests/integration/test_auth_controller.py`
 
-- [ ] **Step 1: 失敗系の test を追加する**
+- [x] **Step 1: 失敗系の test を追加する**
 
 ```python
 def test_register_requires_matching_csrf_header(client):
@@ -1303,7 +1305,7 @@ def test_login_rate_limit_returns_429(client):
 Run: `cd backend && TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_controller.py -v`
 Expected: FAIL
 
-- [ ] **Step 2: CSRF / rate limit / audit log / test cleanup を仕上げる**
+- [x] **Step 2: CSRF / rate limit / audit log / test cleanup を仕上げる**
 
 `backend/tests/integration/conftest.py` に rate limiter reset を追加する:
 
@@ -1514,7 +1516,7 @@ async def create_audit_log(self, audit_log: AuthAuditLog) -> None:
 - revoked / expired session で `me` が拒否された場合は `AuthEventType.SESSION_REJECTED` を残す
 - `Retry-After` は auth rate limit window 秒を返す
 
-- [ ] **Step 3: full suite を通す**
+- [x] **Step 3: full suite を通す**
 
 Run: `cd backend && uv run pytest`
 Expected: PASS
@@ -1522,7 +1524,7 @@ Expected: PASS
 Run: `cd backend && uv run isort . --check-only && uv run yapf -dr app/`
 Expected: 差分なし
 
-- [ ] **Step 4: 手動の最低確認を行う**
+- [x] **Step 4: 手動の最低確認を行う**
 
 Run: `curl -i http://localhost:8000/api/auth/csrf`
 Expected: `Set-Cookie: csrf_token=...`
@@ -1542,7 +1544,7 @@ git commit -m "feat(backend/auth): enforce csrf rate limit and audit logging"
 **Files:**
 - Modify: `backend/AGENTS.md`
 
-- [ ] **Step 1: backend ガイドに auth 方針を追記する**
+- [x] **Step 1: backend ガイドに auth 方針を追記する**
 
 ```md
 - 認証領域の integration test は PostgreSQL を正とする
@@ -1550,7 +1552,7 @@ git commit -m "feat(backend/auth): enforce csrf rate limit and audit logging"
 - `register` / `login` / `logout` の CSRF は FastAPI Depends で共通化する
 ```
 
-- [ ] **Step 2: 文書と実装順の整合を見直す**
+- [x] **Step 2: 文書と実装順の整合を見直す**
 
 Run: なし
 Expected: `20260418-auth-structure.md`, `20260418-auth-db-migration.md`, `20260418-auth-delivery-notes.md` と backend ガイドの記述が矛盾していない。

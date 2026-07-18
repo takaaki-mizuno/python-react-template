@@ -45,7 +45,7 @@
 - Create: `frontend/src/lib/apiClient.test.ts`
 - Modify: `frontend/vite.config.ts`
 
-- [ ] **Step 1: API client の失敗テストを書く**
+- [x] **Step 1: API client の失敗テストを書く**
 
 ```ts
 import { afterEach, expect, test, vi } from 'vitest'
@@ -111,7 +111,7 @@ test('non-2xx response では ApiError を投げる', async () => {
 Run: `cd frontend && npm test -- src/lib/apiClient.test.ts`
 Expected: FAIL with module not found
 
-- [ ] **Step 2: `ApiError` / cookie helper / API client を実装する**
+- [x] **Step 2: `ApiError` / cookie helper / API client を実装する**
 
 `frontend/src/lib/apiError.ts`:
 
@@ -155,10 +155,6 @@ import { readCookie } from './cookies'
 let csrfBootstrapPromise: Promise<void> | null = null
 
 async function ensureCsrfToken(): Promise<void> {
-  if (readCookie('csrf_token')) {
-    return
-  }
-
   if (!csrfBootstrapPromise) {
     csrfBootstrapPromise = fetch('/api/auth/csrf', {
       credentials: 'include',
@@ -214,6 +210,8 @@ export const apiClient = {
 }
 ```
 
+`/api/auth/csrf` が non-2xx の場合は typed `ApiError` を送出し、後続の unsafe request は送らない。
+
 `frontend/src/lib/queryKeys.ts`:
 
 ```ts
@@ -225,7 +223,7 @@ export const queryKeys = {
 }
 ```
 
-- [ ] **Step 3: Vite config は既存設定を保ったまま関数形式へ移行する**
+- [x] **Step 3: Vite config は既存設定を保ったまま関数形式へ移行する**
 
 `frontend/vite.config.ts`:
 
@@ -273,7 +271,7 @@ export default defineConfig(({ mode }) => {
 })
 ```
 
-- [ ] **Step 4: API client test を通す**
+- [x] **Step 4: API client test を通す**
 
 Run: `cd frontend && npm test -- src/lib/apiClient.test.ts`
 Expected: PASS
@@ -293,7 +291,7 @@ git commit -m "feat(frontend/auth): add typed api client and dev proxy"
 - Create: `frontend/src/hooks/useAuthSession.test.tsx`
 - Modify: `frontend/src/main.tsx`
 
-- [ ] **Step 1: `useAuthSession` の test を先に書く**
+- [x] **Step 1: `useAuthSession` の test を先に書く**
 
 ```ts
 import type { ReactNode } from 'react'
@@ -350,7 +348,7 @@ test('500 は未ログインに潰さず error として残す', async () => {
 Run: `cd frontend && npm test -- src/hooks/useAuthSession.test.tsx`
 Expected: FAIL
 
-- [ ] **Step 2: auth API と hook を実装する**
+- [x] **Step 2: auth API と hook を実装する**
 
 `frontend/src/lib/authApi.ts`:
 
@@ -430,7 +428,11 @@ export function useAuthSession() {
   const logout = useMutation({
     mutationFn: logoutCurrentSession,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.auth.root })
+      queryClient.setQueryData(queryKeys.auth.me, null)
+      queryClient.removeQueries({
+        queryKey: queryKeys.auth.strictMe,
+        exact: true,
+      })
     },
   })
 
@@ -443,7 +445,7 @@ export function useAuthSession() {
 }
 ```
 
-- [ ] **Step 3: router context に `queryClient` を渡す**
+- [x] **Step 3: router context に `queryClient` を渡す**
 
 `frontend/src/main.tsx`:
 
@@ -468,7 +470,7 @@ const router = createRouter({
 - OpenAPI codegen はこの段階では入れない
 - `['auth', 'me']` は `AuthUser | null`、`['auth', 'me', 'strict']` は `AuthUser` に固定する。queryKey ごとに semantic を分けて衝突を避ける
 
-- [ ] **Step 4: hook test を通す**
+- [x] **Step 4: hook test を通す**
 
 Run: `cd frontend && npm test -- src/hooks/useAuthSession.test.tsx`
 Expected: PASS
@@ -489,7 +491,7 @@ git commit -m "feat(frontend/auth): add auth api and session hook"
 - Create: `frontend/src/components/organisms/Auth/LoginForm.tsx`
 - Create: `frontend/src/components/organisms/Auth/LoginForm.test.tsx`
 
-- [ ] **Step 1: route guard と form の失敗テストを書く**
+- [x] **Step 1: route guard と form の失敗テストを書く**
 
 `frontend/src/routes/app.test.tsx`:
 
@@ -504,13 +506,12 @@ import { QueryClient } from '@tanstack/react-query'
 import { expect, test, vi } from 'vitest'
 
 import { routeTree } from '@/routeTree.gen'
-import { ApiError } from '@/lib/apiError'
 
 test('未ログインで /app へ来たら /login へ送る', async () => {
   const queryClient = new QueryClient()
-  vi.spyOn(queryClient, 'ensureQueryData').mockRejectedValue(
-    new ApiError(401, { message: 'Unauthorized' }),
-  )
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ detail: 'Unauthorized' }), { status: 401 }),
+  ))
 
   const router = createRouter({
     routeTree,
@@ -555,7 +556,7 @@ test('LoginForm は email / password を submit する', async () => {
 Run: `cd frontend && npm test -- src/routes/app.test.tsx src/components/organisms/Auth/LoginForm.test.tsx`
 Expected: FAIL
 
-- [ ] **Step 2: protected route と login route を実装する**
+- [x] **Step 2: protected route と login route を実装する**
 
 `frontend/src/routes/app.tsx`:
 
@@ -568,7 +569,7 @@ import { currentUserStrictQueryOptions } from '@/lib/authApi'
 export const Route = createFileRoute('/app')({
   beforeLoad: async ({ context, location }) => {
     try {
-      await context.queryClient.ensureQueryData(currentUserStrictQueryOptions())
+      await context.queryClient.fetchQuery(currentUserStrictQueryOptions())
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         throw redirect({
@@ -701,12 +702,12 @@ export default function LoginForm({
 - phase 1 では `react-hook-form` は入れない
 - controlled form + HTML `required` + backend validation で開始する
 
-- [ ] **Step 3: route / form test を通す**
+- [x] **Step 3: route / form test を通す**
 
 Run: `cd frontend && npm test -- src/routes/app.test.tsx src/components/organisms/Auth/LoginForm.test.tsx`
 Expected: PASS
 
-- [ ] **Step 4: build と route type 生成を確認する**
+- [x] **Step 4: build と route type 生成を確認する**
 
 Run: `cd frontend && npm run build`
 Expected: PASS
@@ -724,7 +725,7 @@ git commit -m "feat(frontend/auth): add protected route and login flow"
 - Modify: `frontend/src/components/organisms/Header/index.tsx`
 - Modify: `frontend/src/components/organisms/Header/index.test.tsx`
 
-- [ ] **Step 1: Header の失敗テストを追加する**
+- [x] **Step 1: Header の失敗テストを追加する**
 
 ```ts
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -760,7 +761,7 @@ test('未ログイン時はログイン導線を表示する', async () => {
 Run: `cd frontend && npm test -- src/components/organisms/Header/index.test.tsx`
 Expected: FAIL
 
-- [ ] **Step 2: Header で user 表示と logout redirect を扱う**
+- [x] **Step 2: Header で user 表示と logout redirect を扱う**
 
 ```tsx
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
@@ -814,12 +815,12 @@ export default function Header() {
 }
 ```
 
-- [ ] **Step 3: Header と既存 route test を通す**
+- [x] **Step 3: Header と既存 route test を通す**
 
 Run: `cd frontend && npm test -- src/components/organisms/Header/index.test.tsx src/components/organisms/LandingPage/index.test.tsx`
 Expected: PASS
 
-- [ ] **Step 4: frontend 品質ゲートを通す**
+- [x] **Step 4: frontend 品質ゲートを通す**
 
 Run: `cd frontend && npm run check`
 Expected: PASS
@@ -842,7 +843,7 @@ git commit -m "feat(frontend/auth): surface auth state and logout redirect"
 **Files:**
 - Modify: `frontend/AGENTS.md`
 
-- [ ] **Step 1: frontend ガイドへ auth 運用を追記する**
+- [x] **Step 1: frontend ガイドへ auth 運用を追記する**
 
 ```md
 - `components/organisms/` は正式な配置先として扱う
@@ -850,7 +851,7 @@ git commit -m "feat(frontend/auth): surface auth state and logout redirect"
 - frontend の API 呼び出しは相対 `/api/...` を正とし、same-origin を前提にする
 ```
 
-- [ ] **Step 2: 文書整合を見直す**
+- [x] **Step 2: 文書整合を見直す**
 
 Run: なし
 Expected: `20260418-auth-structure.md`, `20260418-auth-delivery-notes.md`, `frontend/AGENTS.md` の auth 記述が矛盾していない。
