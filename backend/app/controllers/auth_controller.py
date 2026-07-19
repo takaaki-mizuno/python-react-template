@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from app.config.auth import get_auth_settings
-from app.controllers.auth_dependencies import (get_client_ip, get_user_agent,
-                                               require_csrf,
+from app.config.auth import AuthSettings
+from app.controllers.auth_dependencies import (get_client_ip,
+                                               get_request_auth_settings,
+                                               get_user_agent, require_csrf,
                                                require_current_session)
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.models.auth_errors import (EmailAlreadyRegisteredError,
@@ -15,10 +16,13 @@ from app.usecases.auth_usecase import AuthenticatedSessionContext
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def is_secure_request(request: Request) -> bool:
+def is_secure_request(
+    request: Request,
+    auth_settings: AuthSettings,
+) -> bool:
     if request.url.scheme == "https":
         return True
-    return get_auth_settings().ENVIRONMENT not in {
+    return auth_settings.ENVIRONMENT not in {
         "local",
         "development",
         "test",
@@ -84,7 +88,11 @@ def clear_csrf_cookie(response: Response, secure: bool) -> None:
 
 
 @router.get("/csrf", response_model=CsrfTokenResponse)
-async def get_csrf(request: Request, response: Response) -> CsrfTokenResponse:
+async def get_csrf(
+    request: Request,
+    response: Response,
+    auth_settings: AuthSettings = Depends(get_request_auth_settings),
+) -> CsrfTokenResponse:
     response.headers["Cache-Control"] = "no-store"
     existing_csrf_token = request.cookies.get("csrf_token")
     if existing_csrf_token:
@@ -102,14 +110,13 @@ async def get_csrf(request: Request, response: Response) -> CsrfTokenResponse:
         if csrf_status is not False:
             return CsrfTokenResponse(csrfToken=existing_csrf_token)
 
-    auth_settings = get_auth_settings()
     usecase = request.app.state.injector.get(AuthUsecaseInterface)
     csrf_token = await usecase.issue_csrf_token(
         session_token=request.cookies.get("session_token"), )
     set_csrf_cookie(
         response,
         csrf_token,
-        secure=is_secure_request(request),
+        secure=is_secure_request(request, auth_settings),
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
     return CsrfTokenResponse(csrfToken=csrf_token)
@@ -136,8 +143,8 @@ async def register(
     payload: RegisterRequest,
     request: Request,
     response: Response,
+    auth_settings: AuthSettings = Depends(get_request_auth_settings),
 ) -> AuthUserResponse:
-    auth_settings = get_auth_settings()
     usecase = request.app.state.injector.get(AuthUsecaseInterface)
     try:
         user, _session, session_token, csrf_token = await usecase.register(
@@ -162,7 +169,7 @@ async def register(
     except WeakPasswordError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
-    secure = is_secure_request(request)
+    secure = is_secure_request(request, auth_settings)
     set_session_cookie(
         response,
         session_token,
@@ -187,8 +194,8 @@ async def login(
     payload: LoginRequest,
     request: Request,
     response: Response,
+    auth_settings: AuthSettings = Depends(get_request_auth_settings),
 ) -> AuthUserResponse:
-    auth_settings = get_auth_settings()
     usecase = request.app.state.injector.get(AuthUsecaseInterface)
     try:
         user, _session, session_token, csrf_token = await usecase.login(
@@ -210,7 +217,7 @@ async def login(
             },
         ) from error
 
-    secure = is_secure_request(request)
+    secure = is_secure_request(request, auth_settings)
     set_session_cookie(
         response,
         session_token,
@@ -227,8 +234,12 @@ async def login(
 
 
 @router.post("/logout", status_code=204, dependencies=[Depends(require_csrf)])
-async def logout(request: Request, response: Response) -> Response:
-    secure = is_secure_request(request)
+async def logout(
+    request: Request,
+    response: Response,
+    auth_settings: AuthSettings = Depends(get_request_auth_settings),
+) -> Response:
+    secure = is_secure_request(request, auth_settings)
     usecase = request.app.state.injector.get(AuthUsecaseInterface)
     await usecase.logout(
         request.cookies.get("session_token"),

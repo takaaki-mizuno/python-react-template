@@ -1,14 +1,13 @@
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.config.auth import AuthSettings
 from app.controllers.auth_controller import (is_secure_request,
                                              set_csrf_cookie,
                                              set_session_cookie)
 
 
-def test_is_secure_request_fails_closed_for_production_without_proxy_headers(
-        monkeypatch):
-    monkeypatch.setenv("ENVIRONMENT", "production")
+def test_is_secure_request_fails_closed_for_production_without_proxy_headers():
     request = Request({
         "type": "http",
         "method": "GET",
@@ -17,11 +16,13 @@ def test_is_secure_request_fails_closed_for_production_without_proxy_headers(
         "headers": [],
     })
 
-    assert is_secure_request(request) is True
+    assert is_secure_request(
+        request,
+        AuthSettings(ENVIRONMENT="production"),
+    ) is True
 
 
-def test_is_secure_request_ignores_untrusted_forwarded_proto(monkeypatch):
-    monkeypatch.setenv("ENVIRONMENT", "local")
+def test_is_secure_request_ignores_untrusted_forwarded_proto():
     request = Request({
         "type": "http",
         "method": "GET",
@@ -30,7 +31,26 @@ def test_is_secure_request_ignores_untrusted_forwarded_proto(monkeypatch):
         "headers": [(b"x-forwarded-proto", b"https")],
     })
 
-    assert is_secure_request(request) is False
+    assert is_secure_request(
+        request,
+        AuthSettings(ENVIRONMENT="local"),
+    ) is False
+
+
+def test_is_secure_request_accepts_https_in_local_environment():
+    request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/auth/csrf",
+        "scheme": "https",
+        "server": ("testserver", 443),
+        "headers": [],
+    })
+
+    assert is_secure_request(
+        request,
+        AuthSettings(ENVIRONMENT="local"),
+    ) is True
 
 
 def test_issued_auth_cookies_have_required_security_attributes():

@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import pytest
 from starlette.requests import Request
 
+from app.config.auth import AuthSettings
 from app.controllers import auth_dependencies
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 
@@ -67,6 +68,30 @@ def test_get_client_ip_discards_invalid_asgi_client_address():
     })
 
     assert auth_dependencies.get_client_ip(request) is None
+
+
+def test_get_request_auth_settings_returns_injector_instance():
+    settings = AuthSettings(ENVIRONMENT="production")
+
+    class InjectorStub:
+
+        def get(self, interface):
+            assert interface is AuthSettings
+            return settings
+
+    request = Request({
+        "type":
+        "http",
+        "method":
+        "GET",
+        "path":
+        "/api/auth/csrf",
+        "app":
+        SimpleNamespace(state=SimpleNamespace(injector=InjectorStub())),
+        "headers": [],
+    })
+
+    assert auth_dependencies.get_request_auth_settings(request) is settings
 
 
 @pytest.mark.asyncio

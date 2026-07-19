@@ -3,6 +3,7 @@ from ipaddress import ip_address
 
 from fastapi import HTTPException, Request
 
+from app.config.auth import AuthSettings
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.usecases.auth_usecase import AuthenticatedSessionContext
 
@@ -19,6 +20,10 @@ def get_client_ip(request: Request) -> str | None:
 def get_user_agent(request: Request) -> str | None:
     user_agent = request.headers.get("user-agent")
     return user_agent[:512] if user_agent else None
+
+
+def get_request_auth_settings(request: Request) -> AuthSettings:
+    return request.app.state.injector.get(AuthSettings)
 
 
 async def require_csrf(request: Request) -> None:

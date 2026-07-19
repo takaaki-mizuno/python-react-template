@@ -3,7 +3,7 @@ from logging import Logger, getLogger
 from injector import Binder, Injector, singleton
 
 from app.config import Config, config
-from app.config.auth import get_auth_settings
+from app.config.auth import AuthSettings, get_auth_settings
 from app.interfaces.services.auth_repository_interface import \
     AuthRepositoryInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
@@ -34,6 +34,7 @@ def configure(binder: Binder):
     binder.bind(GetSampleIndexUsecaseInterface, to=get_sample_index_usecase)
 
     auth_settings = get_auth_settings()
+    binder.bind(AuthSettings, to=auth_settings, scope=singleton)
     _, session_factory = build_engine_and_session_factory()
     auth_repository = AuthRepository(session_factory=session_factory)
     auth_rate_limiter = InMemoryLoginRateLimiter(

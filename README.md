@@ -269,4 +269,10 @@ docker compose down -v
 - `backend/.env`: `ENVIRONMENT`、runtime/test DB URL、pool設定、認証session TTL、rate limit設定
 - frontend: 必要に応じて`frontend/.env.local`や`frontend/.env.development`をViteの標準ルールどおり使用。ブラウザへ露出する値には`VITE_`接頭辞が必要
 
+認証設定はbackend起動時に読み込まれます。`backend/.env`または認証関連環境変数を変更した場合は、既存backend process/containerを再起動してください。
+
+```bash
+docker compose up -d --force-recreate backend
+```
+
 Docker Compose内ではfrontendの`/api` proxyが`http://backend:8000`を向き、backendは`postgres:5432/app`へ接続します。local Compose用の`app/app`認証情報を本番環境で使用しないでください。

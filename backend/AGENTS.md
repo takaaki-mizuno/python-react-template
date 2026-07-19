@@ -64,6 +64,13 @@ uv run pytest
 - 型ヒント: 関数シグネチャに必須。`Any` は最終手段
 - 命名: `snake_case` (関数/変数), `PascalCase` (クラス), `SCREAMING_SNAKE_CASE` (定数)
 
+## 設定
+
+- `AuthSettings`は`build_container()`で一度だけ生成し、Injectorのsingletonとして共有する
+- controllerは`get_request_auth_settings` dependency経由で起動時snapshotを取得し、requestごとに`AuthSettings`を再生成しない
+- `backend/.env`または認証関連環境変数を変更した場合は、backend process/containerを再起動する
+- 設定hot reloadは提供しない。必要になった場合は全consumerを同時更新できる別設計として計画する
+
 ## モデル / DB
 
 - 新規テーブル追加時はまず `documents/plans/` に ER 設計を残す

@@ -1,8 +1,13 @@
 import asyncio
+import os
+from http.cookies import SimpleCookie
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.bootstrap.create_app import create_app
+from app.config.auth import AuthSettings
 from app.interfaces.services.auth_repository_interface import \
     AuthRepositoryInterface
 from app.libraries.password_hasher import hash_password
@@ -11,6 +16,24 @@ from app.models.auth_event_type import AuthEventType
 from app.models.user import User
 
 pytestmark = pytest.mark.integration
+
+
+def test_auth_cookie_security_uses_startup_settings(monkeypatch):
+    test_database_url = os.environ["TEST_DATABASE_URL"]
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    app = create_app()
+
+    with TestClient(app) as client:
+        startup_settings = client.app.state.injector.get(AuthSettings)
+        assert startup_settings.ENVIRONMENT == "local"
+        monkeypatch.setenv("ENVIRONMENT", "production")
+
+        response = client.get("/api/auth/csrf")
+
+        csrf_cookie = SimpleCookie(response.headers["set-cookie"])
+        assert csrf_cookie["csrf_token"]["secure"] == ""
+        assert client.app.state.injector.get(AuthSettings) is startup_settings
 
 
 def test_get_me_returns_401_without_session(client):

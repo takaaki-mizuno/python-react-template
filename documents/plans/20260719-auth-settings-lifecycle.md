@@ -1,6 +1,6 @@
 # 認証設定ライフサイクル統一 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Worktree、`git add`、`git commit`は使用しない。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. Worktree、`git add`、`git commit`は使用しない。
 
 **Goal:** `AuthSettings`をアプリ起動時に一度だけ生成し、認証usecaseと全controllerが同じ起動時snapshotを利用する構成へ統一する。
 
@@ -34,14 +34,14 @@
 
 このため、controllerへのrequestごとにPydantic Settingsが`.env`と環境変数を再評価する。1 request内でも、たとえば`get_csrf()`はTTL取得と`Secure`判定で別々の`AuthSettings`を生成し得る。一方、usecaseとrate limiterは起動時に取得した設定を保持し続ける。
 
-この混在には次の問題がある。
+この混在には次の改善余地がある。
 
 - requestごとに不要な設定生成と`.env`読込が発生する。
-- プロセス起動後に環境変数が変更された場合、controllerのCookie属性とTTLだけが変わり、usecaseのsession TTLやrate limiter設定は変わらない。
+- サポート外ではあるが、プロセス起動後に環境変数が変更された場合、controllerのCookie属性とTTLだけが変わり、usecaseのsession TTLやrate limiter設定は変わらない。
 - controllerとusecaseが同じ設定snapshotを使うという保証がコード上にない。
 - テストが環境変数の動的変更へ依存し、実運用の設定ライフサイクルが不明瞭になる。
 
-M-3の本質は単純な性能問題だけではなく、同じ認証request内で設定の取得元と更新タイミングが一致しないことである。
+通常運用では環境変数と`.env`をプロセス実行中に変更しないため、現状のsnapshot不一致が既知の本番障害を起こしているわけではない。M-3は、requestごとの設定生成と`.env`読込を除去し、設定の所有者とライフサイクルを一貫させる予防的リファクタリングとして扱う。
 
 ## 現行システムとの整合性
 
@@ -116,7 +116,7 @@ def is_secure_request(request: Request, auth_settings: AuthSettings) -> bool:
 
 元のM-3指摘は「`get_auth_settings()`をrequestごとに生成している」という性能面の指摘だった。本計画では単にcacheを付けるだけでなく、設定snapshotの所有者をInjectorへ統一する。
 
-これは指摘からの意図的な拡張だが、controllerとusecaseの設定不一致という根本原因を解消するために必要である。API、DB、認証方式、環境変数の意味は変更しない。
+これは指摘からの意図的な拡張である。得られる価値は、requestごとのPydantic Settings生成と`.env`読込の除去、および設定の所有者・更新タイミングの一貫性と見通しの改善である。実行中の環境変数変更はサポート外なので、既知障害の根本原因修正とは位置づけない。将来controllerだけへ部分的なhot reloadを再導入する事故を防ぐための予防的整理として実施する。API、DB、認証方式、環境変数の意味は変更しない。
 
 ## トレードオフと不採用案
 
@@ -137,6 +137,7 @@ import時に設定が確定し、app factoryより早く評価される。test i
 - `.env`変更後にbackend再起動が必要になる。
 - endpoint signatureへ`AuthSettings = Depends(...)`が追加される。
 - Injectorを持たない手作りRequestでcontroller helperをテストする場合、設定を明示的に渡す必要がある。
+- Injectorは未bindの具象classを暗黙に生成できるため、`AuthSettings`のbindingが将来削除されても`injector.get(AuthSettings)`自体は例外にならない。`test_build_container_binds_created_auth_settings_instance`のidentity assertionを、このsilent regressionを検出する必須ガードとして維持する。
 
 これらは設定ライフサイクルが明確になる利点と比較して許容する。
 
@@ -184,14 +185,13 @@ import時に設定が確定し、app factoryより早く評価される。test i
 
 各Task配下の全StepとTask固有のExpectedを満たした時点で、対応するTaskへチェックを付ける。
 
-- [ ] Task 1: baselineと変更境界を固定する
-- [ ] Task 2: request settings dependencyの契約をtest-firstで追加する
-- [ ] Task 3: `AuthSettings`をapp/container単位のsingletonにする
-- [ ] Task 4: secure判定を注入済み設定だけで行う
-- [ ] Task 5: 全auth endpointを起動時settings snapshotへ統一する
-- [ ] Task 6: 設定ライフサイクルを開発者向け文書へ反映する
-- [ ] Task 7: repositoryの全品質ゲートを実行する
-- [ ] Task 8: scopeと完了条件を最終レビューする
+- [x] Task 1: baselineと変更境界を固定する
+- [x] Task 2: request settings dependencyの契約をtest-firstで追加する
+- [x] Task 3: `AuthSettings`をapp/container単位のsingletonにする
+- [x] Task 4: secure判定と全auth endpointを起動時settings snapshotへ統一する
+- [x] Task 5: 設定ライフサイクルを開発者向け文書へ反映する
+- [x] Task 6: repositoryの全品質ゲートを実行する
+- [x] Task 7: scopeと完了条件を最終レビューする
 
 ## 具体的なタスク
 
@@ -208,7 +208,7 @@ import時に設定が確定し、app factoryより早く評価される。test i
 - Consumes: current working tree上の未コミットauth実装
 - Produces: 本計画で変更するファイルと、既存変更を破壊しないためのbaseline記録
 
-- [ ] **Step 1.1: branch、HEAD、working treeを記録する**
+- [x] **Step 1.1: branch、HEAD、working treeを記録する**
 
 Repository rootで実行する。
 
@@ -224,7 +224,7 @@ Expected:
 - 既存の認証関連変更と`documents/plans/20260719-auth-settings-lifecycle.md`が確認できる。
 - 既存変更をreset、checkout、cleanしない。
 
-- [ ] **Step 1.2: direct settings生成箇所を再確認する**
+- [x] **Step 1.2: direct settings生成箇所を再確認する**
 
 ```bash
 rtk grep -n "get_auth_settings\|AuthSettings" backend/app backend/tests
@@ -236,7 +236,7 @@ Expected:
 - `backend/app/controllers/auth_controller.py`にrequest処理から到達するdirect callが4箇所ある。
 - `AuthUsecase`がconstructorで`AuthSettings`を受け取っている。
 
-- [ ] **Step 1.3: 変更禁止事項を確認する**
+- [x] **Step 1.3: 変更禁止事項を確認する**
 
 Run: なし。
 
@@ -255,7 +255,7 @@ Expected:
 - Consumes: `Request.app.state.injector`、`AuthSettings`
 - Produces: `get_request_auth_settings(request: Request) -> AuthSettings`
 
-- [ ] **Step 2.1: Injector管理の設定を返すfailing unit testを書く**
+- [x] **Step 2.1: Injector管理の設定を返すfailing unit testを書く**
 
 `backend/tests/unit/controllers/test_auth_dependencies.py`へ次のtestを追加する。既存のCSRF、IP、user-agent testsは変更しない。
 
@@ -287,7 +287,7 @@ def test_get_request_auth_settings_returns_injector_instance():
 from app.config.auth import AuthSettings
 ```
 
-- [ ] **Step 2.2: testを実行してREDを確認する**
+- [x] **Step 2.2: testを実行してREDを確認する**
 
 `backend/`で実行する。
 
@@ -297,7 +297,7 @@ rtk uv run pytest tests/unit/controllers/test_auth_dependencies.py::test_get_req
 
 Expected: `auth_dependencies`に`get_request_auth_settings`が存在しないためFAILする。import error、fixture error、別のassertion failureならtestを修正して再実行する。
 
-- [ ] **Step 2.3: 最小dependencyを実装する**
+- [x] **Step 2.3: 最小dependencyを実装する**
 
 `backend/app/controllers/auth_dependencies.py`へimportと関数を追加する。
 
@@ -311,7 +311,7 @@ def get_request_auth_settings(request: Request) -> AuthSettings:
 
 既存の`get_client_ip()`、`get_user_agent()`、`require_csrf()`、`require_current_session()`の動作は変更しない。
 
-- [ ] **Step 2.4: targeted testをGREENにする**
+- [x] **Step 2.4: targeted testをGREENにする**
 
 ```bash
 rtk uv run pytest tests/unit/controllers/test_auth_dependencies.py::test_get_request_auth_settings_returns_injector_instance -q
@@ -319,7 +319,7 @@ rtk uv run pytest tests/unit/controllers/test_auth_dependencies.py::test_get_req
 
 Expected: 1 passed、0 failed。
 
-- [ ] **Step 2.5: dependencies unit suiteを確認する**
+- [x] **Step 2.5: dependencies unit suiteを確認する**
 
 ```bash
 rtk uv run pytest tests/unit/controllers/test_auth_dependencies.py -q
@@ -337,7 +337,7 @@ Expected: 全test passed、0 failed。
 - Consumes: `get_auth_settings() -> AuthSettings`
 - Produces: `Injector.get(AuthSettings) -> AuthSettings`。同じInjectorでは常に同一instanceを返す。
 
-- [ ] **Step 3.1: composition rootのfailing unit testを書く**
+- [x] **Step 3.1: composition rootのfailing unit testを書く**
 
 `backend/tests/unit/bootstrap/test_container.py`を作成する。
 
@@ -362,7 +362,7 @@ def test_build_container_binds_created_auth_settings_instance(monkeypatch):
 
 このtestはDBへ接続しない。`build_engine_and_session_factory()`はengine/session factoryを構築するだけで、queryやmigrationを実行しない。
 
-- [ ] **Step 3.2: testを実行してREDを確認する**
+- [x] **Step 3.2: testを実行してREDを確認する**
 
 ```bash
 rtk uv run pytest tests/unit/bootstrap/test_container.py::test_build_container_binds_created_auth_settings_instance -q
@@ -370,7 +370,7 @@ rtk uv run pytest tests/unit/bootstrap/test_container.py::test_build_container_b
 
 Expected: 現行containerが`AuthSettings`を明示bindしていないため、`injector.get(AuthSettings) is settings`がFAILする。
 
-- [ ] **Step 3.3: AuthSettings instanceをInjectorへbindする**
+- [x] **Step 3.3: AuthSettings instanceをInjectorへbindする**
 
 `backend/app/bootstrap/container.py`のimportを次へ変更する。
 
@@ -386,7 +386,7 @@ binder.bind(AuthSettings, to=auth_settings, scope=singleton)
 
 `InMemoryLoginRateLimiter`と`AuthUsecase`のconstructorには、引き続き同じlocal variable `auth_settings`を渡す。設定を再生成しない。
 
-- [ ] **Step 3.4: container testをGREENにする**
+- [x] **Step 3.4: container testをGREENにする**
 
 ```bash
 rtk uv run pytest tests/unit/bootstrap/test_container.py -q
@@ -394,7 +394,7 @@ rtk uv run pytest tests/unit/bootstrap/test_container.py -q
 
 Expected: 全test passed、0 failed。
 
-- [ ] **Step 3.5: containerとconfigのunit suiteを確認する**
+- [x] **Step 3.5: containerとconfigのunit suiteを確認する**
 
 ```bash
 rtk uv run pytest tests/unit/bootstrap tests/unit/config -q
@@ -402,17 +402,20 @@ rtk uv run pytest tests/unit/bootstrap tests/unit/config -q
 
 Expected: 全test passed、0 failed。`test_auth_settings_reads_session_ttl_from_env`も維持され、factory単体では環境変数を読めることを確認できる。
 
-### Task 4: secure判定を注入済み設定だけで行う
+### Task 4: secure判定と全auth endpointを起動時settings snapshotへ統一する
 
 **Files:**
 - Modify: `backend/tests/unit/controllers/test_auth_controller_helpers.py`
+- Modify: `backend/tests/integration/test_auth_controller.py`
 - Modify: `backend/app/controllers/auth_controller.py`
 
 **Interfaces:**
-- Consumes: `Request`、起動時に生成済みの`AuthSettings`
-- Produces: `is_secure_request(request: Request, auth_settings: AuthSettings) -> bool`
+- Consumes: `Request`、`get_request_auth_settings(request) -> AuthSettings`
+- Produces: `is_secure_request(request: Request, auth_settings: AuthSettings) -> bool`。`/csrf`、`/register`、`/login`、`/logout`が同じapp/containerのsettings snapshotを使用する。
 
-- [ ] **Step 4.1: helper testsを新signatureへ変更する**
+このTaskではhelperの破壊的signature変更と全call siteの更新を一体で行う。Task完了時にunit helper suiteとauth controller integration suiteの両方をGREENにし、endpointが壊れた中間状態をTask境界へ持ち越さない。
+
+- [x] **Step 4.1: helper testsを新signatureへ変更する**
 
 `backend/tests/unit/controllers/test_auth_controller_helpers.py`へ次のimportを追加する。
 
@@ -429,7 +432,7 @@ assert is_secure_request(
 ) is True
 ```
 
-local testからも`monkeypatch`引数と環境変数操作を削除し、assertionを次へ変更する。
+`test_is_secure_request_ignores_untrusted_forwarded_proto`からも`monkeypatch`引数と環境変数操作だけを削除し、assertionを次へ変更する。`X-Forwarded-Proto: https` headerは、このtestの本来のsecurity contractなので削除しない。
 
 ```python
 assert is_secure_request(
@@ -456,7 +459,7 @@ def test_is_secure_request_accepts_https_in_local_environment():
     ) is True
 ```
 
-- [ ] **Step 4.2: helper testsを実行してREDを確認する**
+- [x] **Step 4.2: helper testsを実行してREDを確認する**
 
 ```bash
 rtk uv run pytest tests/unit/controllers/test_auth_controller_helpers.py -q
@@ -464,7 +467,56 @@ rtk uv run pytest tests/unit/controllers/test_auth_controller_helpers.py -q
 
 Expected: 現行`is_secure_request()`が2つ目の引数を受け取らないためFAILする。
 
-- [ ] **Step 4.3: is_secure_requestを明示設定引数へ変更する**
+- [x] **Step 4.3: 起動後の環境変数変更を反映しないfailing integration testを書く**
+
+`backend/tests/integration/test_auth_controller.py`へ次のtestを追加する。fixtureの評価順序へ依存させず、環境変数を設定してからappを明示的に生成する。
+
+```python
+def test_auth_cookie_security_uses_startup_settings(monkeypatch):
+    test_database_url = os.environ["TEST_DATABASE_URL"]
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    app = create_app()
+
+    with TestClient(app) as client:
+        startup_settings = client.app.state.injector.get(AuthSettings)
+        assert startup_settings.ENVIRONMENT == "local"
+        monkeypatch.setenv("ENVIRONMENT", "production")
+
+        response = client.get("/api/auth/csrf")
+
+        csrf_cookie = SimpleCookie(response.headers["set-cookie"])
+        assert csrf_cookie["csrf_token"]["secure"] == ""
+        assert client.app.state.injector.get(AuthSettings) is startup_settings
+```
+
+同test fileへ次のimportを追加する。既に存在するimportは重複させない。
+
+```python
+import os
+from http.cookies import SimpleCookie
+
+from fastapi.testclient import TestClient
+
+from app.bootstrap.create_app import create_app
+from app.config.auth import AuthSettings
+```
+
+このtestは「productionでSecureを付けない」ことを求めているのではない。appがlocal設定で起動済みなら、その後のprocess環境変更で既存appの設定を変えないことを確認する。
+
+共有`client` fixtureは使わないが、`clean_auth_tables`はautouse fixtureなので前後の`TRUNCATE ... CASCADE`が適用される。さらに`DATABASE_URL`を`TEST_DATABASE_URL`へ明示的に揃える。このtestの`GET /csrf`はsession cookieなしではDB query/writeとrate limiterを使用しないため、共有fixture固有のrate limiter resetを必要としない。この前提が変わった場合は共有fixture化または同等のcleanupを追加する。
+
+- [x] **Step 4.4: integration testを実行してREDを確認する**
+
+`backend/`で実行する。
+
+```bash
+rtk proxy env TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_controller.py::test_auth_cookie_security_uses_startup_settings -q
+```
+
+Expected: 現行controllerがrequest時に`ENVIRONMENT=production`を再読込し、CSRF Cookieへ`Secure`を付けるためFAILする。DB接続、schema、fixtureのerrorならREDとして扱わず、環境を修正する。
+
+- [x] **Step 4.5: is_secure_requestを明示設定引数へ変更する**
 
 `backend/app/controllers/auth_controller.py`で`get_auth_settings`のimportを削除し、`AuthSettings`をimportする。
 
@@ -488,69 +540,9 @@ def is_secure_request(
     }
 ```
 
-このStepではendpoint側のcall siteをまだ変更していないため、full suiteは実行しない。helper testだけをGREENにする。
+この時点ではendpoint側のcall siteが旧signatureのため、次のStepで続けて更新する。Task 4のGREEN確認は全call site更新後に行う。
 
-- [ ] **Step 4.4: helper testsをGREENにする**
-
-```bash
-rtk uv run pytest tests/unit/controllers/test_auth_controller_helpers.py -q
-```
-
-Expected: 全test passed、0 failed。
-
-### Task 5: 全auth endpointを起動時settings snapshotへ統一する
-
-**Files:**
-- Modify: `backend/tests/integration/test_auth_controller.py`
-- Modify: `backend/app/controllers/auth_controller.py`
-
-**Interfaces:**
-- Consumes: `get_request_auth_settings(request) -> AuthSettings`
-- Produces: `/csrf`、`/register`、`/login`、`/logout`が同じapp/containerのsettings snapshotを使用する。
-
-- [ ] **Step 5.1: 起動後の環境変数変更を反映しないfailing integration testを書く**
-
-`backend/tests/integration/test_auth_controller.py`へ次のtestを追加する。fixtureの評価順序へ依存させず、環境変数を設定してからappを明示的に生成する。
-
-```python
-def test_auth_cookie_security_uses_startup_settings(monkeypatch):
-    monkeypatch.setenv("ENVIRONMENT", "local")
-    app = create_app()
-
-    with TestClient(app) as client:
-        startup_settings = client.app.state.injector.get(AuthSettings)
-        assert startup_settings.ENVIRONMENT == "local"
-        monkeypatch.setenv("ENVIRONMENT", "production")
-
-        response = client.get("/api/auth/csrf")
-
-        csrf_cookie = response.headers["set-cookie"]
-        assert "Secure" not in csrf_cookie
-        assert client.app.state.injector.get(AuthSettings) is startup_settings
-```
-
-同test fileへ次のimportを追加する。既に存在するimportは重複させない。
-
-```python
-from fastapi.testclient import TestClient
-
-from app.bootstrap.create_app import create_app
-from app.config.auth import AuthSettings
-```
-
-このtestは「productionでSecureを付けない」ことを求めているのではない。appがlocal設定で起動済みなら、その後のprocess環境変更で既存appの設定を変えないことを確認する。
-
-- [ ] **Step 5.2: integration testを実行してREDを確認する**
-
-`backend/`で実行する。
-
-```bash
-rtk proxy env TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_controller.py::test_auth_cookie_security_uses_startup_settings -q
-```
-
-Expected: 現行controllerがrequest時に`ENVIRONMENT=production`を再読込し、CSRF Cookieへ`Secure`を付けるためFAILする。DB接続、schema、fixtureのerrorならREDとして扱わず、環境を修正する。
-
-- [ ] **Step 5.3: controllerへsettings dependencyをimportする**
+- [x] **Step 4.6: controllerへsettings dependencyをimportする**
 
 `backend/app/controllers/auth_controller.py`のdependency importへ`get_request_auth_settings`を追加する。
 
@@ -564,7 +556,7 @@ from app.controllers.auth_dependencies import (
 )
 ```
 
-- [ ] **Step 5.4: get_csrfへAuthSettings dependencyを追加する**
+- [x] **Step 4.7: get_csrfへAuthSettings dependencyを追加する**
 
 signatureを次へ変更する。
 
@@ -582,7 +574,7 @@ async def get_csrf(
 secure=is_secure_request(request, auth_settings)
 ```
 
-- [ ] **Step 5.5: registerへAuthSettings dependencyを追加する**
+- [x] **Step 4.8: registerへAuthSettings dependencyを追加する**
 
 signatureを次へ変更する。
 
@@ -603,7 +595,7 @@ secure = is_secure_request(request, auth_settings)
 
 `Retry-After`とCookie `Max-Age`は注入された同じ`auth_settings`から取得する。
 
-- [ ] **Step 5.6: loginへAuthSettings dependencyを追加する**
+- [x] **Step 4.9: loginへAuthSettings dependencyを追加する**
 
 signatureを次へ変更する。
 
@@ -624,7 +616,7 @@ secure = is_secure_request(request, auth_settings)
 
 `Retry-After`とCookie `Max-Age`は注入された同じ`auth_settings`から取得する。
 
-- [ ] **Step 5.7: logoutへAuthSettings dependencyを追加する**
+- [x] **Step 4.10: logoutへAuthSettings dependencyを追加する**
 
 signatureを次へ変更する。
 
@@ -642,7 +634,7 @@ secure判定を次へ変更する。
 secure = is_secure_request(request, auth_settings)
 ```
 
-- [ ] **Step 5.8: controllerからdirect factory callが消えたことを確認する**
+- [x] **Step 4.11: controllerからdirect factory callが消えたことを確認する**
 
 ```bash
 rtk grep -n '\bget_auth_settings\b' backend/app/controllers
@@ -650,7 +642,15 @@ rtk grep -n '\bget_auth_settings\b' backend/app/controllers
 
 Expected: 0 matches。exit 1は`rg`互換の「一致なし」を意味するため、このStepでは成功扱いとする。単語境界を指定しているため`get_request_auth_settings`は結果へ含まれない。
 
-- [ ] **Step 5.9: startup snapshot integration testをGREENにする**
+- [x] **Step 4.12: helper testsをGREENにする**
+
+```bash
+rtk uv run pytest tests/unit/controllers/test_auth_controller_helpers.py -q
+```
+
+Expected: 全test passed、0 failed。production fail-closed、HTTPS優先、`X-Forwarded-Proto`非信用の契約を維持する。
+
+- [x] **Step 4.13: startup snapshot integration testをGREENにする**
 
 ```bash
 rtk proxy env TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_controller.py::test_auth_cookie_security_uses_startup_settings -q
@@ -658,7 +658,7 @@ rtk proxy env TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_
 
 Expected: 1 passed、0 skipped、0 failed。
 
-- [ ] **Step 5.10: auth controller integration suiteを通す**
+- [x] **Step 4.14: auth controller integration suiteを通す**
 
 ```bash
 rtk proxy env TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app_test uv run pytest tests/integration/test_auth_controller.py -q
@@ -666,17 +666,17 @@ rtk proxy env TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_
 
 Expected: 全test passed、0 skipped、0 failed。Cookie属性、rate limit `Retry-After`、register/login/logout、CSRFの既存testも維持される。
 
-### Task 6: 設定ライフサイクルを開発者向け文書へ反映する
+### Task 5: 設定ライフサイクルを開発者向け文書へ反映する
 
 **Files:**
 - Modify: `backend/AGENTS.md`
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: Task 3〜5で確定した起動時snapshot契約
+- Consumes: Task 3〜4で確定した起動時snapshot契約
 - Produces: 設定変更時の運用手順と、実装者がrequest単位生成を再導入しないための規約
 
-- [ ] **Step 6.1: backendガイドへ設定ライフサイクル規約を追加する**
+- [x] **Step 5.1: backendガイドへ設定ライフサイクル規約を追加する**
 
 `backend/AGENTS.md`の「モデル / DB」より前へ、次の内容を「設定」節として追加する。
 
@@ -689,7 +689,7 @@ Expected: 全test passed、0 skipped、0 failed。Cookie属性、rate limit `Ret
 - 設定hot reloadは提供しない。必要になった場合は全consumerを同時更新できる別設計として計画する
 ```
 
-- [ ] **Step 6.2: READMEへ再起動要件を追記する**
+- [x] **Step 5.2: READMEへ再起動要件を追記する**
 
 ルート`README.md`の「環境変数」節へ次の説明を追加する。
 
@@ -697,13 +697,13 @@ Expected: 全test passed、0 skipped、0 failed。Cookie属性、rate limit `Ret
 認証設定はbackend起動時に読み込まれます。`backend/.env`または認証関連環境変数を変更した場合は、既存backend process/containerを再起動してください。
 
 ```bash
-docker compose restart backend
+docker compose up -d --force-recreate backend
 ```
 ````
 
 既存のDB migration、`app_test`、quality gate、admin seed関連の記述は削除しない。
 
-- [ ] **Step 6.3: 文書と実装の用語を照合する**
+- [x] **Step 5.3: 文書と実装の用語を照合する**
 
 ```bash
 rtk grep -n "起動時snapshot\|get_request_auth_settings\|再起動\|hot reload" backend/AGENTS.md README.md documents/plans/20260719-auth-settings-lifecycle.md
@@ -715,7 +715,7 @@ Expected:
 - `README.md`に設定変更後のbackend再起動手順が記載される。
 - requestごとの再読込を推奨する記述がない。
 
-### Task 7: repositoryの全品質ゲートを実行する
+### Task 6: repositoryの全品質ゲートを実行する
 
 **Files:**
 - Verify: `backend/app/`
@@ -724,10 +724,10 @@ Expected:
 - Verify: `frontend/`
 
 **Interfaces:**
-- Consumes: Task 2〜6の全変更
+- Consumes: Task 2〜5の全変更
 - Produces: backend unit、PostgreSQL integration、backend format、frontend test / lint / buildの実測結果
 
-- [ ] **Step 7.1: isortを確認する**
+- [x] **Step 6.1: isortを確認する**
 
 `backend/`で実行する。
 
@@ -737,7 +737,7 @@ rtk uv run isort . --check-only
 
 Expected: exit 0。失敗した場合は`rtk uv run isort .`で機械整形し、同じcheckを再実行する。
 
-- [ ] **Step 7.2: yapfを確認する**
+- [x] **Step 6.2: yapfを確認する**
 
 ```bash
 rtk uv run yapf -dr app/ tests/ alembic/
@@ -745,7 +745,7 @@ rtk uv run yapf -dr app/ tests/ alembic/
 
 Expected: exit 0、diffなし。差分がある場合は対象ファイルを`rtk uv run yapf -ir ...`で整形し、同じcheckを再実行する。
 
-- [ ] **Step 7.3: PostgreSQL test DBの接続先を確認する**
+- [x] **Step 6.3: PostgreSQL test DBの接続先を確認する**
 
 Repository rootで実行する。
 
@@ -755,7 +755,7 @@ rtk docker compose exec -T postgres psql -U app -d app_test -tAc "SELECT current
 
 Expected: `app_test|app`。`app`、共有DB、database名不一致の場合はtestを実行せず停止する。
 
-- [ ] **Step 7.4: backend full suiteをskipなしで実行する**
+- [x] **Step 6.4: backend full suiteをskipなしで実行する**
 
 `backend/`で実行する。
 
@@ -765,7 +765,7 @@ rtk proxy env TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_
 
 Expected: 全test passed、0 skipped、0 failed。件数とwarning件数を本計画の「実行結果」へ記録する。
 
-- [ ] **Step 7.5: frontendのformatとlintを確認する**
+- [x] **Step 6.5: frontendのformatとlintを確認する**
 
 `frontend/`で実行する。
 
@@ -775,7 +775,7 @@ rtk npm run check
 
 Expected: exit 0、ESLint error 0、warning 0。Prettierによる本計画外ファイルの変更が発生した場合は進行を止め、開始時baselineと差分を確認する。
 
-- [ ] **Step 7.6: frontend full testを実行する**
+- [x] **Step 6.6: frontend full testを実行する**
 
 ```bash
 rtk npm test
@@ -783,7 +783,7 @@ rtk npm test
 
 Expected: 全test file passed、0 skipped、0 failed。file数とtest数を「実行結果」へ記録する。
 
-- [ ] **Step 7.7: frontend production buildを確認する**
+- [x] **Step 6.7: frontend production buildを確認する**
 
 ```bash
 rtk npm run build
@@ -791,7 +791,7 @@ rtk npm run build
 
 Expected: exit 0。既知warningが出た場合は内容と件数を「実行結果」へ記録し、新規warningなら原因を調査する。
 
-- [ ] **Step 7.8: direct factory call境界を最終確認する**
+- [x] **Step 6.8: direct factory call境界を最終確認する**
 
 ```bash
 rtk grep -n '\bget_auth_settings\b' backend/app
@@ -803,7 +803,7 @@ Expected:
 - `backend/app/bootstrap/container.py`の起動時呼び出し
 - controller配下は0件
 
-- [ ] **Step 7.9: diffのwhitespace errorを確認する**
+- [x] **Step 6.9: diffのwhitespace errorを確認する**
 
 Repository rootで実行する。
 
@@ -813,7 +813,7 @@ rtk git diff --check
 
 Expected: exit 0、outputなし。
 
-### Task 8: scopeと完了条件を最終レビューする
+### Task 7: scopeと完了条件を最終レビューする
 
 **Files:**
 - Review: `backend/app/bootstrap/container.py`
@@ -826,10 +826,10 @@ Expected: exit 0、outputなし。
 - Modify: `documents/plans/20260719-auth-settings-lifecycle.md`
 
 **Interfaces:**
-- Consumes: Task 1〜7の実装・テスト・文書
+- Consumes: Task 1〜6の実装・テスト・文書
 - Produces: stagingせずにレビュー可能な、scopeが閉じたworking treeと実測記録
 
-- [ ] **Step 8.1: 要件をline-by-lineで確認する**
+- [x] **Step 7.1: 要件をline-by-lineで確認する**
 
 Run: なし。
 
@@ -844,7 +844,7 @@ Run: なし。
 - `.env`変更後の再起動要件が文書化されている。
 - dependency、schema、migration、API、M-1、M-2、admin seedへ変更がない。
 
-- [ ] **Step 8.2: 変更ファイルをscopeと照合する**
+- [x] **Step 7.2: 変更ファイルをscopeと照合する**
 
 ```bash
 rtk git status --short
@@ -858,7 +858,7 @@ Expected:
 - M-3対応として新たに変更した内容はFile Structure記載範囲に限定される。
 - generated artifact、secret、`.env`実体、DB dumpが追加されていない。
 
-- [ ] **Step 8.3: 実行結果を本計画へ記録する**
+- [x] **Step 7.3: 実行結果を本計画へ記録する**
 
 本ファイル末尾の「実行結果」へ次を実測値で記入する。
 
@@ -873,7 +873,7 @@ Expected:
 
 推測値、placeholder、未実行結果は記録しない。
 
-- [ ] **Step 8.4: stagingとcommitを行っていないことを確認する**
+- [x] **Step 7.4: stagingとcommitを行っていないことを確認する**
 
 ```bash
 rtk git diff --cached --stat
@@ -885,19 +885,43 @@ Expected: 本タスクによるstaged changeがない。既存のstaged change�
 
 ## 完了条件
 
-- [ ] `AuthSettings`が`build_container()`で一度生成され、Injectorへsingleton instanceとして登録されている。
-- [ ] auth controllerの全設定参照が`get_request_auth_settings` dependency経由になっている。
-- [ ] `is_secure_request()`が注入済み設定だけを使い、関数内部で設定を生成しない。
-- [ ] app起動後の環境変数変更が既存appの認証設定へ反映されないことを自動testで確認している。
-- [ ] production fail-closed、HTTPS、proxy header非信用の既存security contractがtestで維持されている。
-- [ ] backend full pytestがPostgreSQL付きで0 skipped / 0 failedである。
-- [ ] frontend full test、check、buildが成功している。
-- [ ] isort、yapf、frontend lint、`git diff --check`がcleanである。
-- [ ] `backend/AGENTS.md`と`README.md`に起動時snapshotと再起動要件が記載されている。
-- [ ] dependency、DB schema、migration、API surfaceを変更していない。
-- [ ] M-1、M-2、admin seedを混在させていない。
-- [ ] `git add`、`git commit`、`git push`を実行していない。
+- [x] `AuthSettings`が`build_container()`で一度生成され、Injectorへsingleton instanceとして登録されている。
+- [x] auth controllerの全設定参照が`get_request_auth_settings` dependency経由になっている。
+- [x] `is_secure_request()`が注入済み設定だけを使い、関数内部で設定を生成しない。
+- [x] app起動後の環境変数変更が既存appの認証設定へ反映されないことを自動testで確認している。
+- [x] production fail-closed、HTTPS、proxy header非信用の既存security contractがtestで維持されている。
+- [x] backend full pytestがPostgreSQL付きで0 skipped / 0 failedである。
+- [x] frontend full test、check、buildが成功している。
+- [x] isort、yapf、frontend lint、`git diff --check`がcleanである。
+- [x] `backend/AGENTS.md`と`README.md`に起動時snapshotと再起動要件が記載されている。
+- [x] dependency、DB schema、migration、API surfaceを変更していない。
+- [x] M-1、M-2、admin seedを混在させていない。
+- [x] `git add`、`git commit`、`git push`を実行していない。
 
 ## 実行結果
 
-この節は実装時に、実行済みの結果だけを追記する。計画作成時点では未実行のため、結果を記載しない。
+- 実行日時: 2026-07-19 10:04:32 JST
+- branch / HEAD: `feature/db-auth` / `b8fe01437491b3019e9ffc4d393b1bff7631d4c0`
+- Targeted RED:
+  - request settings dependency: `get_request_auth_settings`未定義の`AttributeError`で1 failed
+  - container binding: `injector.get(AuthSettings) is settings`のidentity不一致で1 failed
+  - secure helper: 旧signatureが第2引数を受け取らない`TypeError`で3 failed
+  - startup snapshot integration: request時の環境変数再読込によりCSRF Cookieへ`Secure`が付き、`assert "Secure" not in csrf_cookie`で1 failed
+- Targeted GREEN:
+  - request settings dependency suite: 6 passed
+  - container / config suite: 3 passed
+  - secure helper suite: 4 passed
+  - startup snapshot integration: 1 passed、1 warning
+  - auth controller integration suite: 30 passed、4 warnings
+- Backend full pytest: 63 passed、0 skipped、0 failed、4 warnings
+- Frontend test: 7 files passed、15 tests passed、0 skipped、0 failed
+- Quality gate:
+  - isort: exit 0（1 file skipped）
+  - yapf: exit 0、diffなし
+  - frontend check: exit 0、変更なし
+  - frontend build: exit 0。`VITE_SITE_URL`未設定warning 3件
+  - `git diff --check`: exit 0、outputなし
+- 逸脱: 計画のHTTPS helper testは`scheme="https"`だけを持つ相対URL scopeだったため、Starletteがschemeを保持せず最初のGREEN確認で1 failedとなった。実request相当の`server=("testserver", 443)`をtest scopeへ追加し、HTTPS契約を4 passedで確認した。
+- 完成時レビュー対応: Composeの`env_file`変更は`restart`では再読込されないため、READMEの反映手順を`docker compose up -d --force-recreate backend`へ修正した。startup snapshot testはrandom token本文との誤一致を避けるため、`SimpleCookie`で`Secure`属性を検証する形へ変更した。
+- 再レビュー対応: Injectorが未bindの具象classを暗黙生成するsilent regressionを防ぐidentity assertionについて、削除理由が誤解されないようWHYコメントを追加した。instance bindingに対する`scope=singleton`はcomposition rootのライフサイクル意図を明示し、既存binding様式と揃えるため維持した。独自`TestClient`のDB/rate limiter非依存前提はStep 4.3の注記を維持した。
+- 未対応事項: なし
