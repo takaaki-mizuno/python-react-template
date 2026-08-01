@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod
-from typing import Optional, Tuple
+from typing import Optional
 
 from app.models.status import Status
 

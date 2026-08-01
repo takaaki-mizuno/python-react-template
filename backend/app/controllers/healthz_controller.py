@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter
 
 from app.models.status import Status
 
@@ -11,5 +11,5 @@ router = APIRouter(
 
 
 @router.get("/healthz")
-async def healthz(request: Request) -> Status:
+async def healthz() -> Status:
     return Status(success=True, message="ok")

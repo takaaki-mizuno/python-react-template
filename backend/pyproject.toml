@@ -35,3 +35,7 @@ pythonpath = [
 markers = [
     "integration: PostgreSQL-backed auth tests",
 ]
+
+[tool.isort]
+known_third_party = ["alembic"]
+skip_glob = ["alembic/versions/*.py"]

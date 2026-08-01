@@ -1,5 +1,4 @@
 import asyncio
-import os
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
@@ -13,13 +12,7 @@ from sqlalchemy.pool import NullPool
 
 from app.bootstrap.create_app import create_app
 from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
-
-
-def require_test_database_url() -> str:
-    test_database_url = os.environ.get("TEST_DATABASE_URL")
-    if not test_database_url:
-        pytest.skip("TEST_DATABASE_URL is required for auth integration tests")
-    return test_database_url
+from tests.integration.helpers import require_test_database_url
 
 
 async def wait_for_database(database_url: str) -> None:
@@ -85,9 +78,7 @@ async def async_session(
 
 @pytest.fixture
 def client(monkeypatch) -> Iterator[TestClient]:
-    test_database_url = os.environ.get("TEST_DATABASE_URL")
-    if not test_database_url:
-        pytest.skip("TEST_DATABASE_URL is required for auth integration tests")
+    test_database_url = require_test_database_url()
 
     monkeypatch.setenv("DATABASE_URL", test_database_url)
     monkeypatch.setenv(

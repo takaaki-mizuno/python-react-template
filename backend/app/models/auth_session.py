@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, Index, String
 from sqlmodel import Field, SQLModel
 
 from app.models.user import utcnow
@@ -9,6 +9,11 @@ from app.models.user import utcnow
 
 class AuthSession(SQLModel, table=True):
     __tablename__ = "auth_sessions"
+    __table_args__ = (Index(
+        "uq_auth_sessions_session_token_hash",
+        "session_token_hash",
+        unique=True,
+    ), )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", nullable=False, index=True)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, Index, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -10,6 +10,7 @@ from app.models.user import utcnow
 
 class AuthAuditLog(SQLModel, table=True):
     __tablename__ = "auth_audit_logs"
+    __table_args__ = (Index("ix_auth_audit_logs_event_type", "event_type"), )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID | None = Field(

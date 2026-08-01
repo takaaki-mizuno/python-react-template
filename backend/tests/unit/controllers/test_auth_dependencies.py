@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from fastapi import HTTPException
 from starlette.requests import Request
 
 from app.config.auth import AuthSettings
@@ -13,6 +14,7 @@ def _request_with_csrf_cookie_and_header(
     token: str,
     session_token: str | None = None,
     app=None,
+    header_token: str | None = None,
 ) -> Request:
     cookie = f"csrf_token={token}"
     if session_token:
@@ -27,8 +29,8 @@ def _request_with_csrf_cookie_and_header(
         "app":
         app,
         "headers": [
-            (b"cookie", cookie.encode()),
-            (b"x-csrf-token", token.encode()),
+            (b"cookie", cookie.encode("utf-8")),
+            (b"x-csrf-token", (header_token or token).encode("utf-8")),
         ],
     })
 
@@ -107,7 +109,28 @@ async def test_require_csrf_uses_timing_safe_compare(monkeypatch):
     await auth_dependencies.require_csrf(
         _request_with_csrf_cookie_and_header("csrf-token"))
 
-    compare_digest.assert_called_once_with("csrf-token", "csrf-token")
+    compare_digest.assert_called_once_with(b"csrf-token", b"csrf-token")
+
+
+@pytest.mark.asyncio
+async def test_require_csrf_rejects_non_ascii_mismatch_without_type_error():
+    request = Request({
+        "type":
+        "http",
+        "method":
+        "POST",
+        "path":
+        "/api/auth/logout",
+        "headers": [
+            (b"cookie", b"csrf_token=caf\xe9"),
+            (b"x-csrf-token", b"caf\xe8"),
+        ],
+    })
+
+    with pytest.raises(HTTPException) as error:
+        await auth_dependencies.require_csrf(request)
+
+    assert error.value.status_code == 403
 
 
 @pytest.mark.asyncio

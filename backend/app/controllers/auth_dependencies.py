@@ -29,8 +29,13 @@ def get_request_auth_settings(request: Request) -> AuthSettings:
 async def require_csrf(request: Request) -> None:
     cookie_token = request.cookies.get("csrf_token")
     header_token = request.headers.get("X-CSRF-Token")
-    if (not cookie_token or not header_token
-            or not secrets.compare_digest(cookie_token, header_token)):
+    if not cookie_token or not header_token:
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
+
+    if not secrets.compare_digest(
+            cookie_token.encode("utf-8"),
+            header_token.encode("utf-8"),
+    ):
         raise HTTPException(status_code=403, detail="CSRF validation failed")
 
     session_token = request.cookies.get("session_token")

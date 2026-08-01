@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Request
 
 from app.interfaces.usecases.get_sample_index_usecase_interface import \
     GetSampleIndexUsecaseInterface
@@ -9,7 +9,7 @@ router = APIRouter(
     tags=["sample"],
     responses={
         401: Status(success=False, message="Unauthorized").model_dump(),
-        402: Status(success=False, message="Forbidden").model_dump(),
+        403: Status(success=False, message="Forbidden").model_dump(),
         404: Status(success=False, message="Not found").model_dump(),
     },
 )

@@ -1,5 +1,5 @@
 from logging import Logger
-from typing import Optional, Tuple
+from typing import Optional
 
 from app.config import Config
 from app.interfaces.usecases.get_sample_index_usecase_interface import \
