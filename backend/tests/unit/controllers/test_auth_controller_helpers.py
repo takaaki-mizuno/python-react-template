@@ -7,7 +7,7 @@ from app.controllers.auth_controller import (is_secure_request,
                                              set_session_cookie)
 
 
-def test_is_secure_request_fails_closed_for_production_without_proxy_headers():
+def test_is_secure_request_fails_closed_when_cookie_secure_is_unset():
     request = Request({
         "type": "http",
         "method": "GET",
@@ -18,11 +18,11 @@ def test_is_secure_request_fails_closed_for_production_without_proxy_headers():
 
     assert is_secure_request(
         request,
-        AuthSettings(ENVIRONMENT="production"),
+        AuthSettings(_env_file=None),
     ) is True
 
 
-def test_is_secure_request_ignores_untrusted_forwarded_proto():
+def test_is_secure_request_uses_explicit_false_for_local_http():
     request = Request({
         "type": "http",
         "method": "GET",
@@ -33,11 +33,11 @@ def test_is_secure_request_ignores_untrusted_forwarded_proto():
 
     assert is_secure_request(
         request,
-        AuthSettings(ENVIRONMENT="local"),
+        AuthSettings(_env_file=None, AUTH_COOKIE_SECURE=False),
     ) is False
 
 
-def test_is_secure_request_accepts_https_in_local_environment():
+def test_is_secure_request_uses_explicit_true_regardless_of_scheme():
     request = Request({
         "type": "http",
         "method": "GET",
@@ -49,8 +49,20 @@ def test_is_secure_request_accepts_https_in_local_environment():
 
     assert is_secure_request(
         request,
-        AuthSettings(ENVIRONMENT="local"),
+        AuthSettings(_env_file=None, AUTH_COOKIE_SECURE=True),
     ) is True
+
+
+def test_is_secure_request_ignores_untrusted_forwarded_proto_when_unset():
+    request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/auth/csrf",
+        "scheme": "http",
+        "headers": [(b"x-forwarded-proto", b"https")],
+    })
+
+    assert is_secure_request(request, AuthSettings(_env_file=None)) is True
 
 
 def test_issued_auth_cookies_have_required_security_attributes():

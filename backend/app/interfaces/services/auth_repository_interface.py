@@ -10,7 +10,7 @@ from app.models.user import User
 class AuthRepositoryInterface(metaclass=ABCMeta):
 
     @abstractmethod
-    async def create_user(self, email: str, password_hash: str) -> User:
+    async def create_user(self, email: str, password_hash: str | None) -> User:
         raise NotImplementedError
 
     @abstractmethod

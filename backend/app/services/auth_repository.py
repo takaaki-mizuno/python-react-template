@@ -31,7 +31,7 @@ class AuthRepository(AuthRepositoryInterface):
         else:
             await session.commit()
 
-    async def create_user(self, email: str, password_hash: str) -> User:
+    async def create_user(self, email: str, password_hash: str | None) -> User:
         async with self._unit_of_work.session_scope() as session:
             user = User(email=email, password_hash=password_hash)
             session.add(user)

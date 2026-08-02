@@ -27,6 +27,14 @@ def _app() -> FastAPI:
             },
         )
 
+    @app.get("/custom-cache")
+    async def custom_cache():
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"Cache-Control": "private"},
+        )
+
     @app.post("/payload")
     async def payload(_payload: Payload):
         return {"ok": True}
@@ -44,6 +52,7 @@ def test_http_exception_string_detail_uses_error_envelope():
     response = client.get("/unauthorized")
 
     assert response.status_code == 401
+    assert response.headers["Cache-Control"] == "no-store"
     assert response.json() == {
         "error": {
             "code": "UNAUTHORIZED",
@@ -51,6 +60,15 @@ def test_http_exception_string_detail_uses_error_envelope():
             "details": [],
         }
     }
+
+
+def test_http_exception_preserves_explicit_cache_control_header():
+    client = TestClient(_app())
+
+    response = client.get("/custom-cache")
+
+    assert response.status_code == 401
+    assert response.headers["Cache-Control"] == "private"
 
 
 def test_http_exception_dict_detail_preserves_code_and_message():

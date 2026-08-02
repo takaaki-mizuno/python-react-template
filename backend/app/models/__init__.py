@@ -1,3 +1,7 @@
+from .metadata import configure_metadata
+
+configure_metadata()
+
 from .auth_audit_log import AuthAuditLog
 from .auth_session import AuthSession
 from .status import Status
@@ -8,4 +12,5 @@ __all__ = [
     "AuthSession",
     "Status",
     "User",
+    "configure_metadata",
 ]

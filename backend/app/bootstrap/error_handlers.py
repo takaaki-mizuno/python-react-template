@@ -51,7 +51,7 @@ async def http_exception_handler(
     exc: HTTPException,
 ) -> JSONResponse:
     code, message, details = _error_parts(exc.status_code, exc.detail)
-    return _json_error_response(
+    return json_error_response(
         status_code=exc.status_code,
         code=code,
         message=message,
@@ -71,7 +71,7 @@ async def validation_exception_handler(
             type=str(error.get("type", "value_error")),
         ) for error in exc.errors()
     ]
-    return _json_error_response(
+    return json_error_response(
         status_code=422,
         code="VALIDATION_ERROR",
         message="Validation failed",
@@ -88,7 +88,7 @@ async def unhandled_exception_handler(
         request.method,
         request.url.path,
     )
-    return _json_error_response(
+    return json_error_response(
         status_code=500,
         code="INTERNAL_SERVER_ERROR",
         message="Internal server error",
@@ -113,13 +113,16 @@ def _error_parts(
         status_code), []
 
 
-def _json_error_response(
+def json_error_response(
     status_code: int,
     code: str,
     message: str,
     details: list[ErrorFieldDetail | dict[str, Any]] | None = None,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
+    response_headers = dict(headers or {})
+    if status_code == 401:
+        response_headers.setdefault("Cache-Control", "no-store")
     payload = ErrorResponse(error=ErrorDetail(
         code=code,
         message=message,
@@ -128,7 +131,7 @@ def _json_error_response(
     return JSONResponse(
         status_code=status_code,
         content=payload.model_dump(mode="json"),
-        headers=headers,
+        headers=response_headers,
     )
 
 

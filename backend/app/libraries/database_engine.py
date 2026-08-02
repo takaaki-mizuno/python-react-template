@@ -15,6 +15,7 @@ def build_engine_and_session_factory(
     engine_kwargs: dict[str, Any] = {
         "future": True,
         "echo": database_settings.DATABASE_ECHO,
+        "hide_parameters": True,
         "pool_pre_ping": True,
     }
 

@@ -17,8 +17,10 @@ class User(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     email: str = Field(sa_column=Column(String(length=320), nullable=False), )
-    password_hash: str = Field(sa_column=Column(String(length=255),
-                                                nullable=False), )
+    password_hash: str | None = Field(
+        default=None,
+        sa_column=Column(String(length=255), nullable=True),
+    )
     is_active: bool = Field(sa_column=Column(Boolean,
                                              nullable=False,
                                              default=True,

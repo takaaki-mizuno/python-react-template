@@ -4,7 +4,10 @@ from contextlib import asynccontextmanager
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
+from typing_extensions import get_type_hints
 
+from app.interfaces.services.auth_repository_interface import \
+    AuthRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.models.auth_errors import EmailAlreadyRegisteredError
 from app.services.auth_repository import AuthRepository
@@ -59,3 +62,11 @@ async def test_create_user_does_not_rollback_integrity_error_inside_transaction(
                                      password_hash="hash")
 
     assert unit_of_work.session.rollback_called is False
+
+
+def test_create_user_accepts_nullable_password_hash_type_annotation():
+    interface_hints = get_type_hints(AuthRepositoryInterface.create_user)
+    concrete_hints = get_type_hints(AuthRepository.create_user)
+
+    assert interface_hints["password_hash"] == str | None
+    assert concrete_hints["password_hash"] == str | None

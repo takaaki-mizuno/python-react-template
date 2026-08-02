@@ -34,8 +34,9 @@ def test_db_check_invokes_alembic_check(monkeypatch):
     assert calls[1][0] == "check"
 
 
-def test_db_check_rejects_default_alembic_database_url(monkeypatch):
+def test_db_check_rejects_default_alembic_database_url(monkeypatch, tmp_path):
     monkeypatch.delenv("ALEMBIC_DATABASE_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(manage.app, ["db-check"])
 

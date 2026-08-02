@@ -7,6 +7,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Config, get_config
 from app.config.auth import AuthSettings, get_auth_settings
+from app.interfaces.libraries.rate_limiter_interface import \
+    LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import \
     AuthRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
@@ -15,6 +17,7 @@ from app.interfaces.usecases.get_sample_index_usecase_interface import \
     GetSampleIndexUsecaseInterface
 from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
 from app.libraries.database_engine import build_engine_and_session_factory
+from app.libraries.password_hasher import PasswordHashExecutor
 from app.services.auth_repository import AuthRepository
 from app.services.unit_of_work import UnitOfWork
 from app.usecases.auth_usecase import AuthUsecase
@@ -76,13 +79,29 @@ class AuthModule(Module):
     def provide_rate_limiter(
         self,
         settings: AuthSettings,
-    ) -> InMemoryLoginRateLimiter:
+    ) -> LoginRateLimiterInterface:
         return InMemoryLoginRateLimiter(
             window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
-            max_attempts_per_email_ip=settings.
-            AUTH_RATE_LIMIT_ATTEMPTS_PER_EMAIL_IP,
-            max_attempts_per_ip=settings.AUTH_RATE_LIMIT_ATTEMPTS_PER_IP,
+            registration_window_seconds=settings.
+            AUTH_RATE_LIMIT_REGISTRATION_WINDOW_SECONDS,
+            max_failures_per_email_ip=settings.
+            AUTH_RATE_LIMIT_FAILURES_PER_EMAIL_IP,
+            max_failures_per_ip=settings.AUTH_RATE_LIMIT_FAILURES_PER_IP,
+            max_failures_per_email=settings.AUTH_RATE_LIMIT_FAILURES_PER_EMAIL,
+            max_registrations_per_ip=settings.
+            AUTH_RATE_LIMIT_REGISTRATIONS_PER_IP,
+            max_buckets_per_scope=settings.
+            AUTH_RATE_LIMIT_MAX_BUCKETS_PER_SCOPE,
         )
+
+    @singleton
+    @provider
+    def provide_password_hash_executor(
+        self,
+        settings: AuthSettings,
+    ) -> PasswordHashExecutor:
+        return PasswordHashExecutor(
+            max_workers=settings.AUTH_PASSWORD_HASH_CONCURRENCY)
 
 
 class SampleModule(Module):

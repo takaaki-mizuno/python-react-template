@@ -13,16 +13,16 @@ from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.interfaces.usecases.get_sample_index_usecase_interface import \
     GetSampleIndexUsecaseInterface
+from app.libraries.password_hasher import PasswordHashExecutor
 
 
 def test_build_container_binds_module_provider_singletons(monkeypatch):
     from app.bootstrap import modules
 
     config = Config(ENVIRONMENT="test")
-    settings = AuthSettings(
-        ENVIRONMENT="production",
-        AUTH_SESSION_ABSOLUTE_TTL_SECONDS=123,
-    )
+    settings = AuthSettings(_env_file=None,
+                            AUTH_COOKIE_SECURE=True,
+                            AUTH_SESSION_ABSOLUTE_TTL_SECONDS=123)
     engine = object()
     session_factory = object()
 
@@ -50,6 +50,11 @@ def test_build_container_binds_module_provider_singletons(monkeypatch):
         AuthRepositoryInterface)
     assert injector.get(UnitOfWorkInterface) is injector.get(
         UnitOfWorkInterface)
+    password_hash_executor = injector.get(PasswordHashExecutor)
+    try:
+        assert password_hash_executor is injector.get(PasswordHashExecutor)
+    finally:
+        password_hash_executor.shutdown()
 
 
 @pytest.mark.asyncio

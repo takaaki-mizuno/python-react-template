@@ -5,8 +5,11 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import Config
+from app.config.auth import AuthSettings
+from app.libraries.password_hasher import PasswordHashExecutor
 
 from .container import build_container
+from .csrf import CSRFMiddleware
 from .error_handlers import register_error_handlers
 from .route import setup_routes
 
@@ -28,11 +31,18 @@ async def lifespan(app: FastAPI):
             logger.exception("Failed to dispose database engine")
             if app_error is None:
                 raise
+        try:
+            app.state.injector.get(PasswordHashExecutor).shutdown()
+        except Exception:
+            logger.exception("Failed to shutdown password hash executor")
+            if app_error is None:
+                raise
 
 
 def create_app() -> FastAPI:
     injector = build_container()
     config = injector.get(Config)
+    injector.get(AuthSettings)
     _setup_logging(config)
     docs_enabled = config.ENVIRONMENT.lower() in {
         "local", "development", "test"
@@ -45,6 +55,7 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if docs_enabled else None,
     )
     app.state.injector = injector
+    app.add_middleware(CSRFMiddleware)
     register_error_handlers(app)
     # If CORS is enabled later, do not combine credentialed requests with wildcard origins.
     app = setup_routes(app)

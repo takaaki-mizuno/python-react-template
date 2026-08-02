@@ -26,13 +26,13 @@ def assert_error_code(response, code: str) -> None:
 def test_auth_cookie_security_uses_startup_settings(monkeypatch):
     test_database_url = os.environ["TEST_DATABASE_URL"]
     monkeypatch.setenv("DATABASE_URL", test_database_url)
-    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.setenv("AUTH_COOKIE_SECURE", "false")
     app = create_app()
 
     with TestClient(app) as client:
         startup_settings = client.app.state.injector.get(AuthSettings)
-        assert startup_settings.ENVIRONMENT == "local"
-        monkeypatch.setenv("ENVIRONMENT", "production")
+        assert startup_settings.AUTH_COOKIE_SECURE is False
+        monkeypatch.setenv("AUTH_COOKIE_SECURE", "true")
 
         response = client.get("/api/auth/csrf")
 
@@ -45,6 +45,7 @@ def test_get_me_returns_401_without_session(client):
     response = client.get("/api/auth/me")
 
     assert response.status_code == 401
+    assert response.headers["Cache-Control"] == "no-store"
     assert_error_code(response, "UNAUTHORIZED")
 
 
@@ -386,7 +387,7 @@ def test_register_requires_csrf_cookie_and_header(client):
 
 
 def test_register_rate_limit_returns_429(client):
-    for _ in range(5):
+    for _ in range(6):
         csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
         client.post(
             "/api/auth/register",
@@ -413,7 +414,7 @@ def test_register_rate_limit_returns_429(client):
 
 
 def test_register_and_login_share_rate_limit_bucket(client):
-    for _ in range(5):
+    for _ in range(6):
         csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
         client.post(
             "/api/auth/register",

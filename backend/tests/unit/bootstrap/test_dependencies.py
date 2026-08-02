@@ -21,7 +21,7 @@ def _request_with_injector(injector) -> Request:
 
 
 def test_inject_returns_instance_from_app_injector():
-    settings = AuthSettings(ENVIRONMENT="production")
+    settings = AuthSettings(_env_file=None, AUTH_COOKIE_SECURE=True)
 
     class InjectorStub:
 
@@ -39,7 +39,7 @@ def test_inject_returns_new_callable_each_time():
 
 
 def test_inject_dependency_return_value_has_requested_type():
-    settings = AuthSettings(ENVIRONMENT="production")
+    settings = AuthSettings(_env_file=None, AUTH_COOKIE_SECURE=True)
 
     class InjectorStub:
 

@@ -4,10 +4,11 @@ from app.bootstrap.error_handlers import api_error
 from app.config.auth import AuthSettings
 from app.controllers.auth_dependencies import (get_auth_settings,
                                                get_auth_usecase, get_client_ip,
-                                               get_user_agent, require_csrf,
+                                               get_user_agent,
                                                require_current_session)
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.models.auth_context import AuthenticatedSessionContext
+from app.models.auth_csrf import SessionCsrfStatus
 from app.models.auth_errors import (EmailAlreadyRegisteredError,
                                     InvalidCredentialsError,
                                     RateLimitExceededError, WeakPasswordError)
@@ -61,13 +62,9 @@ def is_secure_request(
     request: Request,
     auth_settings: AuthSettings,
 ) -> bool:
-    if request.url.scheme == "https":
-        return True
-    return auth_settings.ENVIRONMENT not in {
-        "local",
-        "development",
-        "test",
-    }
+    if auth_settings.AUTH_COOKIE_SECURE is not None:
+        return auth_settings.AUTH_COOKIE_SECURE
+    return True
 
 
 def set_session_cookie(
@@ -145,10 +142,14 @@ async def get_csrf(
         csrf_status = await usecase.validate_session_csrf(
             session_token=session_token,
             csrf_token=existing_csrf_token,
-            ip_address=get_client_ip(request),
+            ip_address=get_client_ip(request,
+                                     auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
-        if csrf_status is not False:
+        if csrf_status in {
+                SessionCsrfStatus.VALID,
+                SessionCsrfStatus.NO_SESSION,
+        }:
             return CsrfTokenResponse(csrfToken=existing_csrf_token)
 
     csrf_token = await usecase.issue_csrf_token(
@@ -179,7 +180,6 @@ async def get_me(
     "/register",
     response_model=AuthUserResponse,
     status_code=201,
-    dependencies=[Depends(require_csrf)],
     responses=REGISTER_ERROR_RESPONSES,
 )
 async def register(
@@ -194,7 +194,8 @@ async def register(
             email=payload.email,
             password=payload.password,
             current_session_token=request.cookies.get("session_token"),
-            ip_address=get_client_ip(request),
+            ip_address=get_client_ip(request,
+                                     auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
     except EmailAlreadyRegisteredError as error:
@@ -210,7 +211,8 @@ async def register(
             "Too many register attempts",
             headers={
                 "Retry-After":
-                str(auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
+                str(error.retry_after_seconds
+                    or auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
             },
         ) from error
     except WeakPasswordError as error:
@@ -236,7 +238,6 @@ async def register(
 @router.post(
     "/login",
     response_model=AuthUserResponse,
-    dependencies=[Depends(require_csrf)],
     responses=LOGIN_ERROR_RESPONSES,
 )
 async def login(
@@ -251,7 +252,8 @@ async def login(
             email=payload.email,
             password=payload.password,
             current_session_token=request.cookies.get("session_token"),
-            ip_address=get_client_ip(request),
+            ip_address=get_client_ip(request,
+                                     auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
     except InvalidCredentialsError as error:
@@ -263,7 +265,8 @@ async def login(
             "Too many login attempts",
             headers={
                 "Retry-After":
-                str(auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
+                str(error.retry_after_seconds
+                    or auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
             },
         ) from error
 
@@ -287,7 +290,6 @@ async def login(
 @router.post(
     "/logout",
     status_code=204,
-    dependencies=[Depends(require_csrf)],
     responses=LOGOUT_ERROR_RESPONSES,
 )
 async def logout(
@@ -299,7 +301,8 @@ async def logout(
     secure = is_secure_request(request, auth_settings)
     await usecase.logout(
         request.cookies.get("session_token"),
-        ip_address=get_client_ip(request),
+        ip_address=get_client_ip(request,
+                                 auth_settings.AUTH_TRUSTED_PROXY_IPS),
         user_agent=get_user_agent(request),
     )
     clear_session_cookie(response, secure=secure)

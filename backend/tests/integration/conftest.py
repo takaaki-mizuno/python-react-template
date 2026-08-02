@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import (AsyncEngine, AsyncSession,
 from sqlalchemy.pool import NullPool
 
 from app.bootstrap.create_app import create_app
-from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
+from app.interfaces.libraries.rate_limiter_interface import \
+    LoginRateLimiterInterface
 from tests.integration.helpers import require_test_database_url
 
 
@@ -85,10 +86,11 @@ def client(monkeypatch) -> Iterator[TestClient]:
         "ALEMBIC_DATABASE_URL",
         test_database_url.replace("+asyncpg", ""),
     )
+    monkeypatch.setenv("AUTH_COOKIE_SECURE", "false")
 
     app = create_app()
     with TestClient(app) as test_client:
         try:
             yield test_client
         finally:
-            app.state.injector.get(InMemoryLoginRateLimiter).reset()
+            app.state.injector.get(LoginRateLimiterInterface).reset()

@@ -1,6 +1,8 @@
 from sqlmodel import SQLModel
+from typing_extensions import get_args
 
 import app.models  # noqa: F401
+from app.models.user import User
 
 
 def test_auth_models_are_registered_for_alembic():
@@ -35,3 +37,11 @@ def test_auth_model_metadata_matches_auth_migration_indexes_and_defaults():
         for index in auth_audit_logs.indexes
     }
     assert users.c.is_active.server_default is not None
+
+
+def test_user_password_hash_is_nullable_for_oauth_only_users():
+    users = SQLModel.metadata.tables["users"]
+
+    assert users.c.password_hash.nullable is True
+    assert type(None) in get_args(
+        User.model_fields["password_hash"].annotation)

@@ -2,6 +2,7 @@ from abc import ABCMeta, abstractmethod
 
 from app.models.auth_context import (AuthenticatedSessionContext,
                                      IssuedAuthSession)
+from app.models.auth_csrf import SessionCsrfStatus
 
 
 class AuthUsecaseInterface(metaclass=ABCMeta):
@@ -17,7 +18,7 @@ class AuthUsecaseInterface(metaclass=ABCMeta):
         csrf_token: str,
         ip_address: str | None,
         user_agent: str | None,
-    ) -> bool | None:
+    ) -> SessionCsrfStatus:
         raise NotImplementedError
 
     @abstractmethod

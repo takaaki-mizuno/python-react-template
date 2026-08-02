@@ -11,6 +11,7 @@ from app.controllers.auth_controller import router
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.models.auth_context import (AuthenticatedSessionContext,
                                      IssuedAuthSession)
+from app.models.auth_csrf import SessionCsrfStatus
 from app.models.auth_errors import (EmailAlreadyRegisteredError,
                                     InvalidCredentialsError,
                                     RateLimitExceededError, WeakPasswordError)
@@ -43,10 +44,10 @@ class StubAuthUsecase(AuthUsecaseInterface):
         csrf_token: str,
         ip_address: str | None,
         user_agent: str | None,
-    ) -> bool | None:
+    ) -> SessionCsrfStatus:
         assert session_token == "session-token"
         assert csrf_token == "csrf-token"
-        return True
+        return SessionCsrfStatus.VALID
 
     async def register(
         self,
@@ -137,8 +138,8 @@ def _client_with_stub(usecase: StubAuthUsecase, ) -> TestClient:
     app.dependency_overrides[
         auth_dependencies.get_auth_usecase] = lambda: usecase
     app.dependency_overrides[
-        auth_dependencies.get_auth_settings] = lambda: AuthSettings(ENVIRONMENT
-                                                                    ="local", )
+        auth_dependencies.get_auth_settings] = lambda: AuthSettings(
+            _env_file=None, AUTH_COOKIE_SECURE=False)
     return TestClient(app)
 
 
@@ -241,6 +242,23 @@ def test_register_rate_limit_preserves_retry_after_header():
     assert response.status_code == 429
     assert response.headers["Retry-After"] == "900"
     assert response.json()["error"]["code"] == "REGISTER_RATE_LIMITED"
+
+
+def test_register_rate_limit_uses_error_retry_after_when_present():
+    client = _client_with_stub(StubAuthUsecase(RateLimitExceededError(3600)))
+    _set_csrf_cookie(client)
+
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "email": "user@example.com",
+            "password": "Password123!",
+        },
+        headers=_csrf_headers(),
+    )
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "3600"
 
 
 def test_register_weak_password_returns_error_envelope():
