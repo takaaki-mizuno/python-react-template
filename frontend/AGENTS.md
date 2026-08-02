@@ -72,13 +72,22 @@ npm install -D <pkg>   # devDependencies
 - file-based ルートを採用。`src/routes/` 配下のファイルがそのまま URL になる
 - 型安全な遷移を必ず使う (`<Link to="/...">`)
 - auth を使う route guard は TanStack Router `beforeLoad` で実装し、未ログイン時は `/login` へ redirect する
+- 認証必須 route は `_authenticated` pathless layout 配下へ置き、個別 route ごとに認証 guard を重複実装しない
+- login/register redirect は `src/lib/authRedirect.ts` で internal href として正規化し、遷移時は `href` を使って search/hash を保持する
 
 ## データ取得 (TanStack Query)
 
 - サーバ状態は React Query で管理。`useState` での手動キャッシュは禁止
 - クエリキーは集約管理 (例: `src/lib/queryKeys.ts`)
+- auth query key は `queryKeys.auth.me` の 1 本を正とし、厳格版などの派生 key を増やさない
 - frontend の API 呼び出しは相対 `/api/...` を正とし、same-origin 配信を前提にする
 - dev server では Vite proxy が `/api` を backend origin へ転送する
+
+## API / Auth UI
+
+- API error の画面表示は `src/lib/apiError.ts` の `toUserMessage()` を使い、各画面で `ApiError.body` を直接 parse しない
+- unsafe request は `src/lib/apiClient.ts` を使い、個別 component / route から `/api/auth/csrf` を直接 fetch しない
+- login/register form は `AuthTextField` / `AuthFormShell` / `Button` / `Input` を使い、field の label・autocomplete・aria 紐付けを共通部品へ寄せる
 
 ## スタイル (Tailwind + shadcn/ui)
 

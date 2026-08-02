@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import { createMemoryHistory } from '@tanstack/react-router'
 import {
-  RouterProvider,
-  createMemoryHistory,
-  createRouter,
-} from '@tanstack/react-router'
-import { cleanup, render, screen } from '@testing-library/react'
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
+import { ApiError } from '@/lib/apiError'
+import { createAppRouter } from '@/lib/appRouter'
 import { queryKeys } from '@/lib/queryKeys'
-import { routeTree } from '@/routeTree.gen'
+import { renderWithRouter } from '@/test/renderRouter'
 
 vi.mock('@tanstack/react-devtools', () => ({
   TanStackDevtools: () => null,
@@ -26,7 +30,6 @@ afterEach(() => {
 })
 
 test('未ログインで /app へ来たら /login へ送る', async () => {
-  const queryClient = new QueryClient()
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(
@@ -37,27 +40,12 @@ test('未ログインで /app へ来たら /login へ送る', async () => {
     ),
   )
 
-  const router = createRouter({
-    routeTree,
-    history: createMemoryHistory({ initialEntries: ['/app'] }),
-    context: { queryClient },
-  })
-
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  )
+  renderWithRouter({ initialEntries: ['/app'] })
 
   expect(await screen.findByRole('heading', { name: 'ログイン' })).toBeTruthy()
 })
 
 test('logout 後は cached user を使わず /me を再確認する', async () => {
-  const queryClient = new QueryClient()
-  queryClient.setQueryData(queryKeys.auth.strictMe, {
-    id: '00000000-0000-0000-0000-000000000001',
-    email: 'user@example.com',
-  })
   const fetchMock = vi.fn().mockResolvedValue(
     new Response(JSON.stringify({ detail: 'Unauthorized' }), {
       status: 401,
@@ -66,17 +54,15 @@ test('logout 後は cached user を使わず /me を再確認する', async () =
   )
   vi.stubGlobal('fetch', fetchMock)
 
-  const router = createRouter({
-    routeTree,
-    history: createMemoryHistory({ initialEntries: ['/app'] }),
-    context: { queryClient },
+  renderWithRouter({
+    initialEntries: ['/app'],
+    seed: (queryClient) => {
+      queryClient.setQueryData(queryKeys.auth.me, {
+        id: '00000000-0000-0000-0000-000000000001',
+        email: 'user@example.com',
+      })
+    },
   })
-
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  )
 
   expect(await screen.findByRole('heading', { name: 'ログイン' })).toBeTruthy()
   expect(fetchMock).toHaveBeenCalledWith(
@@ -86,9 +72,6 @@ test('logout 後は cached user を使わず /me を再確認する', async () =
 })
 
 test('/app の 5xx は未ログイン扱いで redirect しない', async () => {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(
@@ -98,14 +81,264 @@ test('/app の 5xx は未ログイン扱いで redirect しない', async () => 
       }),
     ),
   )
-  const router = createRouter({
-    routeTree,
+  const { router } = createAppRouter({
     history: createMemoryHistory({ initialEntries: ['/app'] }),
-    context: { queryClient },
+    queryClientOptions: { queries: { retry: false } },
   })
 
   await router.load()
 
   expect(router.state.location.pathname).toBe('/app')
-  expect(router.state.matches.at(-1)?.status).toBe('error')
+  expect(router.state.matches.some((match) => match.status === 'error')).toBe(
+    true,
+  )
+  renderWithRouter({
+    initialEntries: ['/app'],
+    queryClientOptions: { queries: { retry: false } },
+  })
+  expect(
+    await screen.findByRole('heading', { name: '問題が発生しました' }),
+  ).toBeTruthy()
+  expect(screen.queryByText('Internal Server Error')).toBeNull()
 })
+
+test('Header は guard 直後の auth.me cache があれば /me を二重取得しない', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        id: '00000000-0000-0000-0000-000000000001',
+        email: 'user@example.com',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    ),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+
+  const { router } = renderWithRouter({ initialEntries: ['/app'] })
+
+  expect(await screen.findByRole('heading', { name: 'アプリ' })).toBeTruthy()
+  await waitFor(() => expect(router.state.status).toBe('idle'))
+  await act(async () => {})
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})
+
+test('/app 表示後に query が 401 になると /login へ遷移し auth cache を null にする', async () => {
+  let sessionExpired = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => {
+      if (sessionExpired) {
+        return Promise.resolve(unauthorizedResponse())
+      }
+
+      return Promise.resolve(authUserResponse())
+    }),
+  )
+
+  const { router, queryClient } = renderWithRouter({ initialEntries: ['/app'] })
+
+  expect(await screen.findByRole('heading', { name: 'アプリ' })).toBeTruthy()
+  queryClient.setQueryData(queryKeys.auth.me, {
+    id: '00000000-0000-0000-0000-000000000001',
+    email: 'user@example.com',
+  })
+
+  await queryClient
+    .fetchQuery({
+      queryKey: ['session-expired'],
+      queryFn: () => {
+        sessionExpired = true
+        return Promise.reject(new ApiError(401, null))
+      },
+    })
+    .catch(() => undefined)
+
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/login')
+  })
+  expect(router.state.location.search.redirect).toBe('/app')
+  expect(queryClient.getQueryData(queryKeys.auth.me)).toBeNull()
+})
+
+test('/login 表示中の 401 は redirect loop しない', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
+  )
+
+  const { router, queryClient } = renderWithRouter({
+    initialEntries: ['/login'],
+  })
+
+  expect(await screen.findByRole('heading', { name: 'ログイン' })).toBeTruthy()
+
+  await queryClient
+    .fetchQuery({
+      queryKey: ['login-401'],
+      queryFn: () => Promise.reject(new ApiError(401, null)),
+    })
+    .catch(() => undefined)
+
+  expect(router.state.location.pathname).toBe('/login')
+})
+
+test('CSRF 403 は /forbidden へ遷移しない', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => Promise.resolve(authUserResponse())),
+  )
+
+  const { router, queryClient } = renderWithRouter({ initialEntries: ['/app'] })
+
+  expect(await screen.findByRole('heading', { name: 'アプリ' })).toBeTruthy()
+
+  await queryClient
+    .fetchQuery({
+      queryKey: ['csrf-403'],
+      queryFn: () =>
+        Promise.reject(
+          new ApiError(403, {
+            error: {
+              code: 'CSRF_VALIDATION_FAILED',
+              message: 'CSRF validation failed',
+            },
+          }),
+        ),
+    })
+    .catch(() => undefined)
+
+  expect(router.state.location.pathname).toBe('/app')
+})
+
+test('CSRF 以外の 403 は /forbidden へ遷移する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => Promise.resolve(authUserResponse())),
+  )
+
+  const { router, queryClient } = renderWithRouter({ initialEntries: ['/app'] })
+
+  expect(await screen.findByRole('heading', { name: 'アプリ' })).toBeTruthy()
+
+  await queryClient
+    .fetchQuery({
+      queryKey: ['forbidden-403'],
+      queryFn: () =>
+        Promise.reject(
+          new ApiError(403, {
+            error: { code: 'FORBIDDEN', message: 'Forbidden' },
+          }),
+        ),
+    })
+    .catch(() => undefined)
+
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/forbidden')
+  })
+})
+
+test('mutation の CSRF 以外の 403 は /forbidden へ遷移する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => Promise.resolve(authUserResponse())),
+  )
+
+  const { router } = renderWithRouter({
+    initialEntries: ['/app'],
+    children: <ForbiddenMutationButton />,
+  })
+
+  expect(await screen.findByRole('heading', { name: 'アプリ' })).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'mutation 403' }))
+
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/forbidden')
+  })
+})
+
+test('未定義 route は 404 ErrorState を表示する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
+  )
+
+  renderWithRouter({ initialEntries: ['/missing'] })
+
+  expect(
+    await screen.findByRole('heading', { name: 'ページが見つかりません' }),
+  ).toBeTruthy()
+  expect(screen.getByText('404')).toBeTruthy()
+})
+
+test('/forbidden は 403 ErrorState を表示する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
+  )
+
+  renderWithRouter({ initialEntries: ['/forbidden'] })
+
+  expect(
+    await screen.findByRole('heading', { name: 'アクセスできません' }),
+  ).toBeTruthy()
+  expect(screen.getByText('403')).toBeTruthy()
+})
+
+function ForbiddenMutationButton() {
+  const mutation = useMutation({
+    mutationFn: () =>
+      Promise.reject(
+        new ApiError(403, {
+          error: {
+            code: 'PERMISSION_DENIED',
+            message: 'Permission denied',
+          },
+        }),
+      ),
+  })
+
+  return (
+    <button type="button" onClick={() => mutation.mutate()}>
+      mutation 403
+    </button>
+  )
+}
+
+function authUserResponse() {
+  return new Response(
+    JSON.stringify({
+      id: '00000000-0000-0000-0000-000000000001',
+      email: 'user@example.com',
+    }),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    },
+  )
+}
+
+function unauthorizedResponse() {
+  return new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+    status: 401,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}

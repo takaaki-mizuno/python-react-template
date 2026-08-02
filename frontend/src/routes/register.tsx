@@ -8,20 +8,20 @@ import {
 } from '@tanstack/react-router'
 
 import { AuthFormShell } from '@/components/organisms/Auth/AuthFormShell'
-import LoginForm from '@/components/organisms/Auth/LoginForm'
+import RegisterForm from '@/components/organisms/Auth/RegisterForm'
 import { toUserMessage } from '@/lib/apiError'
-import { currentUserQueryOptions, loginWithPassword } from '@/lib/authApi'
+import { currentUserQueryOptions, registerWithPassword } from '@/lib/authApi'
 import { normalizeRedirectHref } from '@/lib/authRedirect'
 import { queryKeys } from '@/lib/queryKeys'
 
-function LoginPage() {
+function RegisterPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { redirect: redirectHref } = Route.useSearch()
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  const login = useMutation({
-    mutationFn: loginWithPassword,
+  const register = useMutation({
+    mutationFn: registerWithPassword,
     onSuccess: async (user) => {
       queryClient.setQueryData(queryKeys.auth.me, user)
       await navigate({ href: redirectHref })
@@ -30,43 +30,44 @@ function LoginPage() {
       setErrorMessage(
         toUserMessage(error, {
           code: {
-            INVALID_CREDENTIALS:
-              'メールアドレスまたはパスワードが正しくありません。',
-            LOGIN_RATE_LIMITED:
-              'ログイン試行回数が多すぎます。時間をおいて再度お試しください。',
+            EMAIL_ALREADY_REGISTERED:
+              'このメールアドレスはすでに登録されています。ログインしてください。',
+            REGISTER_RATE_LIMITED:
+              '登録試行回数が多すぎます。時間をおいて再度お試しください。',
+            WEAK_PASSWORD: 'パスワードの条件を確認してください。',
           },
           status: { 422: '入力内容を確認してください。' },
-          fallback: 'ログインに失敗しました。時間をおいて再度お試しください。',
+          fallback: '登録に失敗しました。時間をおいて再度お試しください。',
         }),
       )
     },
   })
 
   return (
-    <AuthFormShell title="ログイン">
-      <LoginForm
+    <AuthFormShell title="新規登録">
+      <RegisterForm
         errorMessage={errorMessage}
-        isPending={login.isPending}
+        isPending={register.isPending}
         onSubmit={(values) => {
           setErrorMessage(null)
-          login.mutate(values)
+          register.mutate(values)
         }}
       />
       <p className="text-sm text-landing-muted">
-        アカウントをお持ちでない方は{' '}
+        すでにアカウントをお持ちの方は{' '}
         <Link
           className="font-medium text-landing-accent underline-offset-4 hover:underline"
           search={{ redirect: redirectHref }}
-          to="/register"
+          to="/login"
         >
-          アカウントを作成
+          ログイン
         </Link>
       </p>
     </AuthFormShell>
   )
 }
 
-export const Route = createFileRoute('/login')({
+export const Route = createFileRoute('/register')({
   validateSearch: (search: Record<string, unknown>) => {
     return {
       redirect: normalizeRedirectHref(search.redirect),
@@ -84,5 +85,5 @@ export const Route = createFileRoute('/login')({
       throw redirect({ href: search.redirect })
     }
   },
-  component: LoginPage,
+  component: RegisterPage,
 })

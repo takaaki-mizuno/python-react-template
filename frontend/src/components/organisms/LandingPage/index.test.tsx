@@ -1,15 +1,8 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import {
-  RouterProvider,
-  createMemoryHistory,
-  createRouter,
-} from '@tanstack/react-router'
+import { screen } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 
-import { routeTree } from '@/routeTree.gen'
 import {
   finalSection,
   heroContent,
@@ -17,6 +10,7 @@ import {
   landingSectionIds,
   sectionHeadingIds,
 } from '@/routes/index.data'
+import { renderWithRouter } from '@/test/renderRouter'
 
 vi.mock('@tanstack/react-devtools', () => ({
   TanStackDevtools: () => null,
@@ -37,20 +31,7 @@ describe('LandingPage route', () => {
         }),
       ),
     )
-    const queryClient = new QueryClient()
-    const router = createRouter({
-      routeTree,
-      history: createMemoryHistory({
-        initialEntries: ['/'],
-      }),
-      context: { queryClient },
-    })
-
-    const { container } = render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
-    )
+    const { container } = renderWithRouter()
 
     await screen.findByText('FastAPI と React を、すぐ動かせる実用的なモノレポ')
 

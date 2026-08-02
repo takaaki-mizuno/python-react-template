@@ -10,11 +10,8 @@ export function useAuthSession() {
   const logout = useMutation({
     mutationFn: logoutCurrentSession,
     onSuccess: () => {
+      queryClient.clear()
       queryClient.setQueryData(queryKeys.auth.me, null)
-      queryClient.removeQueries({
-        queryKey: queryKeys.auth.strictMe,
-        exact: true,
-      })
     },
   })
 

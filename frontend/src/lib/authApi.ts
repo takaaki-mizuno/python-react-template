@@ -14,13 +14,18 @@ export type LoginPayload = {
   password: string
 }
 
-export async function fetchCurrentUserStrict(): Promise<AuthUser> {
-  return apiClient.get<AuthUser>('/api/auth/me')
+export type RegisterPayload = {
+  email: string
+  password: string
 }
 
-export async function fetchCurrentUserOrNull(): Promise<AuthUser | null> {
+export async function fetchCurrentUserOrNull(options?: {
+  signal?: AbortSignal
+}): Promise<AuthUser | null> {
   try {
-    return await fetchCurrentUserStrict()
+    return await apiClient.get<AuthUser>('/api/auth/me', {
+      signal: options?.signal,
+    })
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       return null
@@ -32,7 +37,13 @@ export async function fetchCurrentUserOrNull(): Promise<AuthUser | null> {
 export async function loginWithPassword(
   payload: LoginPayload,
 ): Promise<AuthUser> {
-  return apiClient.post<AuthUser>('/api/auth/login', payload)
+  return apiClient.post<AuthUser>('/api/auth/login', { body: payload })
+}
+
+export async function registerWithPassword(
+  payload: RegisterPayload,
+): Promise<AuthUser> {
+  return apiClient.post<AuthUser>('/api/auth/register', { body: payload })
 }
 
 export async function logoutCurrentSession(): Promise<void> {
@@ -42,15 +53,9 @@ export async function logoutCurrentSession(): Promise<void> {
 export function currentUserQueryOptions() {
   return queryOptions({
     queryKey: queryKeys.auth.me,
-    queryFn: fetchCurrentUserOrNull,
+    queryFn: ({ signal }) => fetchCurrentUserOrNull({ signal }),
     retry: false,
-  })
-}
-
-export function currentUserStrictQueryOptions() {
-  return queryOptions({
-    queryKey: queryKeys.auth.strictMe,
-    queryFn: fetchCurrentUserStrict,
-    retry: false,
+    staleTime: 0,
+    refetchOnMount: false,
   })
 }

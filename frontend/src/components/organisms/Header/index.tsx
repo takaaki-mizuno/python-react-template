@@ -12,12 +12,21 @@ export default function Header() {
   })
   const { user, logout } = useAuthSession()
   const [isOpen, setIsOpen] = useState(false)
+  const [logoutError, setLogoutError] = useState<string | null>(null)
   const menuId = 'site-menu'
   const isLandingPage = pathname === '/'
 
   const handleLogout = async () => {
-    await logout.mutateAsync()
-    await navigate({ to: '/login', search: { redirect: '/app' } })
+    setLogoutError(null)
+
+    try {
+      await logout.mutateAsync()
+      await navigate({ to: '/login', search: { redirect: '/app' } })
+    } catch {
+      setLogoutError(
+        'ログアウトに失敗しました。時間をおいて再度お試しください。',
+      )
+    }
   }
 
   useEffect(() => {
@@ -73,20 +82,35 @@ export default function Header() {
                 </span>
                 <button
                   className="site-nav-link"
+                  disabled={logout.isPending}
                   onClick={handleLogout}
                   type="button"
                 >
                   ログアウト
                 </button>
+                {logoutError ? (
+                  <p className="text-sm text-red-600" role="alert">
+                    {logoutError}
+                  </p>
+                ) : null}
               </div>
             ) : (
-              <Link
-                className="site-nav-link"
-                search={{ redirect: '/app' }}
-                to="/login"
-              >
-                ログイン
-              </Link>
+              <>
+                <Link
+                  className="site-nav-link"
+                  search={{ redirect: '/app' }}
+                  to="/login"
+                >
+                  ログイン
+                </Link>
+                <Link
+                  className="site-nav-link"
+                  search={{ redirect: '/app' }}
+                  to="/register"
+                >
+                  新規登録
+                </Link>
+              </>
             )}
 
             {isLandingPage ? (
