@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from logging import getLogger
 
 import pytest
@@ -18,6 +19,22 @@ class AllowingRateLimiter:
         return True
 
 
+class UnitOfWorkStub:
+
+    def __init__(self) -> None:
+        self.in_transaction = False
+        self.transaction_entries = 0
+
+    @asynccontextmanager
+    async def transaction(self):
+        self.transaction_entries += 1
+        self.in_transaction = True
+        try:
+            yield
+        finally:
+            self.in_transaction = False
+
+
 class AuthRepositoryStub:
 
     def __init__(self, user: User | None):
@@ -26,10 +43,6 @@ class AuthRepositoryStub:
         self.audit_logs = []
         self.recorded_login_user_ids = []
         self.created_users: list[User] = []
-
-    @asynccontextmanager
-    async def transaction(self):
-        yield
 
     async def create_user(self, email: str, password_hash: str) -> User:
         user = User(email=email, password_hash=password_hash, is_active=True)
@@ -79,9 +92,13 @@ def test_dummy_password_hash_is_valid_argon2_with_current_work_factor():
     assert DUMMY_PASSWORD_HASH.split("$")[3] == current_hash.split("$")[3]
 
 
-def _usecase(repository: AuthRepositoryStub) -> AuthUsecase:
+def _usecase(
+    repository: AuthRepositoryStub,
+    unit_of_work: UnitOfWorkStub | None = None,
+) -> AuthUsecase:
     return AuthUsecase(
         auth_repository=repository,
+        unit_of_work=unit_of_work or UnitOfWorkStub(),
         auth_rate_limiter=AllowingRateLimiter(),
         auth_settings=AuthSettings(),
         logger=getLogger(__name__),
@@ -151,33 +168,141 @@ async def test_login_records_last_login_before_creating_session(monkeypatch):
                 is_active=True)
     repository = AuthRepositoryStub(user=user)
 
-    logged_in_user, _session, _session_token, _csrf_token = await _usecase(
-        repository).login(
-            email="active@example.com",
-            password="Password123!",
-            current_session_token=None,
-            ip_address="127.0.0.1",
-            user_agent="pytest",
-        )
+    issued_session = await _usecase(repository).login(
+        email="active@example.com",
+        password="Password123!",
+        current_session_token=None,
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
 
     assert repository.recorded_login_user_ids == [user.id]
-    assert logged_in_user.last_login_at is not None
-    assert logged_in_user.updated_at == logged_in_user.last_login_at
+    assert issued_session.user.last_login_at is not None
+    assert issued_session.user.updated_at == issued_session.user.last_login_at
 
 
 @pytest.mark.asyncio
 async def test_register_records_last_login_for_issued_session():
     repository = AuthRepositoryStub(user=None)
 
-    registered_user, _session, _session_token, _csrf_token = await _usecase(
-        repository).register(
-            email="new@example.com",
-            password="Password123!",
-            current_session_token=None,
-            ip_address="127.0.0.1",
-            user_agent="pytest",
-        )
+    issued_session = await _usecase(repository).register(
+        email="new@example.com",
+        password="Password123!",
+        current_session_token=None,
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
 
-    assert repository.created_users == [registered_user]
-    assert repository.recorded_login_user_ids == [registered_user.id]
-    assert registered_user.last_login_at is not None
+    assert repository.created_users == [issued_session.user]
+    assert repository.recorded_login_user_ids == [issued_session.user.id]
+    assert issued_session.user.last_login_at is not None
+
+
+class TransactionRecordingRepository(AuthRepositoryStub):
+
+    def __init__(
+        self,
+        unit_of_work: UnitOfWorkStub,
+        user: User | None,
+        active_session: AuthSession | None,
+    ) -> None:
+        super().__init__(user=user)
+        self._unit_of_work = unit_of_work
+        self.active_session = active_session
+        self.operations: list[tuple[str, bool]] = []
+
+    async def find_active_session_by_token_hash(self, _token_hash: str):
+        self.operations.append(
+            ("find_active_session", self._unit_of_work.in_transaction))
+        return self.active_session
+
+    async def find_user_by_id(self, _user_id):
+        self.operations.append(
+            ("find_user_by_id", self._unit_of_work.in_transaction))
+        return self.user
+
+    async def find_session_by_token_hash(self, _token_hash: str):
+        self.operations.append(
+            ("find_session_by_token_hash", self._unit_of_work.in_transaction))
+        return None
+
+    async def touch_session(self, _session_id, last_seen_at, expires_at):
+        self.operations.append(
+            ("touch_session", self._unit_of_work.in_transaction))
+        self.active_session.last_seen_at = last_seen_at
+        self.active_session.expires_at = expires_at
+        return self.active_session
+
+
+@pytest.mark.asyncio
+async def test_authenticate_session_uses_one_unit_of_work_transaction():
+    unit_of_work = UnitOfWorkStub()
+    user = User(
+        email="active@example.com",
+        password_hash="hashed",
+        is_active=True,
+    )
+    active_session = AuthSession(
+        user_id=user.id,
+        session_token_hash="session-token-hash",
+        csrf_token_hash="csrf-token-hash",
+        created_at=auth_usecase_module.utcnow(),
+        last_seen_at=auth_usecase_module.utcnow(),
+        expires_at=auth_usecase_module.utcnow() + timedelta(minutes=10),
+    )
+    repository = TransactionRecordingRepository(
+        unit_of_work=unit_of_work,
+        user=user,
+        active_session=active_session,
+    )
+
+    auth_context = await _usecase(repository,
+                                  unit_of_work).authenticate_session(
+                                      session_token="session-token",
+                                      ip_address="127.0.0.1",
+                                      user_agent="pytest",
+                                  )
+
+    assert auth_context is not None
+    assert repository.operations == [
+        ("find_active_session", True),
+        ("find_user_by_id", True),
+        ("touch_session", True),
+    ]
+
+    missing_token_repository = TransactionRecordingRepository(
+        unit_of_work=unit_of_work,
+        user=user,
+        active_session=active_session,
+    )
+    missing_token_context = await _usecase(
+        missing_token_repository,
+        unit_of_work,
+    ).authenticate_session(
+        session_token=None,
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert missing_token_context is None
+    assert missing_token_repository.operations == []
+
+    rejected_repository = TransactionRecordingRepository(
+        unit_of_work=unit_of_work,
+        user=user,
+        active_session=None,
+    )
+    rejected_context = await _usecase(
+        rejected_repository,
+        unit_of_work,
+    ).authenticate_session(
+        session_token="unknown-session-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert rejected_context is None
+    assert rejected_repository.operations == [
+        ("find_active_session", True),
+        ("find_session_by_token_hash", True),
+    ]

@@ -72,7 +72,7 @@ def test_get_client_ip_discards_invalid_asgi_client_address():
     assert auth_dependencies.get_client_ip(request) is None
 
 
-def test_get_request_auth_settings_returns_injector_instance():
+def test_get_auth_settings_alias_returns_injector_instance():
     settings = AuthSettings(ENVIRONMENT="production")
 
     class InjectorStub:
@@ -93,7 +93,7 @@ def test_get_request_auth_settings_returns_injector_instance():
         "headers": [],
     })
 
-    assert auth_dependencies.get_request_auth_settings(request) is settings
+    assert auth_dependencies.get_auth_settings(request) is settings
 
 
 @pytest.mark.asyncio
@@ -163,6 +163,8 @@ async def test_require_csrf_rejects_session_when_db_bound_token_is_invalid():
                 "csrf-token",
                 session_token="session-token",
                 app=app,
-            ))
+            ),
+            usecase=RejectingUsecase(),
+        )
 
     assert error.value.status_code == 403

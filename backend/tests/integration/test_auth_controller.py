@@ -10,12 +10,17 @@ from app.bootstrap.create_app import create_app
 from app.config.auth import AuthSettings
 from app.interfaces.services.auth_repository_interface import \
     AuthRepositoryInterface
+from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.libraries.password_hasher import hash_password
 from app.libraries.session_tokens import hash_token
 from app.models.auth_event_type import AuthEventType
 from app.models.user import User
 
 pytestmark = pytest.mark.integration
+
+
+def assert_error_code(response, code: str) -> None:
+    assert response.json()["error"]["code"] == code
 
 
 def test_auth_cookie_security_uses_startup_settings(monkeypatch):
@@ -40,7 +45,7 @@ def test_get_me_returns_401_without_session(client):
     response = client.get("/api/auth/me")
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Unauthorized"
+    assert_error_code(response, "UNAUTHORIZED")
 
 
 def test_auth_get_responses_disable_caching(client):
@@ -171,7 +176,7 @@ def test_register_duplicate_email_returns_409(client):
     )
 
     assert duplicate_response.status_code == 409
-    assert duplicate_response.json()["detail"] == "Email already registered"
+    assert_error_code(duplicate_response, "EMAIL_ALREADY_REGISTERED")
 
 
 def test_register_with_weak_password_returns_422(client):
@@ -211,7 +216,7 @@ def test_login_with_invalid_password_returns_generic_401(client):
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Unauthorized"
+    assert_error_code(response, "INVALID_CREDENTIALS")
 
 
 def test_login_with_unregistered_email_returns_same_generic_401(client):
@@ -227,7 +232,7 @@ def test_login_with_unregistered_email_returns_same_generic_401(client):
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Unauthorized"
+    assert_error_code(response, "INVALID_CREDENTIALS")
 
 
 @pytest.mark.asyncio
@@ -285,6 +290,7 @@ def test_login_rotates_existing_session_and_revokes_previous_one(client):
         cookies={"session_token": original_session_token},
     )
     assert old_session_response.status_code == 401
+    assert_error_code(old_session_response, "UNAUTHORIZED")
 
 
 def test_logout_clears_cookie_and_rejects_subsequent_me(client):
@@ -310,6 +316,7 @@ def test_logout_clears_cookie_and_rejects_subsequent_me(client):
 
     me_response = client.get("/api/auth/me")
     assert me_response.status_code == 401
+    assert_error_code(me_response, "UNAUTHORIZED")
 
 
 def test_logout_rejects_csrf_token_not_bound_to_current_session(client):
@@ -333,6 +340,7 @@ def test_logout_rejects_csrf_token_not_bound_to_current_session(client):
     )
 
     assert response.status_code == 403
+    assert_error_code(response, "CSRF_VALIDATION_FAILED")
 
 
 def test_register_requires_matching_csrf_header(client):
@@ -348,6 +356,7 @@ def test_register_requires_matching_csrf_header(client):
     )
 
     assert response.status_code == 403
+    assert_error_code(response, "CSRF_VALIDATION_FAILED")
 
 
 def test_register_requires_csrf_cookie_and_header(client):
@@ -371,7 +380,9 @@ def test_register_requires_csrf_cookie_and_header(client):
     )
 
     assert missing_header_response.status_code == 403
+    assert_error_code(missing_header_response, "CSRF_VALIDATION_FAILED")
     assert missing_cookie_response.status_code == 403
+    assert_error_code(missing_cookie_response, "CSRF_VALIDATION_FAILED")
 
 
 def test_register_rate_limit_returns_429(client):
@@ -397,6 +408,8 @@ def test_register_rate_limit_returns_429(client):
     )
 
     assert blocked_response.status_code == 429
+    assert blocked_response.headers["Retry-After"] == "900"
+    assert_error_code(blocked_response, "REGISTER_RATE_LIMITED")
 
 
 def test_register_and_login_share_rate_limit_bucket(client):
@@ -421,6 +434,8 @@ def test_register_and_login_share_rate_limit_bucket(client):
     )
 
     assert blocked_response.status_code == 429
+    assert blocked_response.headers["Retry-After"] == "900"
+    assert_error_code(blocked_response, "LOGIN_RATE_LIMITED")
 
 
 def test_login_rate_limit_returns_429(client):
@@ -446,6 +461,8 @@ def test_login_rate_limit_returns_429(client):
     )
 
     assert blocked_response.status_code == 429
+    assert blocked_response.headers["Retry-After"] == "900"
+    assert_error_code(blocked_response, "LOGIN_RATE_LIMITED")
 
 
 @pytest.mark.asyncio
@@ -484,6 +501,7 @@ async def test_me_rejects_expired_session(client, async_session):
         """))
 
     assert response.status_code == 401
+    assert_error_code(response, "UNAUTHORIZED")
     assert rejected_audit_count == 1
 
 
@@ -523,6 +541,7 @@ async def test_me_rejects_revoked_session(client, async_session):
         """))
 
     assert response.status_code == 401
+    assert_error_code(response, "UNAUTHORIZED")
     assert rejected_audit_count == 1
 
 
@@ -736,16 +755,17 @@ async def test_concurrent_repository_transactions_are_isolated(
     async_session,
 ):
     repository = client.app.state.injector.get(AuthRepositoryInterface)
+    unit_of_work = client.app.state.injector.get(UnitOfWorkInterface)
 
     async def create_committed_user():
-        async with repository.transaction():
+        async with unit_of_work.transaction():
             await repository.create_user(
                 "committed@example.com",
                 "committed-password-hash",
             )
 
     async def create_rolled_back_user():
-        async with repository.transaction():
+        async with unit_of_work.transaction():
             await repository.create_user(
                 "rolled-back@example.com",
                 "rolled-back-password-hash",

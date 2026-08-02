@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 API_PREFIX = "/api"
 STATIC_DIRECTORY = Path(__file__).resolve().parents[2] / "static"
 _STATIC_API_PREFIX = API_PREFIX.strip("/").lower()
+_RESERVED_BACKEND_PATHS = {"docs", "redoc", "openapi.json"}
 _STATIC_ASSET_EXTENSIONS = {
     ".avif",
     ".css",
@@ -45,7 +46,7 @@ _STATIC_ASSET_EXTENSIONS = {
 class SPAStaticFiles(StaticFiles):
 
     async def get_response(self, path: str, scope: Scope) -> Response:
-        if _is_api_path(path):
+        if _is_api_path(path) or _is_reserved_backend_path(path):
             raise HTTPException(status_code=404)
         try:
             return await super().get_response(path, scope)
@@ -87,6 +88,10 @@ def _is_api_path(path: str) -> bool:
     normalized_path = path.strip("/").lower()
     return (normalized_path == _STATIC_API_PREFIX
             or normalized_path.startswith(f"{_STATIC_API_PREFIX}/"))
+
+
+def _is_reserved_backend_path(path: str) -> bool:
+    return path.strip("/").lower() in _RESERVED_BACKEND_PATHS
 
 
 def _is_spa_navigation(path: str, scope: Scope) -> bool:

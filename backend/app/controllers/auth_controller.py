@@ -1,19 +1,60 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 
+from app.bootstrap.error_handlers import api_error
 from app.config.auth import AuthSettings
-from app.controllers.auth_dependencies import (get_client_ip,
-                                               get_request_auth_settings,
+from app.controllers.auth_dependencies import (get_auth_settings,
+                                               get_auth_usecase, get_client_ip,
                                                get_user_agent, require_csrf,
                                                require_current_session)
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_errors import (EmailAlreadyRegisteredError,
                                     InvalidCredentialsError,
                                     RateLimitExceededError, WeakPasswordError)
 from app.models.auth_schemas import (AuthUserResponse, CsrfTokenResponse,
                                      LoginRequest, RegisterRequest)
-from app.usecases.auth_usecase import AuthenticatedSessionContext
+from app.models.error import ErrorResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+ME_ERROR_RESPONSES = {
+    401: {
+        "model": ErrorResponse
+    },
+}
+REGISTER_ERROR_RESPONSES = {
+    403: {
+        "model": ErrorResponse
+    },
+    409: {
+        "model": ErrorResponse
+    },
+    422: {
+        "model": ErrorResponse
+    },
+    429: {
+        "model": ErrorResponse
+    },
+}
+LOGIN_ERROR_RESPONSES = {
+    401: {
+        "model": ErrorResponse
+    },
+    403: {
+        "model": ErrorResponse
+    },
+    422: {
+        "model": ErrorResponse
+    },
+    429: {
+        "model": ErrorResponse
+    },
+}
+LOGOUT_ERROR_RESPONSES = {
+    403: {
+        "model": ErrorResponse
+    },
+}
 
 
 def is_secure_request(
@@ -91,7 +132,8 @@ def clear_csrf_cookie(response: Response, secure: bool) -> None:
 async def get_csrf(
     request: Request,
     response: Response,
-    auth_settings: AuthSettings = Depends(get_request_auth_settings),
+    auth_settings: AuthSettings = Depends(get_auth_settings),
+    usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
 ) -> CsrfTokenResponse:
     response.headers["Cache-Control"] = "no-store"
     existing_csrf_token = request.cookies.get("csrf_token")
@@ -100,7 +142,6 @@ async def get_csrf(
         if not session_token:
             return CsrfTokenResponse(csrfToken=existing_csrf_token)
 
-        usecase = request.app.state.injector.get(AuthUsecaseInterface)
         csrf_status = await usecase.validate_session_csrf(
             session_token=session_token,
             csrf_token=existing_csrf_token,
@@ -110,7 +151,6 @@ async def get_csrf(
         if csrf_status is not False:
             return CsrfTokenResponse(csrfToken=existing_csrf_token)
 
-    usecase = request.app.state.injector.get(AuthUsecaseInterface)
     csrf_token = await usecase.issue_csrf_token(
         session_token=request.cookies.get("session_token"), )
     set_csrf_cookie(
@@ -122,7 +162,9 @@ async def get_csrf(
     return CsrfTokenResponse(csrfToken=csrf_token)
 
 
-@router.get("/me", response_model=AuthUserResponse)
+@router.get("/me",
+            response_model=AuthUserResponse,
+            responses=ME_ERROR_RESPONSES)
 async def get_me(
     response: Response,
     auth_context: AuthenticatedSessionContext = Depends(
@@ -138,16 +180,17 @@ async def get_me(
     response_model=AuthUserResponse,
     status_code=201,
     dependencies=[Depends(require_csrf)],
+    responses=REGISTER_ERROR_RESPONSES,
 )
 async def register(
     payload: RegisterRequest,
     request: Request,
     response: Response,
-    auth_settings: AuthSettings = Depends(get_request_auth_settings),
+    auth_settings: AuthSettings = Depends(get_auth_settings),
+    usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
 ) -> AuthUserResponse:
-    usecase = request.app.state.injector.get(AuthUsecaseInterface)
     try:
-        user, _session, session_token, csrf_token = await usecase.register(
+        issued_session = await usecase.register(
             email=payload.email,
             password=payload.password,
             current_session_token=request.cookies.get("session_token"),
@@ -155,50 +198,56 @@ async def register(
             user_agent=get_user_agent(request),
         )
     except EmailAlreadyRegisteredError as error:
-        raise HTTPException(status_code=409,
-                            detail="Email already registered") from error
+        raise api_error(
+            409,
+            "EMAIL_ALREADY_REGISTERED",
+            "Email already registered",
+        ) from error
     except RateLimitExceededError as error:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many register attempts",
+        raise api_error(
+            429,
+            "REGISTER_RATE_LIMITED",
+            "Too many register attempts",
             headers={
                 "Retry-After":
                 str(auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
             },
         ) from error
     except WeakPasswordError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        raise api_error(422, "WEAK_PASSWORD", str(error)) from error
 
     secure = is_secure_request(request, auth_settings)
     set_session_cookie(
         response,
-        session_token,
+        issued_session.session_token,
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
     set_csrf_cookie(
         response,
-        csrf_token,
+        issued_session.csrf_token,
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
-    return AuthUserResponse(id=user.id, email=user.email)
+    return AuthUserResponse(id=issued_session.user.id,
+                            email=issued_session.user.email)
 
 
 @router.post(
     "/login",
     response_model=AuthUserResponse,
     dependencies=[Depends(require_csrf)],
+    responses=LOGIN_ERROR_RESPONSES,
 )
 async def login(
     payload: LoginRequest,
     request: Request,
     response: Response,
-    auth_settings: AuthSettings = Depends(get_request_auth_settings),
+    auth_settings: AuthSettings = Depends(get_auth_settings),
+    usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
 ) -> AuthUserResponse:
-    usecase = request.app.state.injector.get(AuthUsecaseInterface)
     try:
-        user, _session, session_token, csrf_token = await usecase.login(
+        issued_session = await usecase.login(
             email=payload.email,
             password=payload.password,
             current_session_token=request.cookies.get("session_token"),
@@ -206,11 +255,12 @@ async def login(
             user_agent=get_user_agent(request),
         )
     except InvalidCredentialsError as error:
-        raise HTTPException(status_code=401, detail="Unauthorized") from error
+        raise api_error(401, "INVALID_CREDENTIALS", "Unauthorized") from error
     except RateLimitExceededError as error:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many login attempts",
+        raise api_error(
+            429,
+            "LOGIN_RATE_LIMITED",
+            "Too many login attempts",
             headers={
                 "Retry-After":
                 str(auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
@@ -220,27 +270,33 @@ async def login(
     secure = is_secure_request(request, auth_settings)
     set_session_cookie(
         response,
-        session_token,
+        issued_session.session_token,
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
     set_csrf_cookie(
         response,
-        csrf_token,
+        issued_session.csrf_token,
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
-    return AuthUserResponse(id=user.id, email=user.email)
+    return AuthUserResponse(id=issued_session.user.id,
+                            email=issued_session.user.email)
 
 
-@router.post("/logout", status_code=204, dependencies=[Depends(require_csrf)])
+@router.post(
+    "/logout",
+    status_code=204,
+    dependencies=[Depends(require_csrf)],
+    responses=LOGOUT_ERROR_RESPONSES,
+)
 async def logout(
-    request: Request,
-    response: Response,
-    auth_settings: AuthSettings = Depends(get_request_auth_settings),
+        request: Request,
+        response: Response,
+        auth_settings: AuthSettings = Depends(get_auth_settings),
+        usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
 ) -> Response:
     secure = is_secure_request(request, auth_settings)
-    usecase = request.app.state.injector.get(AuthUsecaseInterface)
     await usecase.logout(
         request.cookies.get("session_token"),
         ip_address=get_client_ip(request),

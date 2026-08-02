@@ -1,5 +1,8 @@
 from abc import ABCMeta, abstractmethod
 
+from app.models.auth_context import (AuthenticatedSessionContext,
+                                     IssuedAuthSession)
+
 
 class AuthUsecaseInterface(metaclass=ABCMeta):
 
@@ -25,7 +28,7 @@ class AuthUsecaseInterface(metaclass=ABCMeta):
         current_session_token: str | None,
         ip_address: str | None,
         user_agent: str | None,
-    ):
+    ) -> IssuedAuthSession:
         raise NotImplementedError
 
     @abstractmethod
@@ -36,7 +39,7 @@ class AuthUsecaseInterface(metaclass=ABCMeta):
         current_session_token: str | None,
         ip_address: str | None,
         user_agent: str | None,
-    ):
+    ) -> IssuedAuthSession:
         raise NotImplementedError
 
     @abstractmethod
@@ -45,7 +48,7 @@ class AuthUsecaseInterface(metaclass=ABCMeta):
         session_token: str | None,
         ip_address: str | None,
         user_agent: str | None,
-    ):
+    ) -> AuthenticatedSessionContext | None:
         raise NotImplementedError
 
     @abstractmethod

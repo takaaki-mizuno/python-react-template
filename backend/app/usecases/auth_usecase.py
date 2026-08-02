@@ -1,11 +1,13 @@
 import secrets
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from logging import Logger
+
+from injector import inject
 
 from app.config.auth import AuthSettings
 from app.interfaces.services.auth_repository_interface import \
     AuthRepositoryInterface
+from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
 from app.libraries.password_hasher import (hash_password,
@@ -13,6 +15,8 @@ from app.libraries.password_hasher import (hash_password,
                                            verify_password)
 from app.libraries.session_tokens import generate_token, hash_token
 from app.models.auth_audit_log import AuthAuditLog
+from app.models.auth_context import (AuthenticatedSessionContext,
+                                     IssuedAuthSession)
 from app.models.auth_errors import (EmailAlreadyRegisteredError,
                                     InvalidCredentialsError,
                                     RateLimitExceededError, WeakPasswordError)
@@ -28,22 +32,19 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-@dataclass(slots=True)
-class AuthenticatedSessionContext:
-    user: User
-    session: AuthSession
-
-
 class AuthUsecase(AuthUsecaseInterface):
 
+    @inject
     def __init__(
         self,
         auth_repository: AuthRepositoryInterface,
+        unit_of_work: UnitOfWorkInterface,
         auth_rate_limiter: InMemoryLoginRateLimiter,
         auth_settings: AuthSettings,
         logger: Logger,
-    ):
+    ) -> IssuedAuthSession:
         self._auth_repository = auth_repository
+        self._unit_of_work = unit_of_work
         self._auth_rate_limiter = auth_rate_limiter
         self._auth_settings = auth_settings
         self._logger = logger
@@ -184,7 +185,7 @@ class AuthUsecase(AuthUsecaseInterface):
             raise EmailAlreadyRegisteredError
 
         try:
-            async with self._auth_repository.transaction():
+            async with self._unit_of_work.transaction():
                 user = await self._auth_repository.create_user(
                     normalized_email,
                     hash_password(password),
@@ -216,7 +217,12 @@ class AuthUsecase(AuthUsecaseInterface):
                     user_agent=user_agent,
                 ))
             raise
-        return user, session, session_token, csrf_token
+        return IssuedAuthSession(
+            user=user,
+            session=session,
+            session_token=session_token,
+            csrf_token=csrf_token,
+        )
 
     async def login(
         self,
@@ -225,7 +231,7 @@ class AuthUsecase(AuthUsecaseInterface):
         current_session_token: str | None,
         ip_address: str | None,
         user_agent: str | None,
-    ):
+    ) -> IssuedAuthSession:
         normalized_email = email.strip().lower()
         if not self._auth_rate_limiter.allow(ip_address or "unknown",
                                              normalized_email):
@@ -253,7 +259,7 @@ class AuthUsecase(AuthUsecaseInterface):
                 ))
             raise InvalidCredentialsError
 
-        async with self._auth_repository.transaction():
+        async with self._unit_of_work.transaction():
             login_at = utcnow()
             user = await self._auth_repository.record_user_login(
                 user.id, login_at)
@@ -271,7 +277,12 @@ class AuthUsecase(AuthUsecaseInterface):
                     ip_address=ip_address,
                     user_agent=user_agent,
                 ))
-        return user, session, session_token, csrf_token
+        return IssuedAuthSession(
+            user=user,
+            session=session,
+            session_token=session_token,
+            csrf_token=csrf_token,
+        )
 
     async def authenticate_session(
         self,
@@ -283,31 +294,32 @@ class AuthUsecase(AuthUsecaseInterface):
             return None
 
         session_token_hash = hash_token(session_token)
-        auth_session = await self._auth_repository.find_active_session_by_token_hash(
-            session_token_hash)
-        if not auth_session:
-            await self._audit_known_rejected_session(
-                session_token_hash,
-                ip_address,
-                user_agent,
+        async with self._unit_of_work.transaction():
+            auth_session = await self._auth_repository.find_active_session_by_token_hash(
+                session_token_hash)
+            if not auth_session:
+                await self._audit_known_rejected_session(
+                    session_token_hash,
+                    ip_address,
+                    user_agent,
+                )
+                return None
+
+            user = await self._auth_repository.find_user_by_id(
+                auth_session.user_id)
+            if not user or not user.is_active:
+                await self._auth_repository.revoke_session(auth_session.id)
+                return None
+
+            now = utcnow()
+            refreshed_session = await self._auth_repository.touch_session(
+                auth_session.id,
+                last_seen_at=now,
+                expires_at=self._calculate_session_expiry(
+                    auth_session.created_at, now),
             )
-            return None
-
-        user = await self._auth_repository.find_user_by_id(auth_session.user_id
-                                                           )
-        if not user or not user.is_active:
-            await self._auth_repository.revoke_session(auth_session.id)
-            return None
-
-        now = utcnow()
-        refreshed_session = await self._auth_repository.touch_session(
-            auth_session.id,
-            last_seen_at=now,
-            expires_at=self._calculate_session_expiry(auth_session.created_at,
-                                                      now),
-        )
-        return AuthenticatedSessionContext(user=user,
-                                           session=refreshed_session)
+            return AuthenticatedSessionContext(user=user,
+                                               session=refreshed_session)
 
     async def logout(
         self,
@@ -323,7 +335,7 @@ class AuthUsecase(AuthUsecaseInterface):
         if not auth_session:
             return
 
-        async with self._auth_repository.transaction():
+        async with self._unit_of_work.transaction():
             await self._auth_repository.revoke_session(auth_session.id)
             await self._auth_repository.create_audit_log(
                 AuthAuditLog(

@@ -1,5 +1,4 @@
 from abc import ABCMeta, abstractmethod
-from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from uuid import UUID
 
@@ -9,10 +8,6 @@ from app.models.user import User
 
 
 class AuthRepositoryInterface(metaclass=ABCMeta):
-
-    @abstractmethod
-    def transaction(self) -> AbstractAsyncContextManager[None]:
-        raise NotImplementedError
 
     @abstractmethod
     async def create_user(self, email: str, password_hash: str) -> User:

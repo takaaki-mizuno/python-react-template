@@ -88,6 +88,7 @@ def client(monkeypatch) -> Iterator[TestClient]:
 
     app = create_app()
     with TestClient(app) as test_client:
-        yield test_client
-
-    app.state.injector.get(InMemoryLoginRateLimiter).reset()
+        try:
+            yield test_client
+        finally:
+            app.state.injector.get(InMemoryLoginRateLimiter).reset()

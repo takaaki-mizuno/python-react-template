@@ -14,3 +14,5 @@ def test_sample_router_does_not_document_forbidden_as_402():
 
     assert "402" not in responses
     assert "403" in responses
+    assert responses["403"]["content"]["application/json"]["schema"][
+        "$ref"] == "#/components/schemas/ErrorResponse"

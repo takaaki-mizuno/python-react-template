@@ -35,7 +35,7 @@ Full-stack ボイラープレート。FastAPI (Python) バックエンド + Reac
 | Backend 起動 | `python manage.py serve` | `backend/` |
 | Frontend 起動 (dev) | `npm run dev` | `frontend/` |
 | Frontend ビルド | `npm run build` | `frontend/` (出力先 `backend/static/`) |
-| Frontend 整形 | `npm run check` | `frontend/` |
+| Frontend 整形 | `npm run check` | `frontend/` (`prettier --write` / `eslint --fix` を実行する mutating command) |
 | Backend 依存追加 | `uv add <pkg>` | `backend/` |
 | Frontend 依存追加 | `npm install <pkg>` | `frontend/` |
 
@@ -46,6 +46,7 @@ Full-stack ボイラープレート。FastAPI (Python) バックエンド + Reac
 PR をマージする前に **必ず** 以下を通す:
 - Backend: `cd backend && uv run pytest` (テスト)、Lint (isort + yapf) クリーン
 - Frontend: `cd frontend && npm run check`、`npm run build` 成功、Vitest 通過
+  - 注意: 現行の`npm run check`はcheck-onlyではなく整形・自動修正を行う。実行後に`git diff --check`と`git status --short`で意図しないfrontend差分が出ていないことを確認する。
 
 エージェントは「完了」を報告する前に上記コマンドを実行し、結果を確認すること。
 

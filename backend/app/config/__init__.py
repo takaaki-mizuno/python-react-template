@@ -1,13 +1,12 @@
-import os
-
-from dotenv import load_dotenv
-from pydantic_settings import BaseSettings
-
-load_dotenv()
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Config(BaseSettings):
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    ENVIRONMENT: str = "production"
+    LOG_LEVEL: str = "INFO"
 
 
-config = Config()
+def get_config() -> Config:
+    return Config()

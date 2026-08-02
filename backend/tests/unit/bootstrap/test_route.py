@@ -21,6 +21,16 @@ def test_setup_routes_starts_without_static_directory(tmp_path):
     assert response.json() == {"success": True, "message": "ok"}
 
 
+def test_healthz_documents_error_envelope_for_not_found(tmp_path):
+    client = _client_with_static(tmp_path / "missing-static")
+
+    responses = client.get(
+        "/openapi.json").json()["paths"]["/api/healthz"]["get"]["responses"]
+
+    assert responses["404"]["content"]["application/json"]["schema"][
+        "$ref"] == "#/components/schemas/ErrorResponse"
+
+
 def test_setup_routes_skips_static_mount_when_index_html_is_missing(
     tmp_path,
     caplog,

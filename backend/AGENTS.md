@@ -66,8 +66,8 @@ uv run pytest
 
 ## 設定
 
-- `AuthSettings`は`build_container()`で一度だけ生成し、Injectorのsingletonとして共有する
-- controllerは`get_request_auth_settings` dependency経由で起動時snapshotを取得し、requestごとに`AuthSettings`を再生成しない
+- `AuthSettings`は`CoreModule`のproviderで一度だけ生成し、Injectorのsingletonとして共有する
+- controllerは`Depends(get_auth_settings)` dependency経由で起動時snapshotを取得し、requestごとに`AuthSettings`を再生成しない
 - `backend/.env`または認証関連環境変数を変更した場合は、backend process/containerを再起動する
 - 設定hot reloadは提供しない。必要になった場合は全consumerを同時更新できる別設計として計画する
 
@@ -83,10 +83,14 @@ uv run pytest
 
 - REST 規約に従う。設計時は `.claude/skills/restful-api-design` を参照
 - レスポンスは `usecases` 層が返す DTO/モデルを `controllers` で整形
+- controller は `request.app.state.injector.get(...)` を直接呼ばず、`Depends` dependency で依存を受ける
 - auth の `register` / `login` / `logout` は FastAPI `Depends` の共通 CSRF 検証を必ず通す
 - auth の CSRF は cookie/header の timing-safe 比較に加え、session がある unsafe request では `auth_sessions.csrf_token_hash` と照合する
 - auth の session 検証は `require_current_session` dependency から usecase へ委譲し、controller に DB session を持たせない
+- auth controller / usecase / interface は `AuthenticatedSessionContext` を `app.models.auth_context` から import する
+- HTTP error は error envelope で返す。新規 controller は `api_error()` または共通例外 handler を使う
 - in-memory rate limiter は single-process の最小防御であり、複数 worker / 複数 instance の本番運用では共有 store へ置き換える
+- production では `/docs`、`/redoc`、`/openapi.json` を公開しない
 
 ## テスト
 
@@ -94,6 +98,16 @@ uv run pytest
 - 単体テスト: `tests/unit/`、結合テスト: `tests/integration/` を推奨
 - DB を使うテストは実 DB (SQLite in-memory) を使用しモックしない
 - auth integration test は `TEST_DATABASE_URL` が指す PostgreSQL を使い、test 間 cleanup は auth tables の `TRUNCATE ... CASCADE` で保証する
+
+## Phase 1 基盤規約
+
+- transaction 境界は `UnitOfWorkInterface` に置く。repository に `transaction()` を追加しない
+- nested `UnitOfWorkInterface.transaction()` は savepoint ではなく外側 transaction へ join する
+- 別 instance の `UnitOfWorkInterface.transaction()` / `session_scope()` を同一 async context の transaction 内で開くことは禁止。実装は fail fast する
+- 1つの UoW transaction session を `asyncio.gather()` / `create_task()` で並行利用しない
+- Phase 1 完了時点では `Config.ENVIRONMENT` の既定値は docs 非公開のため `production`、`AuthSettings.ENVIRONMENT` の既定値は cookie secure 反転前のため `local` で意図的に分裂している
+- Phase 2 の `P1-12` で `AuthSettings` 側も安全側へ反転するまで、上記 2 つの既定値を片方へ安易に揃えない
+- local 開発で docs を見たい場合は、`backend/.env.example` を元に `backend/.env` を作り、`ENVIRONMENT=local` を明示する
 
 ## 関連スキル
 
