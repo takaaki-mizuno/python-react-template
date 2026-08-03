@@ -26,8 +26,7 @@ class AuthSettings(BaseSettings):
     @classmethod
     def _validate_positive_password_hash_concurrency(cls, value: int) -> int:
         if value < 1:
-            raise ValueError(
-                "AUTH_PASSWORD_HASH_CONCURRENCY must be at least 1")
+            raise ValueError("AUTH_PASSWORD_HASH_CONCURRENCY must be at least 1")
         return value
 
     @field_validator(
@@ -57,12 +56,10 @@ class AuthSettings(BaseSettings):
             try:
                 network = ip_network(proxy_ip, strict=False)
             except ValueError as error:
-                raise ValueError(
-                    "AUTH_TRUSTED_PROXY_IPS must contain only IP addresses "
-                    "or CIDR networks") from error
+                raise ValueError("AUTH_TRUSTED_PROXY_IPS must contain only IP addresses "
+                                 "or CIDR networks") from error
             if network.prefixlen == 0:
-                raise ValueError(
-                    "AUTH_TRUSTED_PROXY_IPS must not trust all addresses")
+                raise ValueError("AUTH_TRUSTED_PROXY_IPS must not trust all addresses")
         return value
 
     def effective_session_touch_interval_seconds(self) -> int:

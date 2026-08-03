@@ -1,7 +1,7 @@
 from .auth_usecase import AuthUsecase
-from .get_sample_index_usecase import GetSampleIndexUsecase
+from .sample_item_usecase import SampleItemUsecase
 
 __all__ = [
     "AuthUsecase",
-    "GetSampleIndexUsecase",
+    "SampleItemUsecase",
 ]

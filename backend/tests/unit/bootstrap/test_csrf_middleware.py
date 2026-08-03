@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -49,8 +47,8 @@ def _client(
     root_path: str = "",
 ) -> TestClient:
     app = FastAPI(root_path=root_path)
-    app.state.injector = InjectorStub(settings or AuthSettings(_env_file=None),
-                                      usecase or StubUsecase())
+    app.state.injector = InjectorStub(settings or AuthSettings(_env_file=None), usecase
+                                      or StubUsecase())
     app.add_middleware(CSRFMiddleware)
 
     @app.get("/api/protected")
@@ -93,8 +91,7 @@ async def test_post_api_requires_csrf_for_prefixed_asgi_scope():
         raise AssertionError("CSRF middleware should reject before routing")
 
     app = FastAPI(root_path="/backend")
-    app.state.injector = InjectorStub(AuthSettings(_env_file=None),
-                                      StubUsecase())
+    app.state.injector = InjectorStub(AuthSettings(_env_file=None), StubUsecase())
     middleware = CSRFMiddleware(downstream_app)
     messages = []
     scope = {
@@ -136,13 +133,11 @@ def test_csrf_compare_uses_bytes(monkeypatch):
         calls.append((left, right))
         return True
 
-    monkeypatch.setattr("app.bootstrap.csrf.secrets.compare_digest",
-                        compare_digest)
+    monkeypatch.setattr("app.bootstrap.csrf.secrets.compare_digest", compare_digest)
     client = _client()
     client.cookies.set("csrf_token", "csrf-token")
 
-    response = client.post("/api/protected",
-                           headers={"X-CSRF-Token": "csrf-token"})
+    response = client.post("/api/protected", headers={"X-CSRF-Token": "csrf-token"})
 
     assert response.status_code == 200
     assert calls == [(b"csrf-token", b"csrf-token")]
@@ -152,8 +147,7 @@ def test_non_ascii_csrf_mismatch_returns_403_not_500():
     client = _client()
     client.cookies.set("csrf_token", "cafe")
 
-    response = client.post("/api/protected",
-                           headers={"X-CSRF-Token": "caf\u00e9".encode()})
+    response = client.post("/api/protected", headers={"X-CSRF-Token": "caf\u00e9".encode()})
 
     assert response.status_code == 403
 
@@ -162,8 +156,7 @@ def test_post_api_rejects_mismatched_csrf_tokens():
     client = _client()
     client.cookies.set("csrf_token", "cookie-token")
 
-    response = client.post("/api/protected",
-                           headers={"X-CSRF-Token": "header-token"})
+    response = client.post("/api/protected", headers={"X-CSRF-Token": "header-token"})
 
     assert response.status_code == 403
 
@@ -172,8 +165,7 @@ def test_post_api_accepts_matching_double_submit_without_session():
     client = _client()
     client.cookies.set("csrf_token", "csrf-token")
 
-    response = client.post("/api/protected",
-                           headers={"X-CSRF-Token": "csrf-token"})
+    response = client.post("/api/protected", headers={"X-CSRF-Token": "csrf-token"})
 
     assert response.status_code == 200
 
@@ -183,8 +175,7 @@ def test_post_api_rejects_session_csrf_mismatch():
     client.cookies.set("csrf_token", "csrf-token")
     client.cookies.set("session_token", "session-token")
 
-    response = client.post("/api/protected",
-                           headers={"X-CSRF-Token": "csrf-token"})
+    response = client.post("/api/protected", headers={"X-CSRF-Token": "csrf-token"})
 
     assert response.status_code == 403
 
@@ -194,8 +185,7 @@ def test_post_api_accepts_valid_session_csrf():
     client.cookies.set("csrf_token", "csrf-token")
     client.cookies.set("session_token", "session-token")
 
-    response = client.post("/api/protected",
-                           headers={"X-CSRF-Token": "csrf-token"})
+    response = client.post("/api/protected", headers={"X-CSRF-Token": "csrf-token"})
 
     assert response.status_code == 200
 
@@ -209,8 +199,7 @@ def test_non_api_path_skips_csrf_validation():
 
 
 def test_explicit_exempt_path_skips_csrf_validation():
-    client = _client(settings=AuthSettings(
-        _env_file=None, AUTH_CSRF_EXEMPT_PATHS="/api/exempt"))
+    client = _client(settings=AuthSettings(_env_file=None, AUTH_CSRF_EXEMPT_PATHS="/api/exempt"))
 
     assert client.post("/api/exempt").status_code == 200
 
@@ -220,8 +209,7 @@ def test_middleware_returns_error_envelope_for_unexpected_exception():
     client.cookies.set("csrf_token", "csrf-token")
     client.cookies.set("session_token", "session-token")
 
-    response = client.post("/api/protected",
-                           headers={"X-CSRF-Token": "csrf-token"})
+    response = client.post("/api/protected", headers={"X-CSRF-Token": "csrf-token"})
 
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "INTERNAL_SERVER_ERROR"

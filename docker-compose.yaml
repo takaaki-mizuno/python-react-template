@@ -20,6 +20,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: backend-dev
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,12 +34,19 @@ services:
     command:
       - sh
       - -c
-      - uv run python manage.py serve --host 0.0.0.0 --port 8000
+      - uv sync --frozen --group dev && uv run python manage.py db-upgrade && uv run python manage.py serve --host 0.0.0.0 --port 8000 --reload
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ./backend/app:/app/backend/app
-      - ./backend/manage.py:/app/backend/manage.py
+      - ./backend:/app/backend
+      - /app/backend/.venv
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/healthz', timeout=2).read()"
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   frontend:
     image: node:22-bookworm-slim

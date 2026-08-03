@@ -1,7 +1,6 @@
 from injector import Injector
 
-from app.bootstrap.modules import (AuthModule, CoreModule, DatabaseModule,
-                                   SampleModule)
+from app.bootstrap.modules import AuthModule, CoreModule, DatabaseModule, SampleModule
 
 
 def build_container() -> Injector:

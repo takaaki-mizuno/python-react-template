@@ -36,6 +36,7 @@ Full-stack ボイラープレート。FastAPI (Python) バックエンド + Reac
 | Frontend 起動 (dev) | `npm run dev` | `frontend/` |
 | Frontend ビルド | `npm run build` | `frontend/` (出力先 `backend/static/`) |
 | Frontend 整形 | `npm run check` | `frontend/` (`prettier --write` / `eslint --fix` を実行する mutating command) |
+| Frontend CI 検査 | `npm run check:ci` | `frontend/` (`prettier --check` / `eslint` / `typecheck`) |
 | Backend 依存追加 | `uv add <pkg>` | `backend/` |
 | Frontend 依存追加 | `npm install <pkg>` | `frontend/` |
 
@@ -44,9 +45,13 @@ Full-stack ボイラープレート。FastAPI (Python) バックエンド + Reac
 ## 品質ゲート (Check)
 
 PR をマージする前に **必ず** 以下を通す:
-- Backend: `cd backend && uv run pytest` (テスト)、Lint (isort + yapf) クリーン
-- Frontend: `cd frontend && npm run check`、`npm run build` 成功、Vitest 通過
-  - 注意: 現行の`npm run check`はcheck-onlyではなく整形・自動修正を行う。実行後に`git diff --check`と`git status --short`で意図しないfrontend差分が出ていないことを確認する。
+- Backend static: `cd backend && uv run ruff check .`、`uv run isort . --check-only`、`uv run yapf -dr app/ tests/ alembic/ manage.py`、`uv run mypy app manage.py`
+- Backend unit: `cd backend && uv run pytest tests/unit`
+- Backend integration: PostgreSQL 起動後、`cd backend && ALEMBIC_DATABASE_URL=... uv run python manage.py db-upgrade`、`TEST_DATABASE_URL=... uv run pytest tests/integration -q -ra`、`ALEMBIC_DATABASE_URL=... uv run python manage.py db-check`
+- Frontend: `cd frontend && npm run check:ci`、`npm test`、`npm run build`
+- Docker: `docker compose config`、`docker build --target runtime ...`、`docker build --target backend-dev ...`
+  - 注意: `npm run check` は check-only ではなく整形・自動修正を行う。CI とレビュー前確認では `npm run check:ci` を使う。
+  - integration tests は `TEST_DATABASE_URL` 未設定で fail する。unit だけを実行する場合は `tests/unit` を明示する。
 
 エージェントは「完了」を報告する前に上記コマンドを実行し、結果を確認すること。
 

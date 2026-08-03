@@ -7,21 +7,20 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Config, get_config
 from app.config.auth import AuthSettings, get_auth_settings
-from app.interfaces.libraries.rate_limiter_interface import \
-    LoginRateLimiterInterface
-from app.interfaces.services.auth_repository_interface import \
-    AuthRepositoryInterface
+from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
+from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.sample_item_repository_interface import SampleItemRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
-from app.interfaces.usecases.get_sample_index_usecase_interface import \
-    GetSampleIndexUsecaseInterface
+from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsecaseInterface
 from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
 from app.libraries.database_engine import build_engine_and_session_factory
 from app.libraries.password_hasher import PasswordHashExecutor
 from app.services.auth_repository import AuthRepository
+from app.services.sample_item_repository import SampleItemRepository
 from app.services.unit_of_work import UnitOfWork
 from app.usecases.auth_usecase import AuthUsecase
-from app.usecases.get_sample_index_usecase import GetSampleIndexUsecase
+from app.usecases.sample_item_usecase import SampleItemUsecase
 
 
 @dataclass(slots=True)
@@ -69,9 +68,7 @@ class AuthModule(Module):
 
     def configure(self, binder: Binder) -> None:
         binder.bind(UnitOfWorkInterface, to=UnitOfWork, scope=singleton)
-        binder.bind(AuthRepositoryInterface,
-                    to=AuthRepository,
-                    scope=singleton)
+        binder.bind(AuthRepositoryInterface, to=AuthRepository, scope=singleton)
         binder.bind(AuthUsecaseInterface, to=AuthUsecase, scope=singleton)
 
     @singleton
@@ -82,16 +79,12 @@ class AuthModule(Module):
     ) -> LoginRateLimiterInterface:
         return InMemoryLoginRateLimiter(
             window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
-            registration_window_seconds=settings.
-            AUTH_RATE_LIMIT_REGISTRATION_WINDOW_SECONDS,
-            max_failures_per_email_ip=settings.
-            AUTH_RATE_LIMIT_FAILURES_PER_EMAIL_IP,
+            registration_window_seconds=settings.AUTH_RATE_LIMIT_REGISTRATION_WINDOW_SECONDS,
+            max_failures_per_email_ip=settings.AUTH_RATE_LIMIT_FAILURES_PER_EMAIL_IP,
             max_failures_per_ip=settings.AUTH_RATE_LIMIT_FAILURES_PER_IP,
             max_failures_per_email=settings.AUTH_RATE_LIMIT_FAILURES_PER_EMAIL,
-            max_registrations_per_ip=settings.
-            AUTH_RATE_LIMIT_REGISTRATIONS_PER_IP,
-            max_buckets_per_scope=settings.
-            AUTH_RATE_LIMIT_MAX_BUCKETS_PER_SCOPE,
+            max_registrations_per_ip=settings.AUTH_RATE_LIMIT_REGISTRATIONS_PER_IP,
+            max_buckets_per_scope=settings.AUTH_RATE_LIMIT_MAX_BUCKETS_PER_SCOPE,
         )
 
     @singleton
@@ -100,15 +93,11 @@ class AuthModule(Module):
         self,
         settings: AuthSettings,
     ) -> PasswordHashExecutor:
-        return PasswordHashExecutor(
-            max_workers=settings.AUTH_PASSWORD_HASH_CONCURRENCY)
+        return PasswordHashExecutor(max_workers=settings.AUTH_PASSWORD_HASH_CONCURRENCY)
 
 
 class SampleModule(Module):
 
     def configure(self, binder: Binder) -> None:
-        binder.bind(
-            GetSampleIndexUsecaseInterface,
-            to=GetSampleIndexUsecase,
-            scope=singleton,
-        )
+        binder.bind(SampleItemRepositoryInterface, to=SampleItemRepository, scope=singleton)
+        binder.bind(SampleItemUsecaseInterface, to=SampleItemUsecase, scope=singleton)

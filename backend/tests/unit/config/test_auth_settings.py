@@ -75,22 +75,19 @@ def test_auth_settings_rejects_invalid_trusted_proxy_ips(monkeypatch):
     try:
         _settings()
     except ValidationError as error:
-        assert "AUTH_TRUSTED_PROXY_IPS must contain only IP addresses" in str(
-            error)
+        assert "AUTH_TRUSTED_PROXY_IPS must contain only IP addresses" in str(error)
     else:
         raise AssertionError("Expected settings validation to fail")
 
 
 @pytest.mark.parametrize("trusted_proxy_ips", ["0.0.0.0/0", "::/0"])
-def test_auth_settings_rejects_trusting_all_proxy_ips(monkeypatch,
-                                                      trusted_proxy_ips):
+def test_auth_settings_rejects_trusting_all_proxy_ips(monkeypatch, trusted_proxy_ips):
     monkeypatch.setenv("AUTH_TRUSTED_PROXY_IPS", trusted_proxy_ips)
 
     try:
         _settings()
     except ValidationError as error:
-        assert "AUTH_TRUSTED_PROXY_IPS must not trust all addresses" in str(
-            error)
+        assert "AUTH_TRUSTED_PROXY_IPS must not trust all addresses" in str(error)
     else:
         raise AssertionError("Expected settings validation to fail")
 
@@ -109,15 +106,13 @@ def test_auth_settings_reads_password_hash_concurrency_from_env(monkeypatch):
     assert settings.AUTH_PASSWORD_HASH_CONCURRENCY == 2
 
 
-def test_auth_settings_rejects_non_positive_password_hash_concurrency(
-        monkeypatch):
+def test_auth_settings_rejects_non_positive_password_hash_concurrency(monkeypatch):
     monkeypatch.setenv("AUTH_PASSWORD_HASH_CONCURRENCY", "0")
 
     try:
         _settings()
     except ValidationError as error:
-        assert "AUTH_PASSWORD_HASH_CONCURRENCY must be at least 1" in str(
-            error)
+        assert "AUTH_PASSWORD_HASH_CONCURRENCY must be at least 1" in str(error)
     else:
         raise AssertionError("Expected settings validation to fail")
 
@@ -163,10 +158,8 @@ def test_auth_settings_csrf_exempt_paths_defaults_to_empty_string():
 
 
 def test_auth_settings_reads_csrf_exempt_paths_from_env(monkeypatch):
-    monkeypatch.setenv("AUTH_CSRF_EXEMPT_PATHS",
-                       "/api/auth/oauth/callback,/api/webhooks/example")
+    monkeypatch.setenv("AUTH_CSRF_EXEMPT_PATHS", "/api/auth/oauth/callback,/api/webhooks/example")
 
     settings = _settings()
 
-    assert settings.AUTH_CSRF_EXEMPT_PATHS == (
-        "/api/auth/oauth/callback,/api/webhooks/example")
+    assert settings.AUTH_CSRF_EXEMPT_PATHS == ("/api/auth/oauth/callback,/api/webhooks/example")

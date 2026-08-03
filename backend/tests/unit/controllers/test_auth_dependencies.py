@@ -27,8 +27,7 @@ def test_get_client_ip_uses_trusted_forwarded_header():
         "headers": [(b"x-forwarded-for", b"198.51.100.99")],
     })
 
-    assert auth_dependencies.get_client_ip(request,
-                                           "10.0.0.0/8") == "198.51.100.99"
+    assert auth_dependencies.get_client_ip(request, "10.0.0.0/8") == "198.51.100.99"
 
 
 def test_request_metadata_is_normalized_and_bounded():
@@ -66,14 +65,10 @@ def test_get_auth_settings_alias_returns_injector_instance():
             return settings
 
     request = Request({
-        "type":
-        "http",
-        "method":
-        "GET",
-        "path":
-        "/api/auth/csrf",
-        "app":
-        SimpleNamespace(state=SimpleNamespace(injector=InjectorStub())),
+        "type": "http",
+        "method": "GET",
+        "path": "/api/auth/csrf",
+        "app": SimpleNamespace(state=SimpleNamespace(injector=InjectorStub())),
         "headers": [],
     })
 

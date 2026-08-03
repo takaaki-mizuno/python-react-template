@@ -36,13 +36,11 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def find_active_session_by_token_hash(
-            self, token_hash: str) -> AuthSession | None:
+    async def find_active_session_by_token_hash(self, token_hash: str) -> AuthSession | None:
         raise NotImplementedError
 
     @abstractmethod
-    async def find_session_by_token_hash(
-            self, token_hash: str) -> AuthSession | None:
+    async def find_session_by_token_hash(self, token_hash: str) -> AuthSession | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -67,8 +65,7 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def record_user_login(self, user_id: UUID,
-                                login_at: datetime) -> User:
+    async def record_user_login(self, user_id: UUID, login_at: datetime) -> User:
         raise NotImplementedError
 
     @abstractmethod

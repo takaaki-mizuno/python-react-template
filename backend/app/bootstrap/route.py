@@ -69,9 +69,7 @@ def setup_routes(
             index_file,
         )
         return app
-    app.mount("/",
-              SPAStaticFiles(directory=directory, html=True),
-              name="static")
+    app.mount("/", SPAStaticFiles(directory=directory, html=True), name="static")
     return app
 
 
@@ -108,6 +106,4 @@ def _is_static_asset_path(path: str) -> bool:
     normalized_path = path.strip("/").lower()
     if normalized_path == "assets" or normalized_path.startswith("assets/"):
         return True
-    return any(
-        normalized_path.endswith(extension)
-        for extension in _STATIC_ASSET_EXTENSIONS)
+    return any(normalized_path.endswith(extension) for extension in _STATIC_ASSET_EXTENSIONS)

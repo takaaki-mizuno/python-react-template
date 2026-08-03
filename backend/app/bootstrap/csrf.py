@@ -21,8 +21,7 @@ class CSRFMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self._app = app
 
-    async def __call__(self, scope: Scope, receive: Receive,
-                       send: Send) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or not self._requires_csrf(scope):
             await self._app(scope, receive, send)
             return
@@ -77,8 +76,7 @@ class CSRFMiddleware:
         csrf_status = await usecase.validate_session_csrf(
             session_token=session_token,
             csrf_token=header_token,
-            ip_address=resolve_client_ip(request,
-                                         settings.AUTH_TRUSTED_PROXY_IPS),
+            ip_address=resolve_client_ip(request, settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
         if csrf_status == SessionCsrfStatus.MISMATCH:

@@ -6,8 +6,7 @@ import pytest
 
 from app.libraries import password_hasher as password_hasher_module
 from app.libraries.password_hasher import (PasswordHashExecutor, hash_password,
-                                           validate_password_policy,
-                                           verify_password)
+                                           validate_password_policy, verify_password)
 
 
 def test_password_hash_round_trip():
@@ -24,8 +23,7 @@ def test_password_policy_rejects_short_password():
 
 
 @pytest.mark.asyncio
-async def test_password_hash_executor_runs_hash_and_verify_in_worker_thread(
-        monkeypatch):
+async def test_password_hash_executor_runs_hash_and_verify_in_worker_thread(monkeypatch):
     calls: list[tuple[str, str]] = []
     main_thread_name = threading.current_thread().name
 
@@ -38,15 +36,13 @@ async def test_password_hash_executor_runs_hash_and_verify_in_worker_thread(
         return hashed_password == f"hashed:{raw_password}"
 
     monkeypatch.setattr(password_hasher_module, "hash_password", tracked_hash)
-    monkeypatch.setattr(password_hasher_module, "verify_password",
-                        tracked_verify)
+    monkeypatch.setattr(password_hasher_module, "verify_password", tracked_verify)
     executor = PasswordHashExecutor(max_workers=1)
     try:
         hashed_password = await executor.hash("Password123!")
 
         assert await executor.verify("Password123!", hashed_password) is True
-        assert await executor.verify("wrong-password",
-                                     hashed_password) is False
+        assert await executor.verify("wrong-password", hashed_password) is False
     finally:
         executor.shutdown()
     assert calls == [
@@ -58,8 +54,7 @@ async def test_password_hash_executor_runs_hash_and_verify_in_worker_thread(
 
 
 @pytest.mark.asyncio
-async def test_password_hash_executor_queues_work_instead_of_failing(
-        monkeypatch):
+async def test_password_hash_executor_queues_work_instead_of_failing(monkeypatch):
     calls = []
 
     def slow_hash(raw_password: str) -> str:

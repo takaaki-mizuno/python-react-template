@@ -21,14 +21,13 @@ def get_user_agent(request: Request) -> str | None:
 
 
 async def require_current_session(
-    request: Request,
-    usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
-    auth_settings: AuthSettings = Depends(get_auth_settings),
+        request: Request,
+        usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
+        auth_settings: AuthSettings = Depends(get_auth_settings),
 ) -> AuthenticatedSessionContext:
     auth_context = await usecase.authenticate_session(
         session_token=request.cookies.get("session_token"),
-        ip_address=get_client_ip(request,
-                                 auth_settings.AUTH_TRUSTED_PROXY_IPS),
+        ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
         user_agent=get_user_agent(request),
     )
     if auth_context is None:

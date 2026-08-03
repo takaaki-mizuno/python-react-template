@@ -38,9 +38,8 @@ class UnitOfWork(UnitOfWorkInterface):
             yield
             return
         if current is not None:
-            raise RuntimeError(
-                "Cannot open a different UnitOfWork transaction "
-                "inside an active transaction")
+            raise RuntimeError("Cannot open a different UnitOfWork transaction "
+                               "inside an active transaction")
 
         async with self._session_factory() as session:
             token = _transaction_session.set((self._context_owner, session))
@@ -57,14 +56,12 @@ class UnitOfWork(UnitOfWorkInterface):
             yield current[1]
             return
         if current is not None:
-            raise RuntimeError(
-                "Cannot open a different UnitOfWork transaction "
-                "inside an active transaction")
+            raise RuntimeError("Cannot open a different UnitOfWork transaction "
+                               "inside an active transaction")
 
         async with self._session_factory() as session:
             yield session
 
     def is_transaction_session(self, session: AsyncSession) -> bool:
         current = _transaction_session.get()
-        return (current is not None and current[0] is self._context_owner
-                and session is current[1])
+        return (current is not None and current[0] is self._context_owner and session is current[1])

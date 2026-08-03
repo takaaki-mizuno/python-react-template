@@ -31,10 +31,9 @@ async def test_users_email_has_lower_unique_index(async_session):
             """))
 
     index_definitions = [row[0] for row in result.fetchall()]
-    assert any(
-        "CREATE UNIQUE INDEX uq_users_email_lower" in definition
-        and "lower" in definition.lower() and "email" in definition.lower()
-        for definition in index_definitions)
+    assert any("CREATE UNIQUE INDEX uq_users_email_lower" in definition
+               and "lower" in definition.lower() and "email" in definition.lower()
+               for definition in index_definitions)
 
 
 async def test_session_token_hash_has_unique_lookup_index(async_session):
@@ -47,9 +46,8 @@ async def test_session_token_hash_has_unique_lookup_index(async_session):
             """))
 
     index_definitions = [row[0] for row in result.fetchall()]
-    assert any(
-        "UNIQUE INDEX" in definition and "session_token_hash" in definition
-        for definition in index_definitions)
+    assert any("UNIQUE INDEX" in definition and "session_token_hash" in definition
+               for definition in index_definitions)
 
 
 async def test_auth_expiry_columns_are_timezone_aware(async_session):

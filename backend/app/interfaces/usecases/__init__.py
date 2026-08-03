@@ -1,7 +1,7 @@
 from .auth_usecase_interface import AuthUsecaseInterface
-from .get_sample_index_usecase_interface import GetSampleIndexUsecaseInterface
+from .sample_item_usecase_interface import SampleItemUsecaseInterface
 
 __all__ = [
     "AuthUsecaseInterface",
-    "GetSampleIndexUsecaseInterface",
+    "SampleItemUsecaseInterface",
 ]

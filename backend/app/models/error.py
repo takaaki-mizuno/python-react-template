@@ -12,8 +12,7 @@ class ErrorFieldDetail(BaseModel):
 class ErrorDetail(BaseModel):
     code: str
     message: str
-    details: list[ErrorFieldDetail
-                  | dict[str, Any]] = Field(default_factory=list)
+    details: list[ErrorFieldDetail | dict[str, Any]] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):

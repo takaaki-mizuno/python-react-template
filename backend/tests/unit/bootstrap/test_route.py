@@ -24,8 +24,7 @@ def test_setup_routes_starts_without_static_directory(tmp_path):
 def test_healthz_documents_error_envelope_for_not_found(tmp_path):
     client = _client_with_static(tmp_path / "missing-static")
 
-    responses = client.get(
-        "/openapi.json").json()["paths"]["/api/healthz"]["get"]["responses"]
+    responses = client.get("/openapi.json").json()["paths"]["/api/healthz"]["get"]["responses"]
 
     assert responses["404"]["content"]["application/json"]["schema"][
         "$ref"] == "#/components/schemas/ErrorResponse"
@@ -46,8 +45,7 @@ def test_setup_routes_skips_static_mount_when_index_html_is_missing(
 
 
 def test_spa_deep_link_falls_back_to_index_html(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/login", headers={"accept": "text/html"})
@@ -57,8 +55,7 @@ def test_spa_deep_link_falls_back_to_index_html(tmp_path):
 
 
 def test_spa_deep_link_accepts_wildcard_accept_header(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/login", headers={"accept": "*/*"})
@@ -68,8 +65,7 @@ def test_spa_deep_link_accepts_wildcard_accept_header(tmp_path):
 
 
 def test_spa_deep_link_allows_dotted_slug(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/users/john.doe", headers={"accept": "text/html"})
@@ -82,8 +78,7 @@ def test_static_assets_are_served_without_spa_fallback(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
     (assets / "app.css").write_text("body { color: black; }", encoding="utf-8")
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/assets/app.css")
@@ -93,21 +88,17 @@ def test_static_assets_are_served_without_spa_fallback(tmp_path):
 
 
 def test_missing_static_asset_does_not_fall_back_to_spa_index(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
-    response = client.get("/assets/missing.js",
-                          headers={"accept": "text/html"})
+    response = client.get("/assets/missing.js", headers={"accept": "text/html"})
 
     assert response.status_code == 404
     assert response.text != "<main>spa shell</main>"
 
 
-def test_missing_known_static_extension_does_not_fall_back_to_spa_index(
-    tmp_path, ):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+def test_missing_known_static_extension_does_not_fall_back_to_spa_index(tmp_path, ):
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/favicon.ico", headers={"accept": "*/*"})
@@ -117,8 +108,7 @@ def test_missing_known_static_extension_does_not_fall_back_to_spa_index(
 
 
 def test_missing_otf_font_does_not_fall_back_to_spa_index(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/fonts/x.otf", headers={"accept": "*/*"})
@@ -128,8 +118,7 @@ def test_missing_otf_font_does_not_fall_back_to_spa_index(tmp_path):
 
 
 def test_non_html_request_does_not_fall_back_to_spa_index(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/login", headers={"accept": "application/json"})
@@ -139,8 +128,7 @@ def test_non_html_request_does_not_fall_back_to_spa_index(tmp_path):
 
 
 def test_unknown_api_path_does_not_fall_back_to_spa_index(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/api/unknown")
@@ -150,8 +138,7 @@ def test_unknown_api_path_does_not_fall_back_to_spa_index(tmp_path):
 
 
 def test_unknown_api_post_returns_404_when_spa_static_is_mounted(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.post("/api/unknown")
@@ -161,8 +148,7 @@ def test_unknown_api_post_returns_404_when_spa_static_is_mounted(tmp_path):
 
 
 def test_uppercase_api_path_does_not_fall_back_to_spa_index(tmp_path):
-    (tmp_path / "index.html").write_text("<main>spa shell</main>",
-                                         encoding="utf-8")
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
     client = _client_with_static(tmp_path)
 
     response = client.get("/API/unknown")

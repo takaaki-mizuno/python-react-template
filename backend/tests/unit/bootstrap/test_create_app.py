@@ -54,9 +54,8 @@ class StubInjector:
         raise AssertionError(f"Unexpected interface: {interface}")
 
 
-def _app_with_config(
-        monkeypatch,
-        config) -> tuple[StubEngine, StubPasswordHashExecutor, TestClient]:
+def _app_with_config(monkeypatch,
+                     config) -> tuple[StubEngine, StubPasswordHashExecutor, TestClient]:
     engine = StubEngine()
     injector = StubInjector(engine, config)
     monkeypatch.setattr(create_app_module, "build_container", lambda: injector)
@@ -83,8 +82,7 @@ def test_production_like_environments_disable_docs(monkeypatch, environment):
 def test_unset_environment_disables_docs_by_default(monkeypatch):
     engine, password_hash_executor, client = _app_with_config(
         monkeypatch,
-        SimpleNamespace(ENVIRONMENT=Config(_env_file=None).ENVIRONMENT,
-                        LOG_LEVEL="INFO"),
+        SimpleNamespace(ENVIRONMENT=Config(_env_file=None).ENVIRONMENT, LOG_LEVEL="INFO"),
     )
 
     with client:
@@ -161,9 +159,8 @@ def test_create_app_falls_back_for_invalid_log_level(monkeypatch, caplog):
         SimpleNamespace(ENVIRONMENT="local", LOG_LEVEL="NOPE"),
     )
 
-    with caplog.at_level(logging.WARNING):
-        with client:
-            pass
+    with caplog.at_level(logging.WARNING), client:
+        pass
 
     assert logging.getLogger().getEffectiveLevel() == logging.WARNING
     assert logging.getLogger("app").getEffectiveLevel() == logging.INFO

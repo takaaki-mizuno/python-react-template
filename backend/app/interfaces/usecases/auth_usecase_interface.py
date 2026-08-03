@@ -1,7 +1,6 @@
 from abc import ABCMeta, abstractmethod
 
-from app.models.auth_context import (AuthenticatedSessionContext,
-                                     IssuedAuthSession)
+from app.models.auth_context import AuthenticatedSessionContext, IssuedAuthSession
 from app.models.auth_csrf import SessionCsrfStatus
 
 

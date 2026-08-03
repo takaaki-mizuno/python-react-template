@@ -119,8 +119,7 @@ def test_only_touched_buckets_are_trimmed():
     assert "127.0.0.2:current@example.com" not in limiter._email_ip_buckets
 
 
-def test_bucket_cap_drops_new_buckets_without_evicting_active_email_buckets(
-        caplog):
+def test_bucket_cap_drops_new_buckets_without_evicting_active_email_buckets(caplog):
     limiter = _limiter()
 
     for index in range(4):

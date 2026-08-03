@@ -6,8 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing_extensions import get_type_hints
 
-from app.interfaces.services.auth_repository_interface import \
-    AuthRepositoryInterface
+from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.models.auth_errors import EmailAlreadyRegisteredError
 from app.services.auth_repository import AuthRepository
@@ -52,14 +51,12 @@ class TransactionSessionUnitOfWork(UnitOfWorkInterface):
 
 
 @pytest.mark.asyncio
-async def test_create_user_does_not_rollback_integrity_error_inside_transaction(
-) -> None:
+async def test_create_user_does_not_rollback_integrity_error_inside_transaction() -> None:
     unit_of_work = TransactionSessionUnitOfWork()
     repository = AuthRepository(unit_of_work=unit_of_work)
 
     with pytest.raises(EmailAlreadyRegisteredError):
-        await repository.create_user(email="user@example.com",
-                                     password_hash="hash")
+        await repository.create_user(email="user@example.com", password_hash="hash")
 
     assert unit_of_work.session.rollback_called is False
 

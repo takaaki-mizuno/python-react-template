@@ -17,18 +17,15 @@ class AuthSession(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", nullable=False, index=True)
-    session_token_hash: str = Field(sa_column=Column(String(length=64),
-                                                     nullable=False), )
-    csrf_token_hash: str = Field(sa_column=Column(String(length=64),
-                                                  nullable=False), )
+    session_token_hash: str = Field(sa_column=Column(String(length=64), nullable=False), )
+    csrf_token_hash: str = Field(sa_column=Column(String(length=64), nullable=False), )
     created_at: datetime = Field(sa_column=Column(DateTime(timezone=True),
                                                   nullable=False,
                                                   default=utcnow), )
     last_seen_at: datetime = Field(sa_column=Column(DateTime(timezone=True),
                                                     nullable=False,
                                                     default=utcnow), )
-    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True),
-                                                  nullable=False), )
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False), )
     revoked_at: datetime | None = Field(
         sa_column=Column(DateTime(timezone=True), nullable=True),
         default=None,

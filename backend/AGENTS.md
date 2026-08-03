@@ -12,7 +12,7 @@ FastAPI ベースの Python バックエンド。Single source of truth は **�
 - CLI: Typer (`manage.py`)
 - 非同期 DB ドライバ: asyncpg (PostgreSQL)
 - 設定: python-dotenv
-- Lint / Format: isort + yapf
+- Lint / Format / Typecheck: ruff + isort + yapf + mypy
 
 ## ディレクトリ構成
 
@@ -39,8 +39,10 @@ controllers から services を直接呼ぶのは禁止 (テスト容易性の�
 ## 主要コマンド
 
 ```bash
-# サーバ起動 (reload 有効、port 8000)
+# サーバ起動 (ENVIRONMENT=local/development では reload 既定有効)
 python manage.py serve
+python manage.py serve --host 0.0.0.0 --port 8000 --reload
+python manage.py serve --host 0.0.0.0 --port 8000 --no-reload --workers 2 --log-level info
 
 # 依存追加
 uv add <package>
@@ -50,11 +52,14 @@ uv add --dev <package>     # 開発依存
 uv sync
 
 # Lint / Format
-uv run isort .
-uv run yapf -ir app/
+uv run ruff check .
+uv run isort . --check-only
+uv run yapf -dr app/ tests/ alembic/ manage.py
+uv run mypy app manage.py
 
 # テスト
-uv run pytest
+uv run pytest tests/unit
+TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration -q -ra
 ```
 
 ## コードスタイル
@@ -75,15 +80,18 @@ uv run pytest
 
 - 新規テーブル追加時はまず `documents/plans/` に ER 設計を残す
 - スキーマ変更時はマイグレーション戦略を**事前にユーザー確認**
+- sample CRUD のような user-owned resource は `sample_items` の実装をコピー元にする
 - auth 領域の永続化は PostgreSQL を正とし、SQLite in-memory は auth の DB integration test には使わない
 - auth migration の主要コマンドは `python manage.py db-upgrade` / `python manage.py db-downgrade`
-- Alembic revision 生成は `uv run alembic revision --autogenerate ...` を補助用途として使い、生成後に timezone-aware column / expression index / JSONB を必ず手で確認する
+- Alembic revision 生成は `python manage.py db-revision --message "... " --autogenerate --rev-id YYYYMMDD_NNNN` を使い、`ALEMBIC_DATABASE_URL` を明示する
+- `db-revision --autogenerate` は DB が head であることを前提にする。生成後に timezone-aware column / expression index / JSONB / FK `ON DELETE` / server default を必ず手で確認する
 - 初期 revision を書き換える場合、既存 DB に残る旧 PK/FK 名は Alembic autogenerate / `db-check` だけでは検出できない。正典確認は fresh test DB を作り直して初期 migration から適用し、`pg_constraint` または targeted test で制約名を確認する
 
 ## API 設計
 
 - REST 規約に従う。設計時は `.claude/skills/restful-api-design` を参照
-- レスポンスは `usecases` 層が返す DTO/モデルを `controllers` で整形
+- public API JSON は request / response とも camelCase を正とする。Pydantic `populate_by_name=True` は内部互換であり、docs や curl 例では camelCase だけを書く
+- UseCase は HTTP response DTO を返さない。UseCase は domain model / domain result / domain error を返し、Controller が request DTO と response DTO へ変換する
 - controller は `request.app.state.injector.get(...)` を直接呼ばず、`Depends` dependency で依存を受ける
 - unsafe `/api` request は純 ASGI の CSRF middleware が既定で検証する。新規 unsafe endpoint に個別 `Depends(require_csrf)` を書かない
 - routing 前に CSRF middleware が走るため、CSRF なしの `POST /api/unknown` は 404 ではなく 403 になる。これは unsafe API request を先に拒否する意図的な契約である
@@ -101,13 +109,33 @@ uv run pytest
 - bucket 上限到達後の fail-open は全体封鎖を避けるための single-process 向けトレードオフであり、飽和中の新規キーは per-email 防御の追跡対象外になる。本番でこのリスクを許容できない場合は、Redis 等の共有 store または O(1) メモリの rate limiter へ置き換える
 - `AUTH_RATE_LIMIT_ATTEMPTS_PER_EMAIL_IP` / `AUTH_RATE_LIMIT_ATTEMPTS_PER_IP` は Phase 2 で削除され、`AUTH_RATE_LIMIT_FAILURES_*` へ改名された。旧キーは `extra="ignore"` で無視されるため、既存 `.env` は必ず置き換える
 - production では `/docs`、`/redoc`、`/openapi.json` を公開しない
+- `Status` は healthz などの限定用途に使う。CRUD success response の模範にはしない
+
+## Sample CRUD 複製手順
+
+新しい user-owned CRUD resource は `/api/samples` をコピー元にする。標準ファイルは次の構成にする。
+
+- `app/models/<resource>.py`: SQLModel table、domain dataclass、cursor が必要なら cursor model
+- `app/models/<resource>_schemas.py`: request / response DTO。public JSON は camelCase
+- `app/models/<resource>_errors.py`: domain errors
+- `app/interfaces/services/<resource>_repository_interface.py`
+- `app/services/<resource>_repository.py`: SQLModel と `UnitOfWorkInterface` を使う永続化実装
+- `app/interfaces/usecases/<resource>_usecase_interface.py`
+- `app/usecases/<resource>_usecase.py`: HTTP を知らない application logic
+- `app/controllers/<resource>_controller.py`: auth context、request DTO、response DTO、error envelope 変換
+- `alembic/versions/<revision>.py`: migration
+- `tests/unit/models/`、`tests/unit/services/`、`tests/unit/usecases/`、`tests/unit/controllers/`、`tests/integration/`
+
+`PATCH` は `exclude_unset=True` と `model_fields_set` を使い、省略と `null` 明示を区別する。empty body は no-op 200 として扱う。
 
 ## テスト
 
 - Pytest を使用 (依存に未追加なら `uv add --dev pytest pytest-asyncio` から)
 - 単体テスト: `tests/unit/`、結合テスト: `tests/integration/` を推奨
-- DB を使うテストは実 DB (SQLite in-memory) を使用しモックしない
-- auth integration test は `TEST_DATABASE_URL` が指す PostgreSQL を使い、test 間 cleanup は auth tables の `TRUNCATE ... CASCADE` で保証する
+- DB を使う integration test は実 PostgreSQL を使用し、DB の挙動をモックしない
+- integration test は `TEST_DATABASE_URL` が指す PostgreSQL を使う。未設定なら skip ではなく fail する
+- test 間 cleanup は存在する対象 table の `TRUNCATE ... CASCADE` で保証する
+- Docker Compose backend は `backend-dev` target と anonymous `/app/backend/.venv` volume を使う。lock 更新後に container 依存が古い場合は `docker compose down -v` で volume を作り直す
 
 ## Phase 2 認証セキュリティ規約
 
@@ -129,6 +157,7 @@ uv run pytest
 - 1つの UoW transaction session を `asyncio.gather()` / `create_task()` で並行利用しない
 - `AuthSettings.ENVIRONMENT` は Phase 2 で削除された。auth cookie security には環境名を使わない
 - local 開発で docs を見たい場合は、`backend/.env.example` を元に `backend/.env` を作り、`ENVIRONMENT=local` を明示する
+- production Dockerfile の `CMD` は `manage.py serve --no-reload` を明示する
 
 ## 関連スキル
 

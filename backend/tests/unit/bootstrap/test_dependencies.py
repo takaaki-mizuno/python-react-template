@@ -8,14 +8,10 @@ from app.config.auth import AuthSettings
 
 def _request_with_injector(injector) -> Request:
     return Request({
-        "type":
-        "http",
-        "method":
-        "GET",
-        "path":
-        "/api/auth/csrf",
-        "app":
-        SimpleNamespace(state=SimpleNamespace(injector=injector)),
+        "type": "http",
+        "method": "GET",
+        "path": "/api/auth/csrf",
+        "app": SimpleNamespace(state=SimpleNamespace(injector=injector)),
         "headers": [],
     })
 

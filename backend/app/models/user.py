@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, Column, DateTime, Index, String, text
@@ -6,14 +6,12 @@ from sqlmodel import Field, SQLModel
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
-    __table_args__ = (Index("uq_users_email_lower",
-                            text("lower(email)"),
-                            unique=True), )
+    __table_args__ = (Index("uq_users_email_lower", text("lower(email)"), unique=True), )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     email: str = Field(sa_column=Column(String(length=320), nullable=False), )

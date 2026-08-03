@@ -47,8 +47,14 @@ npm run dev
 # 本番ビルド (../backend/static/ に出力)
 npm run build
 
+# 型検査
+npm run typecheck
+
 # 整形 (Prettier write + ESLint fix)
 npm run check
+
+# CI / review 前検査 (書き換えなし)
+npm run check:ci
 
 # テスト
 npm test               # Vitest
@@ -98,7 +104,9 @@ npm install -D <pkg>   # devDependencies
 ## ビルド連携
 
 - `npm run build` の出力は `../backend/static/` に書き込まれ、Backend が静的配信する
+- `npm run build` は `npm run typecheck` を先に実行してから Vite build を行う
 - ビルド成果物 (`backend/static/`) はコミット対象**ではない** (`.gitignore` で除外想定)
+- `npm run check` は Prettier / ESLint の自動修正を行う。CI や差分確認だけをしたい場合は `npm run check:ci` を使う
 
 ## テスト
 

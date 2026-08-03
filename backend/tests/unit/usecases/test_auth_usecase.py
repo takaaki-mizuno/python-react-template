@@ -8,8 +8,7 @@ from app.config.auth import AuthSettings
 from app.libraries.password_hasher import hash_password, verify_password
 from app.libraries.session_tokens import hash_token
 from app.models.auth_csrf import SessionCsrfStatus
-from app.models.auth_errors import (InvalidCredentialsError,
-                                    RateLimitExceededError)
+from app.models.auth_errors import InvalidCredentialsError, RateLimitExceededError
 from app.models.auth_session import AuthSession
 from app.models.user import User
 from app.usecases import auth_usecase as auth_usecase_module
@@ -34,8 +33,7 @@ class AllowingRateLimiter:
         normalized_email: str,
         include_email_bucket: bool = True,
     ) -> None:
-        self.failure_records.append(
-            (ip_address, normalized_email, include_email_bucket))
+        self.failure_records.append((ip_address, normalized_email, include_email_bucket))
 
     def record_success(self, ip_address: str, normalized_email: str) -> None:
         self.success_records.append((ip_address, normalized_email))
@@ -151,20 +149,18 @@ def test_dummy_password_hash_is_valid_argon2_with_current_work_factor():
     current_hash = hash_password("Password123!")
 
     assert DUMMY_PASSWORD_HASH.startswith("$argon2id$")
-    assert verify_password("not-the-dummy-password",
-                           DUMMY_PASSWORD_HASH) is False
+    assert verify_password("not-the-dummy-password", DUMMY_PASSWORD_HASH) is False
     assert DUMMY_PASSWORD_HASH.split("$")[3] == current_hash.split("$")[3]
 
 
 @pytest.mark.asyncio
 async def test_validate_session_csrf_returns_no_session_for_unknown_session():
-    status = await _usecase(CsrfSessionRepository(active_session=None)
-                            ).validate_session_csrf(
-                                session_token="missing-session",
-                                csrf_token="csrf-token",
-                                ip_address="127.0.0.1",
-                                user_agent="pytest",
-                            )
+    status = await _usecase(CsrfSessionRepository(active_session=None)).validate_session_csrf(
+        session_token="missing-session",
+        csrf_token="csrf-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
 
     assert status is SessionCsrfStatus.NO_SESSION
 
@@ -180,14 +176,13 @@ async def test_validate_session_csrf_returns_valid_for_matching_token():
         expires_at=auth_usecase_module.utcnow() + timedelta(minutes=10),
     )
 
-    status = await _usecase(
-        CsrfSessionRepository(active_session=active_session)
-    ).validate_session_csrf(
-        session_token="session-token",
-        csrf_token="csrf-token",
-        ip_address="127.0.0.1",
-        user_agent="pytest",
-    )
+    status = await _usecase(CsrfSessionRepository(active_session=active_session)
+                            ).validate_session_csrf(
+                                session_token="session-token",
+                                csrf_token="csrf-token",
+                                ip_address="127.0.0.1",
+                                user_agent="pytest",
+                            )
 
     assert status is SessionCsrfStatus.VALID
 
@@ -203,14 +198,13 @@ async def test_validate_session_csrf_returns_mismatch_for_different_token():
         expires_at=auth_usecase_module.utcnow() + timedelta(minutes=10),
     )
 
-    status = await _usecase(
-        CsrfSessionRepository(active_session=active_session)
-    ).validate_session_csrf(
-        session_token="session-token",
-        csrf_token="different-token",
-        ip_address="127.0.0.1",
-        user_agent="pytest",
-    )
+    status = await _usecase(CsrfSessionRepository(active_session=active_session)
+                            ).validate_session_csrf(
+                                session_token="session-token",
+                                csrf_token="different-token",
+                                ip_address="127.0.0.1",
+                                user_agent="pytest",
+                            )
 
     assert status is SessionCsrfStatus.MISMATCH
 
@@ -227,8 +221,7 @@ def _usecase(
         unit_of_work=unit_of_work or UnitOfWorkStub(),
         auth_rate_limiter=rate_limiter or AllowingRateLimiter(),
         auth_settings=auth_settings or AuthSettings(_env_file=None),
-        password_hash_executor=password_hash_executor
-        or PasswordHashExecutorStub(),
+        password_hash_executor=password_hash_executor or PasswordHashExecutorStub(),
         logger=getLogger(__name__),
     )
 
@@ -251,10 +244,8 @@ async def test_login_verifies_dummy_password_hash_when_user_is_missing():
             user_agent="pytest",
         )
 
-    assert password_hash_executor.verify_calls == [("Password123!",
-                                                    DUMMY_PASSWORD_HASH)]
-    assert rate_limiter.failure_records == [("127.0.0.1",
-                                             "missing@example.com", True)]
+    assert password_hash_executor.verify_calls == [("Password123!", DUMMY_PASSWORD_HASH)]
+    assert rate_limiter.failure_records == [("127.0.0.1", "missing@example.com", True)]
 
 
 @pytest.mark.asyncio
@@ -269,8 +260,7 @@ async def test_login_records_failure_before_audit_insert():
     with pytest.raises(RuntimeError, match="audit failed"):
         await _usecase(
             FailingAuditRepository(user=None),
-            password_hash_executor=PasswordHashExecutorStub(
-                verify_result=False),
+            password_hash_executor=PasswordHashExecutorStub(verify_result=False),
             rate_limiter=rate_limiter,
         ).login(
             email="missing@example.com",
@@ -280,8 +270,7 @@ async def test_login_records_failure_before_audit_insert():
             user_agent="pytest",
         )
 
-    assert rate_limiter.failure_records == [("127.0.0.1",
-                                             "missing@example.com", True)]
+    assert rate_limiter.failure_records == [("127.0.0.1", "missing@example.com", True)]
 
 
 @pytest.mark.asyncio
@@ -309,8 +298,8 @@ async def test_login_rate_limit_does_not_write_audit_log():
 
 @pytest.mark.asyncio
 async def test_login_rejects_inactive_user_without_creating_session():
-    repository = AuthRepositoryStub(user=User(
-        email="inactive@example.com", password_hash="hashed", is_active=False))
+    repository = AuthRepositoryStub(
+        user=User(email="inactive@example.com", password_hash="hashed", is_active=False))
 
     with pytest.raises(InvalidCredentialsError):
         await _usecase(repository).login(
@@ -327,8 +316,8 @@ async def test_login_rejects_inactive_user_without_creating_session():
 @pytest.mark.asyncio
 async def test_login_rejects_user_without_password_hash_with_dummy_verify():
     password_hash_executor = PasswordHashExecutorStub(verify_result=True)
-    repository = AuthRepositoryStub(user=User(
-        email="oauth@example.com", password_hash=None, is_active=True))
+    repository = AuthRepositoryStub(
+        user=User(email="oauth@example.com", password_hash=None, is_active=True))
 
     with pytest.raises(InvalidCredentialsError):
         await _usecase(
@@ -342,31 +331,26 @@ async def test_login_rejects_user_without_password_hash_with_dummy_verify():
             user_agent="pytest",
         )
 
-    assert password_hash_executor.verify_calls == [("Password123!",
-                                                    DUMMY_PASSWORD_HASH)]
+    assert password_hash_executor.verify_calls == [("Password123!", DUMMY_PASSWORD_HASH)]
     assert repository.created_sessions == []
 
 
 @pytest.mark.asyncio
 async def test_login_records_last_login_before_creating_session(monkeypatch):
-    user = User(email="active@example.com",
-                password_hash="hashed",
-                is_active=True)
+    user = User(email="active@example.com", password_hash="hashed", is_active=True)
     repository = AuthRepositoryStub(user=user)
 
     rate_limiter = AllowingRateLimiter()
-    issued_session = await _usecase(repository,
-                                    rate_limiter=rate_limiter).login(
-                                        email="active@example.com",
-                                        password="Password123!",
-                                        current_session_token=None,
-                                        ip_address="127.0.0.1",
-                                        user_agent="pytest",
-                                    )
+    issued_session = await _usecase(repository, rate_limiter=rate_limiter).login(
+        email="active@example.com",
+        password="Password123!",
+        current_session_token=None,
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
 
     assert repository.recorded_login_user_ids == [user.id]
-    assert rate_limiter.success_records == [("127.0.0.1", "active@example.com")
-                                            ]
+    assert rate_limiter.success_records == [("127.0.0.1", "active@example.com")]
     assert issued_session.user.last_login_at is not None
     assert issued_session.user.updated_at == issued_session.user.last_login_at
 
@@ -374,8 +358,7 @@ async def test_login_records_last_login_before_creating_session(monkeypatch):
 @pytest.mark.asyncio
 async def test_register_records_last_login_for_issued_session():
     repository = AuthRepositoryStub(user=None)
-    password_hash_executor = PasswordHashExecutorStub(
-        hash_result="executor-hash")
+    password_hash_executor = PasswordHashExecutorStub(hash_result="executor-hash")
     rate_limiter = AllowingRateLimiter()
 
     issued_session = await _usecase(
@@ -472,8 +455,7 @@ async def test_register_duplicate_records_failure_before_audit_insert():
             user_agent="pytest",
         )
 
-    assert rate_limiter.failure_records == [("127.0.0.1",
-                                             "existing@example.com", False)]
+    assert rate_limiter.failure_records == [("127.0.0.1", "existing@example.com", False)]
 
 
 class TransactionRecordingRepository(AuthRepositoryStub):
@@ -490,23 +472,19 @@ class TransactionRecordingRepository(AuthRepositoryStub):
         self.operations: list[tuple[str, bool]] = []
 
     async def find_active_session_by_token_hash(self, _token_hash: str):
-        self.operations.append(
-            ("find_active_session", self._unit_of_work.in_transaction))
+        self.operations.append(("find_active_session", self._unit_of_work.in_transaction))
         return self.active_session
 
     async def find_user_by_id(self, _user_id):
-        self.operations.append(
-            ("find_user_by_id", self._unit_of_work.in_transaction))
+        self.operations.append(("find_user_by_id", self._unit_of_work.in_transaction))
         return self.user
 
     async def find_session_by_token_hash(self, _token_hash: str):
-        self.operations.append(
-            ("find_session_by_token_hash", self._unit_of_work.in_transaction))
+        self.operations.append(("find_session_by_token_hash", self._unit_of_work.in_transaction))
         return None
 
     async def touch_session(self, _session_id, last_seen_at, expires_at):
-        self.operations.append(
-            ("touch_session", self._unit_of_work.in_transaction))
+        self.operations.append(("touch_session", self._unit_of_work.in_transaction))
         self.active_session.last_seen_at = last_seen_at
         self.active_session.expires_at = expires_at
         return self.active_session
@@ -534,12 +512,11 @@ async def test_authenticate_session_uses_one_unit_of_work_transaction():
         active_session=active_session,
     )
 
-    auth_context = await _usecase(repository,
-                                  unit_of_work).authenticate_session(
-                                      session_token="session-token",
-                                      ip_address="127.0.0.1",
-                                      user_agent="pytest",
-                                  )
+    auth_context = await _usecase(repository, unit_of_work).authenticate_session(
+        session_token="session-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
 
     assert auth_context is not None
     assert repository.operations == [
@@ -589,9 +566,7 @@ async def test_authenticate_session_uses_one_unit_of_work_transaction():
 @pytest.mark.asyncio
 async def test_authenticate_session_skips_touch_inside_interval():
     unit_of_work = UnitOfWorkStub()
-    user = User(email="active@example.com",
-                password_hash="hashed",
-                is_active=True)
+    user = User(email="active@example.com", password_hash="hashed", is_active=True)
     active_session = AuthSession(
         user_id=user.id,
         session_token_hash="session-token-hash",
@@ -606,12 +581,11 @@ async def test_authenticate_session_skips_touch_inside_interval():
         active_session=active_session,
     )
 
-    auth_context = await _usecase(repository,
-                                  unit_of_work).authenticate_session(
-                                      session_token="session-token",
-                                      ip_address="127.0.0.1",
-                                      user_agent="pytest",
-                                  )
+    auth_context = await _usecase(repository, unit_of_work).authenticate_session(
+        session_token="session-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
 
     assert auth_context is not None
     assert repository.operations == [
@@ -623,9 +597,7 @@ async def test_authenticate_session_skips_touch_inside_interval():
 @pytest.mark.asyncio
 async def test_authenticate_session_touch_interval_zero_touches_every_time():
     unit_of_work = UnitOfWorkStub()
-    user = User(email="active@example.com",
-                password_hash="hashed",
-                is_active=True)
+    user = User(email="active@example.com", password_hash="hashed", is_active=True)
     active_session = AuthSession(
         user_id=user.id,
         session_token_hash="session-token-hash",
@@ -643,8 +615,7 @@ async def test_authenticate_session_touch_interval_zero_touches_every_time():
     await _usecase(
         repository,
         unit_of_work,
-        auth_settings=AuthSettings(_env_file=None,
-                                   AUTH_SESSION_TOUCH_INTERVAL_SECONDS=0),
+        auth_settings=AuthSettings(_env_file=None, AUTH_SESSION_TOUCH_INTERVAL_SECONDS=0),
     ).authenticate_session(
         session_token="session-token",
         ip_address="127.0.0.1",

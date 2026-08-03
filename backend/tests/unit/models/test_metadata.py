@@ -17,14 +17,11 @@ def test_auth_foreign_keys_have_deterministic_names():
     auth_sessions = SQLModel.metadata.tables["auth_sessions"]
     auth_audit_logs = SQLModel.metadata.tables["auth_audit_logs"]
 
-    assert {
-        constraint.name
-        for constraint in auth_sessions.foreign_key_constraints
-    } == {"fk_auth_sessions_user_id_users"}
-    assert {
-        constraint.name
-        for constraint in auth_audit_logs.foreign_key_constraints
-    } == {
-        "fk_auth_audit_logs_user_id_users",
-        "fk_auth_audit_logs_session_id_auth_sessions",
-    }
+    assert {constraint.name
+            for constraint in auth_sessions.foreign_key_constraints
+            } == {"fk_auth_sessions_user_id_users"}
+    assert {constraint.name
+            for constraint in auth_audit_logs.foreign_key_constraints} == {
+                "fk_auth_audit_logs_user_id_users",
+                "fk_auth_audit_logs_session_id_auth_sessions",
+            }

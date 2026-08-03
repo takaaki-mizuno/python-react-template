@@ -9,11 +9,9 @@ from app.config.auth import AuthSettings
 from app.controllers import auth_dependencies
 from app.controllers.auth_controller import router
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
-from app.models.auth_context import (AuthenticatedSessionContext,
-                                     IssuedAuthSession)
+from app.models.auth_context import AuthenticatedSessionContext, IssuedAuthSession
 from app.models.auth_csrf import SessionCsrfStatus
-from app.models.auth_errors import (EmailAlreadyRegisteredError,
-                                    InvalidCredentialsError,
+from app.models.auth_errors import (EmailAlreadyRegisteredError, InvalidCredentialsError,
                                     RateLimitExceededError, WeakPasswordError)
 from app.models.auth_session import AuthSession
 from app.models.user import User, utcnow
@@ -135,11 +133,9 @@ def _client_with_stub(usecase: StubAuthUsecase, ) -> TestClient:
     app = FastAPI()
     register_error_handlers(app)
     app.include_router(router, prefix="/api")
-    app.dependency_overrides[
-        auth_dependencies.get_auth_usecase] = lambda: usecase
-    app.dependency_overrides[
-        auth_dependencies.get_auth_settings] = lambda: AuthSettings(
-            _env_file=None, AUTH_COOKIE_SECURE=False)
+    app.dependency_overrides[auth_dependencies.get_auth_usecase] = lambda: usecase
+    app.dependency_overrides[auth_dependencies.get_auth_settings] = lambda: AuthSettings(
+        _env_file=None, AUTH_COOKIE_SECURE=False)
     return TestClient(app)
 
 

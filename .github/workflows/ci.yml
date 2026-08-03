@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --frozen
+      - name: Backend static checks
+        working-directory: backend
+        run: |
+          uv run ruff check .
+          uv run isort . --check-only
+          uv run yapf -dr app/ tests/ alembic/ manage.py
+          uv run mypy app manage.py
+      - name: Backend unit tests
+        working-directory: backend
+        run: uv run pytest tests/unit -q
+
+  backend-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d app_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --frozen
+      - name: Apply migrations
+        working-directory: backend
+        env:
+          ALEMBIC_DATABASE_URL: postgresql://app:app@localhost:5432/app_test
+        run: uv run python manage.py db-upgrade
+      - name: Backend integration tests
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
+        run: uv run pytest tests/integration -q -ra
+      - name: Check migration consistency
+        working-directory: backend
+        env:
+          ALEMBIC_DATABASE_URL: postgresql://app:app@localhost:5432/app_test
+        run: uv run python manage.py db-check
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          npm run check:ci
+          npm test
+          npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose config
+        run: docker compose config
+      - name: Build production backend image
+        run: docker build --target runtime -t python-react-template-backend:ci .
+      - name: Build development backend image
+        run: docker build --target backend-dev -t python-react-template-backend-dev:ci .

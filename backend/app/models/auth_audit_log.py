@@ -25,8 +25,7 @@ class AuthAuditLog(SQLModel, table=True):
         index=True,
         nullable=True,
     )
-    event_type: str = Field(sa_column=Column(String(length=64),
-                                             nullable=False), )
+    event_type: str = Field(sa_column=Column(String(length=64), nullable=False), )
     ip_address: str | None = Field(
         sa_column=Column(String(length=45), nullable=True),
         default=None,

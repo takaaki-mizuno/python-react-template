@@ -1,4 +1,3 @@
-from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import pytest
@@ -25,8 +24,7 @@ def session_factory(async_engine) -> async_sessionmaker[AsyncSession]:
 
 
 @pytest.fixture
-def unit_of_work(
-    session_factory: async_sessionmaker[AsyncSession], ) -> UnitOfWork:
+def unit_of_work(session_factory: async_sessionmaker[AsyncSession], ) -> UnitOfWork:
     return UnitOfWork(session_factory=session_factory)
 
 
@@ -44,8 +42,7 @@ class SecondRepository:
     async def find_user_by_email(self, email: str) -> User | None:
         async with self._unit_of_work.session_scope() as session:
             self.sessions.append(session)
-            result = await session.exec(
-                select(User).where(User.email == email))
+            result = await session.exec(select(User).where(User.email == email))
             return result.one_or_none()
 
 
@@ -106,8 +103,7 @@ async def test_repository_persists_outside_transaction(
     email = f"{uuid4()}@example.com"
     repository = AuthRepository(unit_of_work=unit_of_work)
 
-    created_user = await repository.create_user(email=email,
-                                                password_hash="hash")
+    created_user = await repository.create_user(email=email, password_hash="hash")
 
     persisted_user = await _find_user(session_factory, email)
     assert persisted_user is not None
@@ -139,13 +135,11 @@ async def test_distinct_unit_of_work_instances_do_not_share_context_session(
 
     async with first_unit_of_work.transaction():
         async with first_unit_of_work.session_scope() as first_session:
-            with pytest.raises(RuntimeError,
-                               match="different UnitOfWork transaction"):
+            with pytest.raises(RuntimeError, match="different UnitOfWork transaction"):
                 async with second_unit_of_work.session_scope():
                     pass
 
-            with pytest.raises(RuntimeError,
-                               match="different UnitOfWork transaction"):
+            with pytest.raises(RuntimeError, match="different UnitOfWork transaction"):
                 async with second_unit_of_work.transaction():
                     pass
 
@@ -170,8 +164,7 @@ async def test_distinct_unit_of_work_instances_can_run_sequential_transactions(
 
 
 @pytest.mark.asyncio
-async def test_nested_transaction_reuses_outer_session(
-    unit_of_work: UnitOfWork, ) -> None:
+async def test_nested_transaction_reuses_outer_session(unit_of_work: UnitOfWork, ) -> None:
     async with unit_of_work.transaction():
         async with unit_of_work.session_scope() as outer_session:
             pass
@@ -200,8 +193,7 @@ async def test_transaction_rolls_back_and_resets_contextvar(
 
 
 @pytest.mark.asyncio
-async def test_new_transaction_does_not_reuse_previous_session(
-    unit_of_work: UnitOfWork, ) -> None:
+async def test_new_transaction_does_not_reuse_previous_session(unit_of_work: UnitOfWork, ) -> None:
     async with unit_of_work.transaction():
         async with unit_of_work.session_scope() as first_session:
             pass

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from fastapi import FastAPI
@@ -41,15 +42,16 @@ def api_error(
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(HTTPException, http_exception_handler)
-    app.add_exception_handler(RequestValidationError,
-                              validation_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
 async def http_exception_handler(
     request: Request,
-    exc: HTTPException,
+    exc: Exception,
 ) -> JSONResponse:
+    if not isinstance(exc, HTTPException):
+        return await unhandled_exception_handler(request, exc)
     code, message, details = _error_parts(exc.status_code, exc.detail)
     return json_error_response(
         status_code=exc.status_code,
@@ -62,8 +64,10 @@ async def http_exception_handler(
 
 async def validation_exception_handler(
     request: Request,
-    exc: RequestValidationError,
+    exc: Exception,
 ) -> JSONResponse:
+    if not isinstance(exc, RequestValidationError):
+        return await unhandled_exception_handler(request, exc)
     details = [
         ErrorFieldDetail(
             loc=list(error.get("loc", [])),
@@ -101,24 +105,21 @@ def _error_parts(
 ) -> tuple[str, str, list[ErrorFieldDetail | dict[str, Any]]]:
     if isinstance(detail, dict):
         code = str(detail.get("code") or _default_error_code(status_code))
-        message = str(
-            detail.get("message") or _default_error_message(status_code))
+        message = str(detail.get("message") or _default_error_message(status_code))
         raw_details = detail.get("details") or []
-        details = raw_details if isinstance(raw_details,
-                                            list) else [raw_details]
+        details = raw_details if isinstance(raw_details, list) else [raw_details]
         return code, message, details
     if isinstance(detail, str):
         return _default_error_code(status_code), detail, []
-    return _default_error_code(status_code), _default_error_message(
-        status_code), []
+    return _default_error_code(status_code), _default_error_message(status_code), []
 
 
 def json_error_response(
     status_code: int,
     code: str,
     message: str,
-    details: list[ErrorFieldDetail | dict[str, Any]] | None = None,
-    headers: dict[str, str] | None = None,
+    details: Sequence[ErrorFieldDetail | dict[str, Any]] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     response_headers = dict(headers or {})
     if status_code == 401:
@@ -126,7 +127,7 @@ def json_error_response(
     payload = ErrorResponse(error=ErrorDetail(
         code=code,
         message=message,
-        details=details or [],
+        details=list(details or []),
     ))
     return JSONResponse(
         status_code=status_code,

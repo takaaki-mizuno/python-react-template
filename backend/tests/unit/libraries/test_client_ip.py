@@ -1,7 +1,6 @@
 from starlette.requests import Request
 
-from app.libraries.client_ip import (parse_trusted_proxy_networks,
-                                     resolve_client_ip)
+from app.libraries.client_ip import parse_trusted_proxy_networks, resolve_client_ip
 
 
 def _request(
@@ -52,36 +51,31 @@ def test_resolve_client_ip_combines_multiple_xff_headers():
     assert resolve_client_ip(request, "10.0.0.0/8") == "203.0.113.8"
 
 
-def test_resolve_client_ip_falls_back_to_direct_peer_for_invalid_rightmost_xff_token(
-):
+def test_resolve_client_ip_falls_back_to_direct_peer_for_invalid_rightmost_xff_token():
     request = _request("10.0.0.5", "198.51.100.99, not-an-ip")
 
     assert resolve_client_ip(request, "10.0.0.0/8") == "10.0.0.5"
 
 
-def test_resolve_client_ip_uses_valid_rightmost_untrusted_token_before_invalid_left_token(
-):
+def test_resolve_client_ip_uses_valid_rightmost_untrusted_token_before_invalid_left_token():
     request = _request("10.0.0.5", "not-an-ip, 198.51.100.99")
 
     assert resolve_client_ip(request, "10.0.0.0/8") == "198.51.100.99"
 
 
-def test_resolve_client_ip_falls_back_to_direct_peer_for_invalid_token_after_trusted_hop(
-):
+def test_resolve_client_ip_falls_back_to_direct_peer_for_invalid_token_after_trusted_hop():
     request = _request("10.0.0.5", "198.51.100.99, not-an-ip, 10.0.0.7")
 
     assert resolve_client_ip(request, "10.0.0.0/8") == "10.0.0.5"
 
 
-def test_resolve_client_ip_falls_back_to_direct_peer_for_trailing_empty_xff_token(
-):
+def test_resolve_client_ip_falls_back_to_direct_peer_for_trailing_empty_xff_token():
     request = _request("10.0.0.5", "198.51.100.99,")
 
     assert resolve_client_ip(request, "10.0.0.0/8") == "10.0.0.5"
 
 
-def test_resolve_client_ip_falls_back_to_direct_peer_when_all_xff_tokens_are_invalid(
-):
+def test_resolve_client_ip_falls_back_to_direct_peer_when_all_xff_tokens_are_invalid():
     request = _request("10.0.0.5", "not-an-ip, also-invalid")
 
     assert resolve_client_ip(request, "10.0.0.0/8") == "10.0.0.5"

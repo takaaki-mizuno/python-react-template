@@ -1,29 +1,30 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.bootstrap.error_handlers import api_error
 from app.config.auth import AuthSettings
-from app.controllers.auth_dependencies import (get_auth_settings,
-                                               get_auth_usecase, get_client_ip,
-                                               get_user_agent,
-                                               require_current_session)
+from app.controllers.auth_dependencies import (get_auth_settings, get_auth_usecase, get_client_ip,
+                                               get_user_agent, require_current_session)
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_csrf import SessionCsrfStatus
-from app.models.auth_errors import (EmailAlreadyRegisteredError,
-                                    InvalidCredentialsError,
+from app.models.auth_errors import (EmailAlreadyRegisteredError, InvalidCredentialsError,
                                     RateLimitExceededError, WeakPasswordError)
-from app.models.auth_schemas import (AuthUserResponse, CsrfTokenResponse,
-                                     LoginRequest, RegisterRequest)
+from app.models.auth_schemas import (AuthUserResponse, CsrfTokenResponse, LoginRequest,
+                                     RegisterRequest)
 from app.models.error import ErrorResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-ME_ERROR_RESPONSES = {
+ErrorResponses = dict[int | str, dict[str, Any]]
+
+ME_ERROR_RESPONSES: ErrorResponses = {
     401: {
         "model": ErrorResponse
     },
 }
-REGISTER_ERROR_RESPONSES = {
+REGISTER_ERROR_RESPONSES: ErrorResponses = {
     403: {
         "model": ErrorResponse
     },
@@ -37,7 +38,7 @@ REGISTER_ERROR_RESPONSES = {
         "model": ErrorResponse
     },
 }
-LOGIN_ERROR_RESPONSES = {
+LOGIN_ERROR_RESPONSES: ErrorResponses = {
     401: {
         "model": ErrorResponse
     },
@@ -51,7 +52,7 @@ LOGIN_ERROR_RESPONSES = {
         "model": ErrorResponse
     },
 }
-LOGOUT_ERROR_RESPONSES = {
+LOGOUT_ERROR_RESPONSES: ErrorResponses = {
     403: {
         "model": ErrorResponse
     },
@@ -127,10 +128,10 @@ def clear_csrf_cookie(response: Response, secure: bool) -> None:
 
 @router.get("/csrf", response_model=CsrfTokenResponse)
 async def get_csrf(
-    request: Request,
-    response: Response,
-    auth_settings: AuthSettings = Depends(get_auth_settings),
-    usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
+        request: Request,
+        response: Response,
+        auth_settings: AuthSettings = Depends(get_auth_settings),
+        usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
 ) -> CsrfTokenResponse:
     response.headers["Cache-Control"] = "no-store"
     existing_csrf_token = request.cookies.get("csrf_token")
@@ -142,8 +143,7 @@ async def get_csrf(
         csrf_status = await usecase.validate_session_csrf(
             session_token=session_token,
             csrf_token=existing_csrf_token,
-            ip_address=get_client_ip(request,
-                                     auth_settings.AUTH_TRUSTED_PROXY_IPS),
+            ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
         if csrf_status in {
@@ -163,17 +163,13 @@ async def get_csrf(
     return CsrfTokenResponse(csrfToken=csrf_token)
 
 
-@router.get("/me",
-            response_model=AuthUserResponse,
-            responses=ME_ERROR_RESPONSES)
+@router.get("/me", response_model=AuthUserResponse, responses=ME_ERROR_RESPONSES)
 async def get_me(
     response: Response,
-    auth_context: AuthenticatedSessionContext = Depends(
-        require_current_session),
+    auth_context: AuthenticatedSessionContext = Depends(require_current_session),
 ) -> AuthUserResponse:
     response.headers["Cache-Control"] = "no-store"
-    return AuthUserResponse(id=auth_context.user.id,
-                            email=auth_context.user.email)
+    return AuthUserResponse(id=auth_context.user.id, email=auth_context.user.email)
 
 
 @router.post(
@@ -183,19 +179,18 @@ async def get_me(
     responses=REGISTER_ERROR_RESPONSES,
 )
 async def register(
-    payload: RegisterRequest,
-    request: Request,
-    response: Response,
-    auth_settings: AuthSettings = Depends(get_auth_settings),
-    usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
+        payload: RegisterRequest,
+        request: Request,
+        response: Response,
+        auth_settings: AuthSettings = Depends(get_auth_settings),
+        usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
 ) -> AuthUserResponse:
     try:
         issued_session = await usecase.register(
             email=payload.email,
             password=payload.password,
             current_session_token=request.cookies.get("session_token"),
-            ip_address=get_client_ip(request,
-                                     auth_settings.AUTH_TRUSTED_PROXY_IPS),
+            ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
     except EmailAlreadyRegisteredError as error:
@@ -211,8 +206,7 @@ async def register(
             "Too many register attempts",
             headers={
                 "Retry-After":
-                str(error.retry_after_seconds
-                    or auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
+                str(error.retry_after_seconds or auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
             },
         ) from error
     except WeakPasswordError as error:
@@ -231,8 +225,7 @@ async def register(
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
-    return AuthUserResponse(id=issued_session.user.id,
-                            email=issued_session.user.email)
+    return AuthUserResponse(id=issued_session.user.id, email=issued_session.user.email)
 
 
 @router.post(
@@ -241,19 +234,18 @@ async def register(
     responses=LOGIN_ERROR_RESPONSES,
 )
 async def login(
-    payload: LoginRequest,
-    request: Request,
-    response: Response,
-    auth_settings: AuthSettings = Depends(get_auth_settings),
-    usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
+        payload: LoginRequest,
+        request: Request,
+        response: Response,
+        auth_settings: AuthSettings = Depends(get_auth_settings),
+        usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
 ) -> AuthUserResponse:
     try:
         issued_session = await usecase.login(
             email=payload.email,
             password=payload.password,
             current_session_token=request.cookies.get("session_token"),
-            ip_address=get_client_ip(request,
-                                     auth_settings.AUTH_TRUSTED_PROXY_IPS),
+            ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
     except InvalidCredentialsError as error:
@@ -265,8 +257,7 @@ async def login(
             "Too many login attempts",
             headers={
                 "Retry-After":
-                str(error.retry_after_seconds
-                    or auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
+                str(error.retry_after_seconds or auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
             },
         ) from error
 
@@ -283,8 +274,7 @@ async def login(
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
-    return AuthUserResponse(id=issued_session.user.id,
-                            email=issued_session.user.email)
+    return AuthUserResponse(id=issued_session.user.id, email=issued_session.user.email)
 
 
 @router.post(
@@ -301,8 +291,7 @@ async def logout(
     secure = is_secure_request(request, auth_settings)
     await usecase.logout(
         request.cookies.get("session_token"),
-        ip_address=get_client_ip(request,
-                                 auth_settings.AUTH_TRUSTED_PROXY_IPS),
+        ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
         user_agent=get_user_agent(request),
     )
     clear_session_cookie(response, secure=secure)

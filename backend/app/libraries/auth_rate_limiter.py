@@ -3,8 +3,7 @@ from collections import OrderedDict, deque
 from collections.abc import Callable
 from time import monotonic
 
-from app.interfaces.libraries.rate_limiter_interface import \
-    LoginRateLimiterInterface
+from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +32,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         self._email_ip_buckets: OrderedDict[str, deque[float]] = OrderedDict()
         self._ip_buckets: OrderedDict[str, deque[float]] = OrderedDict()
         self._email_buckets: OrderedDict[str, deque[float]] = OrderedDict()
-        self._registration_ip_buckets: OrderedDict[
-            str, deque[float]] = OrderedDict()
+        self._registration_ip_buckets: OrderedDict[str, deque[float]] = OrderedDict()
         self._cap_warning_scopes: set[str] = set()
 
     def is_allowed(self, ip_address: str, normalized_email: str) -> bool:
@@ -45,8 +43,8 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
             now,
             self._window_seconds,
         )
-        ip_bucket = self._get_existing_bucket(self._ip_buckets, ip_address,
-                                              now, self._window_seconds)
+        ip_bucket = self._get_existing_bucket(self._ip_buckets, ip_address, now,
+                                              self._window_seconds)
         email_bucket = self._get_existing_bucket(
             self._email_buckets,
             normalized_email,
@@ -74,8 +72,8 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         )
         if email_ip_bucket is not None:
             email_ip_bucket.append(now)
-        ip_bucket = self._get_or_create_bucket(self._ip_buckets, ip_address,
-                                               now, self._window_seconds, "ip")
+        ip_bucket = self._get_or_create_bucket(self._ip_buckets, ip_address, now,
+                                               self._window_seconds, "ip")
         if ip_bucket is not None:
             ip_bucket.append(now)
         if include_email_bucket:
@@ -90,8 +88,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
                 email_bucket.append(now)
 
     def record_success(self, ip_address: str, normalized_email: str) -> None:
-        self._email_ip_buckets.pop(
-            self._email_ip_key(ip_address, normalized_email), None)
+        self._email_ip_buckets.pop(self._email_ip_key(ip_address, normalized_email), None)
 
     def is_registration_allowed(self, ip_address: str) -> bool:
         now = self._clock()
@@ -159,8 +156,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         buckets[key] = bucket
         return bucket
 
-    def _trim(self, bucket: deque[float], now: float,
-              window_seconds: int) -> None:
+    def _trim(self, bucket: deque[float], now: float, window_seconds: int) -> None:
         while bucket and now - bucket[0] > window_seconds:
             bucket.popleft()
 

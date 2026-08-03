@@ -4,12 +4,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000",
-    "build": "vite build && tsc",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "format": "prettier",
-    "check": "prettier --write . && eslint --fix"
+    "check": "prettier --write . && eslint --fix && npm run typecheck",
+    "check:ci": "prettier --check . && eslint . && npm run typecheck"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",

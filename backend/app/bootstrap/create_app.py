@@ -44,9 +44,7 @@ def create_app() -> FastAPI:
     config = injector.get(Config)
     injector.get(AuthSettings)
     _setup_logging(config)
-    docs_enabled = config.ENVIRONMENT.lower() in {
-        "local", "development", "test"
-    }
+    docs_enabled = config.ENVIRONMENT.lower() in {"local", "development", "test"}
     app = FastAPI(
         title="Fast API Template",
         lifespan=lifespan,

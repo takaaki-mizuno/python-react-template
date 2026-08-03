@@ -5,8 +5,7 @@ from starlette.requests import Request
 
 
 @lru_cache(maxsize=128)
-def parse_trusted_proxy_networks(
-        trusted_proxy_ips: str) -> tuple[_BaseNetwork, ...]:
+def parse_trusted_proxy_networks(trusted_proxy_ips: str) -> tuple[_BaseNetwork, ...]:
     networks: list[_BaseNetwork] = []
     for raw_value in trusted_proxy_ips.split(","):
         value = raw_value.strip()
@@ -29,12 +28,11 @@ def resolve_client_ip(request: Request, trusted_proxy_ips: str) -> str | None:
     if not forwarded_for:
         return str(direct_ip)
 
-    return str(
-        _resolve_forwarded_for_client_ip(
-            forwarded_for,
-            trusted_networks,
-            direct_ip,
-        ))
+    return str(_resolve_forwarded_for_client_ip(
+        forwarded_for,
+        trusted_networks,
+        direct_ip,
+    ))
 
 
 def get_user_agent(request: Request) -> str | None:
@@ -94,6 +92,5 @@ def _normalize_ip_address(candidate: _BaseAddress) -> _BaseAddress:
     return ipv4_mapped or candidate
 
 
-def _is_trusted(candidate: _BaseAddress, trusted_networks: tuple[_BaseNetwork,
-                                                                 ...]) -> bool:
+def _is_trusted(candidate: _BaseAddress, trusted_networks: tuple[_BaseNetwork, ...]) -> bool:
     return any(candidate in network for network in trusted_networks)

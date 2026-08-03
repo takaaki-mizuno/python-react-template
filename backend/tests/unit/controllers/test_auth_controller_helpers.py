@@ -2,9 +2,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.config.auth import AuthSettings
-from app.controllers.auth_controller import (is_secure_request,
-                                             set_csrf_cookie,
-                                             set_session_cookie)
+from app.controllers.auth_controller import is_secure_request, set_csrf_cookie, set_session_cookie
 
 
 def test_is_secure_request_fails_closed_when_cookie_secure_is_unset():
@@ -67,19 +65,14 @@ def test_is_secure_request_ignores_untrusted_forwarded_proto_when_unset():
 
 def test_issued_auth_cookies_have_required_security_attributes():
     response = Response()
-    set_session_cookie(response,
-                       "session-token",
-                       secure=True,
-                       max_age_seconds=60)
+    set_session_cookie(response, "session-token", secure=True, max_age_seconds=60)
     set_csrf_cookie(response, "csrf-token", secure=True, max_age_seconds=60)
     cookie_headers = [
-        value.decode() for key, value in response.raw_headers
-        if key.lower() == b"set-cookie"
+        value.decode() for key, value in response.raw_headers if key.lower() == b"set-cookie"
     ]
     session_cookie = next(header for header in cookie_headers
                           if header.startswith("session_token="))
-    csrf_cookie = next(header for header in cookie_headers
-                       if header.startswith("csrf_token="))
+    csrf_cookie = next(header for header in cookie_headers if header.startswith("csrf_token="))
 
     assert "HttpOnly" in session_cookie
     assert "Secure" in session_cookie

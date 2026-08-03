@@ -1,13 +1,12 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from injector import inject
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import func, select
+from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.interfaces.services.auth_repository_interface import \
-    AuthRepositoryInterface
+from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.models.auth_audit_log import AuthAuditLog
 from app.models.auth_errors import EmailAlreadyRegisteredError
@@ -16,7 +15,7 @@ from app.models.user import User
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class AuthRepository(AuthRepositoryInterface):
@@ -46,8 +45,7 @@ class AuthRepository(AuthRepositoryInterface):
 
     async def find_user_by_email(self, normalized_email: str) -> User | None:
         async with self._unit_of_work.session_scope() as session:
-            statement = select(User).where(
-                func.lower(User.email) == normalized_email)
+            statement = select(User).where(func.lower(User.email) == normalized_email)
             result = await session.exec(statement)
             return result.one_or_none()
 
@@ -84,23 +82,20 @@ class AuthRepository(AuthRepositoryInterface):
             await session.refresh(auth_session)
             return auth_session
 
-    async def find_active_session_by_token_hash(
-            self, token_hash: str) -> AuthSession | None:
+    async def find_active_session_by_token_hash(self, token_hash: str) -> AuthSession | None:
         now = utcnow()
         async with self._unit_of_work.session_scope() as session:
             statement = select(AuthSession).where(
                 AuthSession.session_token_hash == token_hash,
-                AuthSession.revoked_at.is_(None),
+                col(AuthSession.revoked_at).is_(None),
                 AuthSession.expires_at > now,
             )
             result = await session.exec(statement)
             return result.one_or_none()
 
-    async def find_session_by_token_hash(
-            self, token_hash: str) -> AuthSession | None:
+    async def find_session_by_token_hash(self, token_hash: str) -> AuthSession | None:
         async with self._unit_of_work.session_scope() as session:
-            statement = select(AuthSession).where(
-                AuthSession.session_token_hash == token_hash)
+            statement = select(AuthSession).where(AuthSession.session_token_hash == token_hash)
             result = await session.exec(statement)
             return result.one_or_none()
 
@@ -144,8 +139,7 @@ class AuthRepository(AuthRepositoryInterface):
             await self._persist(session)
             return auth_session
 
-    async def record_user_login(self, user_id: UUID,
-                                login_at: datetime) -> User:
+    async def record_user_login(self, user_id: UUID, login_at: datetime) -> User:
         async with self._unit_of_work.session_scope() as session:
             user = await session.get(User, user_id)
             if user is None:

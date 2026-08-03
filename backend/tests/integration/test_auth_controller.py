@@ -8,8 +8,7 @@ from sqlalchemy import text
 
 from app.bootstrap.create_app import create_app
 from app.config.auth import AuthSettings
-from app.interfaces.services.auth_repository_interface import \
-    AuthRepositoryInterface
+from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.libraries.password_hasher import hash_password
 from app.libraries.session_tokens import hash_token
@@ -139,8 +138,7 @@ async def test_random_session_tokens_do_not_create_audit_rows(
         client.get("/api/auth/csrf")
         client.get("/api/auth/me")
 
-    audit_count = await async_session.scalar(
-        text("SELECT count(*) FROM auth_audit_logs"))
+    audit_count = await async_session.scalar(text("SELECT count(*) FROM auth_audit_logs"))
 
     assert audit_count == 0
 
@@ -149,8 +147,7 @@ def test_get_csrf_is_idempotent_when_cookie_exists(client):
     first_response = client.get("/api/auth/csrf")
     second_response = client.get("/api/auth/csrf")
 
-    assert second_response.json()["csrfToken"] == first_response.json(
-    )["csrfToken"]
+    assert second_response.json()["csrfToken"] == first_response.json()["csrfToken"]
     assert second_response.cookies.get("csrf_token") is None
 
 
@@ -483,10 +480,7 @@ async def test_me_rejects_expired_session(client, async_session):
             SET expires_at = now() - interval '1 second'
             WHERE session_token_hash = :session_token_hash
         """),
-        {
-            "session_token_hash": hash_token(
-                client.cookies.get("session_token"))
-        },
+        {"session_token_hash": hash_token(client.cookies.get("session_token"))},
     )
     await async_session.commit()
 
@@ -523,10 +517,7 @@ async def test_me_rejects_revoked_session(client, async_session):
             SET revoked_at = now()
             WHERE session_token_hash = :session_token_hash
         """),
-        {
-            "session_token_hash": hash_token(
-                client.cookies.get("session_token"))
-        },
+        {"session_token_hash": hash_token(client.cookies.get("session_token"))},
     )
     await async_session.commit()
 
@@ -612,10 +603,7 @@ async def test_register_recovers_from_inactive_session_cookie(
             SET {assignment}
             WHERE session_token_hash = :session_token_hash
         """),
-        {
-            "session_token_hash": hash_token(
-                client.cookies.get("session_token"))
-        },
+        {"session_token_hash": hash_token(client.cookies.get("session_token"))},
     )
     await async_session.commit()
 
@@ -691,10 +679,8 @@ async def test_register_rolls_back_when_success_audit_fails(
         )
 
     user_count = await async_session.scalar(
-        text("SELECT count(*) FROM users WHERE email = 'rollback@example.com'")
-    )
-    session_count = await async_session.scalar(
-        text("SELECT count(*) FROM auth_sessions"))
+        text("SELECT count(*) FROM users WHERE email = 'rollback@example.com'"))
+    session_count = await async_session.scalar(text("SELECT count(*) FROM auth_sessions"))
 
     assert user_count == 0
     assert session_count == 0
@@ -778,8 +764,8 @@ async def test_concurrent_repository_transactions_are_isolated(
         create_rolled_back_user(),
         return_exceptions=True,
     )
-    emails = (await async_session.execute(
-        text("SELECT email FROM users ORDER BY email"))).scalars().all()
+    emails = (await async_session.execute(text("SELECT email FROM users ORDER BY email")
+                                          )).scalars().all()
 
     assert results[0] is None
     assert isinstance(results[1], RuntimeError)
