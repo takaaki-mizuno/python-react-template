@@ -79,10 +79,6 @@ def client(monkeypatch) -> Iterator[TestClient]:
     test_database_url = require_test_database_url()
 
     monkeypatch.setenv("DATABASE_URL", test_database_url)
-    monkeypatch.setenv(
-        "ALEMBIC_DATABASE_URL",
-        test_database_url.replace("+asyncpg", ""),
-    )
     monkeypatch.setenv("AUTH_COOKIE_SECURE", "false")
 
     app = create_app()

@@ -2,6 +2,13 @@ from sqlmodel import SQLModel
 
 import app.models  # noqa: F401
 
+EXPECTED_TABLE_MODELS = {
+    "users",
+    "auth_sessions",
+    "auth_audit_logs",
+    "sample_items",
+}
+
 
 def test_sqlmodel_metadata_uses_naming_convention():
     assert SQLModel.metadata.naming_convention == {
@@ -25,3 +32,17 @@ def test_auth_foreign_keys_have_deterministic_names():
                 "fk_auth_audit_logs_user_id_users",
                 "fk_auth_audit_logs_session_id_auth_sessions",
             }
+
+
+def test_app_models_init_imports_all_table_models_for_alembic_metadata():
+    assert set(SQLModel.metadata.tables) == EXPECTED_TABLE_MODELS
+    assert len(SQLModel.metadata.tables) == len(EXPECTED_TABLE_MODELS)
+
+
+def test_auth_operational_columns_are_registered_for_alembic_metadata():
+    users = SQLModel.metadata.tables["users"]
+    auth_sessions = SQLModel.metadata.tables["auth_sessions"]
+
+    assert "deleted_at" in users.c
+    assert "issued_at" in auth_sessions.c
+    assert "updated_at" in auth_sessions.c

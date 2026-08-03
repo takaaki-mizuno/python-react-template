@@ -25,7 +25,11 @@ frontend/
 │   │   ├── atoms/
 │   │   ├── molecules/
 │   │   └── organisms/
-│   ├── libraries/
+│   ├── lib/
+│   │   ├── apiClient.ts
+│   │   ├── authApi.ts
+│   │   ├── queryClient.ts
+│   │   ├── queryKeys.ts
 │   │   └── css.ts
 │   ├── routes/
 │   │   ├── __root.tsx
@@ -46,8 +50,8 @@ frontend/
 - `components.json` のエイリアス:
   - `ui` -> `@/components/atoms`
   - `components` -> `@/components`
-  - `utils` -> `@/libraries/css`
-  - `lib` -> `@/libraries`
+  - `utils` -> `@/lib/css`
+  - `lib` -> `@/lib`
   - `hooks` -> `@/hooks`（必要に応じて作成）
 
 ---
@@ -73,6 +77,7 @@ frontend/
 ### 3.3 コンポーネントのファイル構成
 
 - `molecules` / `organisms` は **PascalCase のディレクトリ**を作り、直下に `index.tsx` を置く。
+- `components/` から `routes/` を import しない。route 固有の data は route 層から props として注入するか、component local の `data.ts` に置く。
 - 例:
 
 ```
@@ -105,7 +110,7 @@ components/
   - ルートコンポーネントや UI から直接 `fetch` せず、`useQuery` 等のフックで扱う。
   - `QueryClient` は `main.tsx` で Provider に設定することを推奨。
 - ルート単位での初期データは TanStack Router の `loader` を併用可。
-- API 呼び出しの共通処理は `libraries/` または `hooks/` に集約する。
+- API 呼び出しの共通処理は `lib/` または `hooks/` に集約する。
 
 ---
 
@@ -113,7 +118,7 @@ components/
 
 - **Tailwind CSS v4** を利用。
 - `styles.css` にて `@import "tailwindcss"` / `@import "tw-animate-css"` を使用。
-- クラス結合は `libraries/css.ts` の `cn()` ユーティリティを使用（`clsx` + `tailwind-merge`）。
+- クラス結合は `lib/css.ts` の `cn()` ユーティリティを使用（`clsx` + `tailwind-merge`）。
 - UI の色・半径などは `styles.css` の CSS 変数・`@theme inline` で管理。
 - PWA 対応のため、ヘッダー・フッター等に `env(safe-area-inset-*)` を適用。
 

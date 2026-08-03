@@ -9,7 +9,7 @@ import {
   landingNavigation,
   landingSectionIds,
   sectionHeadingIds,
-} from '@/routes/index.data'
+} from './data'
 import { renderWithRouter } from '@/test/renderRouter'
 
 vi.mock('@tanstack/react-devtools', () => ({

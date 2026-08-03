@@ -9,7 +9,6 @@ import {
 } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
-import { landingNavigation } from '@/routes/index.data'
 import { renderWithRouter } from '@/test/renderRouter'
 
 vi.mock('@tanstack/react-devtools', () => ({
@@ -19,6 +18,13 @@ vi.mock('@tanstack/react-devtools', () => ({
 vi.mock('@tanstack/react-router-devtools', () => ({
   TanStackRouterDevtoolsPanel: () => null,
 }))
+
+const headerNavigation = [
+  { href: '#overview', label: '概要' },
+  { href: '#architecture', label: '構成' },
+  { href: '#workflow', label: '進め方' },
+  { href: '#quality', label: '品質' },
+] as const
 
 afterEach(() => {
   cleanup()
@@ -47,7 +53,7 @@ describe('Header', () => {
       name: 'ページ内ナビゲーション',
     })
 
-    for (const item of landingNavigation) {
+    for (const item of headerNavigation) {
       expect(
         within(desktopNav)
           .getByRole('link', { name: item.label })

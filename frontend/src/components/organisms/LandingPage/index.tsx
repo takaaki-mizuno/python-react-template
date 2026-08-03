@@ -12,7 +12,7 @@ import {
   qualitySection,
   sectionHeadingIds,
   workflowSection,
-} from '@/routes/index.data'
+} from './data'
 
 const LandingPage = () => {
   return (

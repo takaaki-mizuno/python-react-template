@@ -65,7 +65,13 @@ def test_is_secure_request_ignores_untrusted_forwarded_proto_when_unset():
 
 def test_issued_auth_cookies_have_required_security_attributes():
     response = Response()
-    set_session_cookie(response, "session-token", secure=True, max_age_seconds=60)
+    set_session_cookie(
+        response,
+        "session-token",
+        secure=True,
+        max_age_seconds=60,
+        auth_settings=AuthSettings(_env_file=None),
+    )
     set_csrf_cookie(response, "csrf-token", secure=True, max_age_seconds=60)
     cookie_headers = [
         value.decode() for key, value in response.raw_headers if key.lower() == b"set-cookie"
@@ -84,3 +90,23 @@ def test_issued_auth_cookies_have_required_security_attributes():
     assert "SameSite=lax" in csrf_cookie
     assert "Path=/" in csrf_cookie
     assert "Max-Age=60" in csrf_cookie
+
+
+def test_session_cookie_helper_supports_host_prefix_without_changing_csrf_cookie():
+    response = Response()
+    settings = AuthSettings(_env_file=None, AUTH_SESSION_COOKIE_PREFIX="__Host-")
+
+    set_session_cookie(
+        response,
+        "session-token",
+        secure=True,
+        max_age_seconds=60,
+        auth_settings=settings,
+    )
+    set_csrf_cookie(response, "csrf-token", secure=True, max_age_seconds=60)
+    cookie_headers = [
+        value.decode() for key, value in response.raw_headers if key.lower() == b"set-cookie"
+    ]
+
+    assert any(header.startswith("__Host-session_token=") for header in cookie_headers)
+    assert any(header.startswith("csrf_token=") for header in cookie_headers)

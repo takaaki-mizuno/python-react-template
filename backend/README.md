@@ -14,7 +14,7 @@ FastAPI + SQLModel + PostgreSQL のバックエンド。
 ```bash
 cp .env.example .env
 uv sync
-ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app uv run python manage.py db-upgrade
+DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app uv run python manage.py db-upgrade
 python manage.py serve
 ```
 
@@ -30,12 +30,20 @@ python manage.py serve --host 0.0.0.0 --port 8000 --no-reload --workers 2
 ## DB
 
 ```bash
-ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app uv run python manage.py db-upgrade
-ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app uv run python manage.py db-check
-ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app uv run python manage.py db-revision --message "change name" --autogenerate --rev-id YYYYMMDD_NNNN
+DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app uv run python manage.py db-upgrade
+DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app uv run python manage.py db-check
+DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app uv run python manage.py db-revision --message "change name" --autogenerate --rev-id YYYYMMDD_NNNN
 ```
 
 schema 変更と migration 作成は、事前に `documents/plans/` に計画を書き、ユーザー確認を取ってから行う。
+
+auth の古い audit log と期限切れ session は `db-prune-auth` で削除する。日時は timezone offset 付き ISO 8601 を指定する。
+
+```bash
+DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app uv run python manage.py db-prune-auth \
+  --audit-logs-before 2026-08-01T00:00:00+00:00 \
+  --expired-sessions-before 2026-08-01T00:00:00+00:00
+```
 
 ## テストと品質ゲート
 
@@ -50,9 +58,9 @@ uv run pytest tests/unit -q
 integration tests は PostgreSQL が必要で、`TEST_DATABASE_URL` 未設定時は fail する。
 
 ```bash
-ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app_test uv run python manage.py db-upgrade
+DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run python manage.py db-upgrade
 TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration -q -ra
-ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app_test uv run python manage.py db-check
+DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run python manage.py db-check
 ```
 
 ## Docker Compose

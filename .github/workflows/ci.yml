@@ -67,7 +67,7 @@ jobs:
       - name: Apply migrations
         working-directory: backend
         env:
-          ALEMBIC_DATABASE_URL: postgresql://app:app@localhost:5432/app_test
+          DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
         run: uv run python manage.py db-upgrade
       - name: Backend integration tests
         working-directory: backend
@@ -77,7 +77,7 @@ jobs:
       - name: Check migration consistency
         working-directory: backend
         env:
-          ALEMBIC_DATABASE_URL: postgresql://app:app@localhost:5432/app_test
+          DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
         run: uv run python manage.py db-check
 
   frontend:

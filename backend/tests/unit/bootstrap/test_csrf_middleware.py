@@ -190,6 +190,24 @@ def test_post_api_accepts_valid_session_csrf():
     assert response.status_code == 200
 
 
+def test_post_api_uses_prefixed_session_cookie_for_session_bound_csrf():
+    usecase = StubUsecase(SessionCsrfStatus.VALID)
+    client = _client(
+        usecase,
+        settings=AuthSettings(
+            _env_file=None,
+            AUTH_SESSION_COOKIE_PREFIX="__Host-",
+        ),
+    )
+    client.cookies.set("csrf_token", "csrf-token")
+    client.cookies.set("__Host-session_token", "session-token")
+
+    response = client.post("/api/protected", headers={"X-CSRF-Token": "csrf-token"})
+
+    assert response.status_code == 200
+    assert usecase.calls == [("session-token", "csrf-token", None, "testclient")]
+
+
 def test_get_api_skips_csrf_validation():
     assert _client().get("/api/protected").status_code == 200
 

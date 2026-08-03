@@ -21,6 +21,7 @@ backend/
 ```
 
 `services/` は現時点で repository 実装の置き場として使う。`repositories/` への改名は未実施であり、Phase 4 時点では `services/` を正とする。
+`interfaces/libraries/` は rate limiter など横断 library interface の置き場であり、空 directory ではない。
 
 ## 依存方向
 
@@ -67,6 +68,20 @@ public API JSON は request / response とも camelCase を正とする。`popul
 HTTP error は `ErrorResponse` envelope で返す。domain error は controller が `api_error()` へ変換する。
 
 `Status` は healthz などの限定用途に使う。CRUD success response の模範にはしない。
+
+## Auth Persistence
+
+- DB 接続は `DATABASE_URL` を正とする。Alembic も同じ設定から `postgresql+asyncpg://` URL を導出し、`ALEMBIC_DATABASE_URL` は使わない。`db-upgrade` / `db-downgrade` / `db-check` / `db-revision` / `db-prune-auth` と bare `alembic current/upgrade` は明示 `DATABASE_URL` を必須にし、既定値だけで DDL や schema check を実行しない。
+- `users.is_active` は凍結、`users.deleted_at` は退会または論理削除を表す。通常の user lookup は `deleted_at IS NULL` を含める。
+- 削除済み user は login、`GET /api/auth/me`、session authentication で認証不可。認証時だけ `find_user_by_id_for_authentication()` が deleted / inactive を観測して session revoke と audit に使う。
+- 削除済み user の email は `uq_users_email_lower_active` partial unique index により再登録可能。active user 同士の重複は DB が拒否する。
+- Phase 5 では公開 `DELETE /api/auth/me` と frontend 退会 UI は追加しない。account deletion workflow は Phase 6 の対象。
+- `mark_user_deleted()` は `USER_MARKED_DELETED` audit log を同じ repository 操作内で作成する。Phase 6 の公開 account deletion workflow はこの repository 契約を経由する。
+- physical delete 時は sessions が CASCADE、audit logs の user/session 参照が SET NULL。
+- `AuthSession.issued_at` は absolute TTL 起点で、`created_at` は監査用の作成時刻。session touch 時の expiry 再計算に `created_at` を使わない。
+- `ip_address` columns は PostgreSQL `INET`、Python model boundary は `str | None`。
+- auth repository は domain error を投げる。HTTP error envelope への変換は controller の責務。
+- `db-prune-auth` は古い audit log と expired session を削除する CLI。CLI bootstrap は FastAPI app を作らず DI container を使い、最後に `AsyncEngine.dispose()` を呼ぶ。両 threshold 指定時は audit log、expired session の順に実行するが、repository 操作ごとに commit されるため、途中失敗時は部分成功になり得る。
 
 ## Sample CRUD
 

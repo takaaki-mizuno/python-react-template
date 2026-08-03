@@ -1,33 +1,43 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, DateTime, Index, String
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
-from app.models.user import utcnow
+from app.libraries.clock import utcnow
+from app.libraries.sqlalchemy_types import InetString
 
 
 class AuthAuditLog(SQLModel, table=True):
     __tablename__ = "auth_audit_logs"
-    __table_args__ = (Index("ix_auth_audit_logs_event_type", "event_type"), )
+    __table_args__ = (
+        Index("ix_auth_audit_logs_event_type", "event_type"),
+        Index("ix_auth_audit_logs_created_at", "created_at"),
+    )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID | None = Field(
         default=None,
-        foreign_key="users.id",
-        index=True,
-        nullable=True,
+        sa_column=Column(
+            Uuid,
+            ForeignKey("users.id", ondelete="SET NULL"),
+            index=True,
+            nullable=True,
+        ),
     )
     session_id: UUID | None = Field(
         default=None,
-        foreign_key="auth_sessions.id",
-        index=True,
-        nullable=True,
+        sa_column=Column(
+            Uuid,
+            ForeignKey("auth_sessions.id", ondelete="SET NULL"),
+            index=True,
+            nullable=True,
+        ),
     )
     event_type: str = Field(sa_column=Column(String(length=64), nullable=False), )
     ip_address: str | None = Field(
-        sa_column=Column(String(length=45), nullable=True),
+        sa_column=Column(InetString(), nullable=True),
         default=None,
     )
     user_agent: str | None = Field(

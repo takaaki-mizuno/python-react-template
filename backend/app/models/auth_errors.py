@@ -1,3 +1,6 @@
+from uuid import UUID
+
+
 class EmailAlreadyRegisteredError(Exception):
     pass
 
@@ -15,3 +18,17 @@ class RateLimitExceededError(Exception):
 
 class WeakPasswordError(Exception):
     pass
+
+
+class UserNotFoundError(Exception):
+
+    def __init__(self, user_id: UUID) -> None:
+        super().__init__(f"User not found: {user_id}")
+        self.user_id = user_id
+
+
+class AuthSessionNotFoundError(Exception):
+
+    def __init__(self, session_id: UUID) -> None:
+        super().__init__(f"AuthSession not found: {session_id}")
+        self.session_id = session_id

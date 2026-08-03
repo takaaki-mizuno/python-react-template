@@ -5,13 +5,14 @@ from logging import getLogger
 import pytest
 
 from app.config.auth import AuthSettings
+from app.libraries.clock import utcnow
 from app.libraries.password_hasher import hash_password, verify_password
 from app.libraries.session_tokens import hash_token
 from app.models.auth_csrf import SessionCsrfStatus
 from app.models.auth_errors import InvalidCredentialsError, RateLimitExceededError
+from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
 from app.models.user import User
-from app.usecases import auth_usecase as auth_usecase_module
 from app.usecases.auth_usecase import DUMMY_PASSWORD_HASH, AuthUsecase
 
 
@@ -95,6 +96,7 @@ class AuthRepositoryStub:
         self.audit_logs = []
         self.recorded_login_user_ids = []
         self.created_users: list[User] = []
+        self.revoked_session_ids = []
 
     async def create_user(self, email: str, password_hash: str | None) -> User:
         user = User(email=email, password_hash=password_hash, is_active=True)
@@ -105,7 +107,7 @@ class AuthRepositoryStub:
     async def find_user_by_email(self, _normalized_email: str) -> User | None:
         return self.user
 
-    async def find_user_by_id(self, _user_id):
+    async def find_user_by_id_for_authentication(self, _user_id):
         return self.user
 
     async def create_session(self, **kwargs) -> AuthSession:
@@ -120,7 +122,7 @@ class AuthRepositoryStub:
         return None
 
     async def revoke_session(self, _session_id) -> None:
-        return None
+        self.revoked_session_ids.append(_session_id)
 
     async def touch_session(self, _session_id, _last_seen_at, _expires_at):
         raise NotImplementedError
@@ -171,9 +173,10 @@ async def test_validate_session_csrf_returns_valid_for_matching_token():
         user_id=User(email="active@example.com").id,
         session_token_hash=hash_token("session-token"),
         csrf_token_hash=hash_token("csrf-token"),
-        created_at=auth_usecase_module.utcnow(),
-        last_seen_at=auth_usecase_module.utcnow(),
-        expires_at=auth_usecase_module.utcnow() + timedelta(minutes=10),
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
     )
 
     status = await _usecase(CsrfSessionRepository(active_session=active_session)
@@ -193,9 +196,10 @@ async def test_validate_session_csrf_returns_mismatch_for_different_token():
         user_id=User(email="active@example.com").id,
         session_token_hash=hash_token("session-token"),
         csrf_token_hash=hash_token("csrf-token"),
-        created_at=auth_usecase_module.utcnow(),
-        last_seen_at=auth_usecase_module.utcnow(),
-        expires_at=auth_usecase_module.utcnow() + timedelta(minutes=10),
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
     )
 
     status = await _usecase(CsrfSessionRepository(active_session=active_session)
@@ -475,8 +479,9 @@ class TransactionRecordingRepository(AuthRepositoryStub):
         self.operations.append(("find_active_session", self._unit_of_work.in_transaction))
         return self.active_session
 
-    async def find_user_by_id(self, _user_id):
-        self.operations.append(("find_user_by_id", self._unit_of_work.in_transaction))
+    async def find_user_by_id_for_authentication(self, _user_id):
+        self.operations.append(
+            ("find_user_by_id_for_authentication", self._unit_of_work.in_transaction))
         return self.user
 
     async def find_session_by_token_hash(self, _token_hash: str):
@@ -502,9 +507,10 @@ async def test_authenticate_session_uses_one_unit_of_work_transaction():
         user_id=user.id,
         session_token_hash="session-token-hash",
         csrf_token_hash="csrf-token-hash",
-        created_at=auth_usecase_module.utcnow(),
-        last_seen_at=auth_usecase_module.utcnow() - timedelta(minutes=10),
-        expires_at=auth_usecase_module.utcnow() + timedelta(minutes=10),
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow() - timedelta(minutes=10),
+        expires_at=utcnow() + timedelta(minutes=10),
     )
     repository = TransactionRecordingRepository(
         unit_of_work=unit_of_work,
@@ -521,7 +527,7 @@ async def test_authenticate_session_uses_one_unit_of_work_transaction():
     assert auth_context is not None
     assert repository.operations == [
         ("find_active_session", True),
-        ("find_user_by_id", True),
+        ("find_user_by_id_for_authentication", True),
         ("touch_session", True),
     ]
 
@@ -571,9 +577,10 @@ async def test_authenticate_session_skips_touch_inside_interval():
         user_id=user.id,
         session_token_hash="session-token-hash",
         csrf_token_hash="csrf-token-hash",
-        created_at=auth_usecase_module.utcnow(),
-        last_seen_at=auth_usecase_module.utcnow(),
-        expires_at=auth_usecase_module.utcnow() + timedelta(minutes=10),
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
     )
     repository = TransactionRecordingRepository(
         unit_of_work=unit_of_work,
@@ -590,8 +597,98 @@ async def test_authenticate_session_skips_touch_inside_interval():
     assert auth_context is not None
     assert repository.operations == [
         ("find_active_session", True),
-        ("find_user_by_id", True),
+        ("find_user_by_id_for_authentication", True),
     ]
+
+
+@pytest.mark.asyncio
+async def test_authenticate_session_revokes_deleted_user_session_and_audits():
+    unit_of_work = UnitOfWorkStub()
+    user = User(email="deleted@example.com", password_hash="hashed", is_active=True)
+    user.deleted_at = utcnow()
+    active_session = AuthSession(
+        user_id=user.id,
+        session_token_hash="session-token-hash",
+        csrf_token_hash="csrf-token-hash",
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
+    )
+    repository = TransactionRecordingRepository(
+        unit_of_work=unit_of_work,
+        user=user,
+        active_session=active_session,
+    )
+
+    auth_context = await _usecase(repository, unit_of_work).authenticate_session(
+        session_token="session-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert auth_context is None
+    assert repository.revoked_session_ids == [active_session.id]
+    assert repository.audit_logs[-1].event_type == AuthEventType.SESSION_REVOKED_DELETED_USER
+
+
+@pytest.mark.asyncio
+async def test_authenticate_session_revokes_inactive_user_session_and_audits():
+    unit_of_work = UnitOfWorkStub()
+    user = User(email="inactive@example.com", password_hash="hashed", is_active=False)
+    active_session = AuthSession(
+        user_id=user.id,
+        session_token_hash="session-token-hash",
+        csrf_token_hash="csrf-token-hash",
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
+    )
+    repository = TransactionRecordingRepository(
+        unit_of_work=unit_of_work,
+        user=user,
+        active_session=active_session,
+    )
+
+    auth_context = await _usecase(repository, unit_of_work).authenticate_session(
+        session_token="session-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert auth_context is None
+    assert repository.revoked_session_ids == [active_session.id]
+    assert repository.audit_logs[-1].event_type == AuthEventType.SESSION_REVOKED_INACTIVE_USER
+
+
+@pytest.mark.asyncio
+async def test_authenticate_session_rejects_missing_user_without_deleted_or_inactive_event():
+    unit_of_work = UnitOfWorkStub()
+    active_session = AuthSession(
+        user_id=User(email="missing@example.com").id,
+        session_token_hash="session-token-hash",
+        csrf_token_hash="csrf-token-hash",
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
+    )
+    repository = TransactionRecordingRepository(
+        unit_of_work=unit_of_work,
+        user=None,
+        active_session=active_session,
+    )
+
+    auth_context = await _usecase(repository, unit_of_work).authenticate_session(
+        session_token="session-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert auth_context is None
+    assert repository.revoked_session_ids == [active_session.id]
+    assert repository.audit_logs[-1].event_type == AuthEventType.SESSION_REJECTED
 
 
 @pytest.mark.asyncio
@@ -602,9 +699,10 @@ async def test_authenticate_session_touch_interval_zero_touches_every_time():
         user_id=user.id,
         session_token_hash="session-token-hash",
         csrf_token_hash="csrf-token-hash",
-        created_at=auth_usecase_module.utcnow(),
-        last_seen_at=auth_usecase_module.utcnow(),
-        expires_at=auth_usecase_module.utcnow() + timedelta(minutes=10),
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
     )
     repository = TransactionRecordingRepository(
         unit_of_work=unit_of_work,

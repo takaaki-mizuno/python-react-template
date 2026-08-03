@@ -29,7 +29,6 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://app:app@postgres:5432/app
-      ALEMBIC_DATABASE_URL: postgresql://app:app@postgres:5432/app
     working_dir: /app/backend
     command:
       - sh

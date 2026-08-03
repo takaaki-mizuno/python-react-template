@@ -1,14 +1,19 @@
+import asyncio
 import tomllib
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from injector import Injector
 from sqlalchemy.engine import make_url
 
+from app.bootstrap.cli import run_with_container
 from app.config import get_config
-from app.config.database import DatabaseSettings, get_database_settings
+from app.config.database import DatabaseSettings, get_alembic_database_url, get_database_settings
+from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 
 app = typer.Typer()
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -57,11 +62,13 @@ def _default_reload() -> bool:
 
 @app.command("db-upgrade")
 def db_upgrade(revision: str = "head") -> None:
+    _get_explicit_database_settings("db-upgrade")
     alembic_command.upgrade(_alembic_config(), revision)
 
 
 @app.command("db-downgrade")
 def db_downgrade(revision: str = typer.Argument(...)) -> None:
+    _get_explicit_database_settings("db-downgrade")
     alembic_command.downgrade(_alembic_config(), revision)
 
 
@@ -69,7 +76,7 @@ def db_downgrade(revision: str = typer.Argument(...)) -> None:
 def db_check() -> None:
     settings = _get_explicit_database_settings("db-check")
     typer.secho(
-        f"Checking database: {_format_database_target(settings.ALEMBIC_DATABASE_URL)}",
+        f"Checking database: {_format_database_target(get_alembic_database_url(settings))}",
         err=True,
     )
     alembic_command.check(_alembic_config())
@@ -91,15 +98,79 @@ def db_revision(
     alembic_command.revision(config, message=message, autogenerate=autogenerate, rev_id=rev_id)
 
 
-def _get_explicit_database_settings(command_name: str) -> DatabaseSettings:
-    settings = get_database_settings()
-    if "ALEMBIC_DATABASE_URL" not in settings.model_fields_set:
+@app.command("db-prune-auth")
+def db_prune_auth(
+    expired_sessions_before: Annotated[
+        str | None,
+        typer.Option(help="Delete auth sessions with expires_at before this timestamp."),
+    ] = None,
+    audit_logs_before: Annotated[
+        str | None,
+        typer.Option(help="Delete auth audit logs with created_at before this timestamp."),
+    ] = None,
+) -> None:
+    if expired_sessions_before is None and audit_logs_before is None:
         typer.secho(
-            f"ALEMBIC_DATABASE_URL must be configured explicitly for {command_name}.",
+            "Specify at least one of --expired-sessions-before or --audit-logs-before.",
             err=True,
             fg=typer.colors.RED,
         )
         raise typer.Exit(code=2)
+    expired_sessions_before_at = _parse_cli_datetime(
+        expired_sessions_before,
+        "--expired-sessions-before",
+    )
+    audit_logs_before_at = _parse_cli_datetime(audit_logs_before, "--audit-logs-before")
+    _get_explicit_database_settings("db-prune-auth")
+
+    async def operation(container: Injector) -> None:
+        repository = container.get(AuthRepositoryInterface)
+        if audit_logs_before_at is not None:
+            deleted_logs = await repository.delete_audit_logs_created_before(audit_logs_before_at)
+            typer.echo(f"Deleted audit logs: {deleted_logs}")
+        if expired_sessions_before_at is not None:
+            deleted_sessions = await repository.delete_expired_sessions(expired_sessions_before_at)
+            typer.echo(f"Deleted expired sessions: {deleted_sessions}")
+
+    asyncio.run(run_with_container(operation))
+
+
+def _parse_cli_datetime(value: str | None, option_name: str) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed_value = datetime.fromisoformat(value)
+    except ValueError as exc:
+        typer.secho(
+            f"{option_name} must be an ISO 8601 datetime.",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2) from exc
+    if parsed_value.tzinfo is None or parsed_value.utcoffset() is None:
+        typer.secho(
+            f"{option_name} must include a timezone offset.",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+    return parsed_value
+
+
+def _get_explicit_database_settings(command_name: str) -> DatabaseSettings:
+    settings = get_database_settings()
+    if "DATABASE_URL" not in settings.model_fields_set:
+        typer.secho(
+            f"DATABASE_URL must be configured explicitly for {command_name}.",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+    try:
+        get_alembic_database_url(settings)
+    except ValueError as exc:
+        typer.secho(str(exc), err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=2) from exc
     return settings
 
 

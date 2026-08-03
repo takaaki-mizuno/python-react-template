@@ -100,7 +100,7 @@ hostから実行する場合:
 (
   cd backend
   export APP_POSTGRES_PORT=5432
-  ALEMBIC_DATABASE_URL="postgresql://app:app@localhost:${APP_POSTGRES_PORT}/app" \
+  DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app" \
     uv run python manage.py db-upgrade --revision head
 )
 ```
@@ -115,7 +115,7 @@ hostから実行する場合:
 (
   cd backend
   export APP_POSTGRES_PORT=5432
-  ALEMBIC_DATABASE_URL="postgresql://app:app@localhost:${APP_POSTGRES_PORT}/app" \
+  DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app" \
     uv run python manage.py db-downgrade --revision=-1
 )
 ```
@@ -136,15 +136,15 @@ docker compose exec -T postgres \
 
 ```bash
 docker compose exec -T \
-  -e ALEMBIC_DATABASE_URL=postgresql://app:app@postgres:5432/app_test \
+  -e DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app_test \
   backend uv run python manage.py db-upgrade --revision head
 
 docker compose exec -T \
-  -e ALEMBIC_DATABASE_URL=postgresql://app:app@postgres:5432/app_test \
+  -e DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app_test \
   backend uv run python manage.py db-downgrade --revision base
 
 docker compose exec -T \
-  -e ALEMBIC_DATABASE_URL=postgresql://app:app@postgres:5432/app_test \
+  -e DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app_test \
   backend uv run python manage.py db-upgrade --revision head
 ```
 
@@ -154,13 +154,13 @@ docker compose exec -T \
 
 ER設計とmigration方針をrepository rootの`documents/plans/`へ記録し、schema変更の合意後にrevisionを作成します。modelを更新し、生成元には専用`app_test`を使います。
 
-先に`app_test`へ既存migrationの`head`を適用します。その後、次の`current`と`heads`が同じrevisionを示し、`current`に`(head)`が表示されることを確認してからautogenerateします。
+先に`app_test`へ既存migrationの`head`を適用します。その後、次の`current`と`heads`が同じrevisionを示し、`current`に`(head)`が表示されることを確認してからautogenerateします。`manage.py` 経由だけでなく bare `alembic` コマンドも `DATABASE_URL` の明示設定を必須にしているため、この手順では同じ shell で `DATABASE_URL` を export してから実行します。
 
 ```bash
 (
   cd backend
   export APP_POSTGRES_PORT=5432
-  export ALEMBIC_DATABASE_URL="postgresql://app:app@localhost:${APP_POSTGRES_PORT}/app_test"
+  export DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app_test"
   uv run python manage.py db-upgrade --revision head
   uv run alembic current
   uv run alembic heads
@@ -198,7 +198,6 @@ host接続例は標準port`5432`です。ルート`.env`の`POSTGRES_PORT`を変
   cd backend
   export APP_POSTGRES_PORT=5432
   TEST_DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
-  ALEMBIC_DATABASE_URL="postgresql://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
     uv run pytest
 )
 ```
@@ -212,7 +211,6 @@ schemaとcontrollerだけを個別に確認する場合:
   cd backend
   export APP_POSTGRES_PORT=5432
   TEST_DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
-  ALEMBIC_DATABASE_URL="postgresql://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
     uv run pytest tests/integration/test_auth_schema.py \
       tests/integration/test_auth_controller.py -v
 )
@@ -227,7 +225,6 @@ schemaとcontrollerだけを個別に確認する場合:
   uv run isort . --check-only
   uv run yapf -dr app/ tests/ alembic/
   TEST_DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
-  ALEMBIC_DATABASE_URL="postgresql://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
     uv run pytest
 )
 ```

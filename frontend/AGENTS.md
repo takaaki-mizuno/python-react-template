@@ -71,7 +71,9 @@ npm install -D <pkg>   # devDependencies
 - コンポーネント命名: `PascalCase`
 - フック命名: `useXxx`
 - ファイル名: コンポーネントは `PascalCase.tsx`、その他は `camelCase.ts`
-- shadcn/ui 由来のファイルは `src/components/ui/` に配置し直接編集を避ける
+- shadcn/ui 由来の atom は `src/components/atoms/` に配置する。`components/ui` はこの repo では採用しない
+- shared utility は `src/lib/` に置く。クラス結合は `src/lib/css.ts` の `cn()` を使う
+- `components/` から `routes/` を import しない。Header のような共通 UI は route-specific data を props で受け取る
 
 ## ルーティング (TanStack Router)
 

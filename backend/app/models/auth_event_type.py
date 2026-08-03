@@ -8,3 +8,6 @@ class AuthEventType(StrEnum):
     LOGIN_FAILED = "login_failed"
     LOGOUT = "logout"
     SESSION_REJECTED = "session_rejected"
+    USER_MARKED_DELETED = "user_marked_deleted"
+    SESSION_REVOKED_DELETED_USER = "session_revoked_deleted_user"
+    SESSION_REVOKED_INACTIVE_USER = "session_revoked_inactive_user"

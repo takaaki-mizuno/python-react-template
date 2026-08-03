@@ -4,13 +4,14 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from alembic.util import CommandError
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 import app.models  # noqa: F401
-from app.config.database import get_database_settings
+from app.config.database import get_alembic_database_url, get_database_settings
 
 config = context.config
 
@@ -21,11 +22,13 @@ target_metadata = SQLModel.metadata
 
 
 def get_database_url() -> str:
-    database_settings = get_database_settings()
-    database_url = database_settings.ALEMBIC_DATABASE_URL
-    if database_url.startswith("postgresql://"):
-        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return database_url
+    settings = get_database_settings()
+    if "DATABASE_URL" not in settings.model_fields_set:
+        raise CommandError("DATABASE_URL must be configured explicitly for Alembic.")
+    try:
+        return get_alembic_database_url(settings)
+    except ValueError as exc:
+        raise CommandError(str(exc)) from exc
 
 
 config.set_main_option("sqlalchemy.url", get_database_url())

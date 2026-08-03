@@ -101,7 +101,7 @@ def test_serve_defaults_to_reload_in_local(monkeypatch):
 
 def test_db_check_invokes_alembic_check(monkeypatch):
     calls = []
-    monkeypatch.setenv("ALEMBIC_DATABASE_URL", "postgresql://app:app@localhost:5432/app_test")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
 
     class ConfigStub:
 
@@ -127,26 +127,37 @@ def test_db_check_invokes_alembic_check(monkeypatch):
     assert calls[1][0] == "check"
 
 
-def test_db_check_rejects_default_alembic_database_url(monkeypatch, tmp_path):
-    monkeypatch.delenv("ALEMBIC_DATABASE_URL", raising=False)
+def test_db_check_rejects_default_database_url(monkeypatch, tmp_path):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(manage.app, ["db-check"])
 
     assert result.exit_code == 2
-    assert "ALEMBIC_DATABASE_URL" in result.stderr
+    assert "DATABASE_URL" in result.stderr
     assert "configured explicitly" in result.stderr
 
 
-def test_db_check_accepts_alembic_database_url_from_dotenv(
+def test_db_check_rejects_alembic_database_url_only(monkeypatch, tmp_path):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("ALEMBIC_DATABASE_URL", "postgresql://app:app@localhost:5432/app_test")
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(manage.app, ["db-check"])
+
+    assert result.exit_code == 2
+    assert "DATABASE_URL" in result.stderr
+
+
+def test_db_check_accepts_database_url_from_dotenv(
     monkeypatch,
     tmp_path,
 ):
     calls = []
-    monkeypatch.delenv("ALEMBIC_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text(
-        "ALEMBIC_DATABASE_URL=postgresql://app:secret@db.example:6543/app_test\n",
+        "DATABASE_URL=postgresql+asyncpg://app:secret@db.example:6543/app_test\n",
         encoding="utf-8",
     )
 
@@ -171,10 +182,10 @@ def test_db_check_accepts_default_value_when_it_is_set_in_dotenv(
     tmp_path,
 ):
     calls = []
-    monkeypatch.delenv("ALEMBIC_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text(
-        "ALEMBIC_DATABASE_URL=postgresql://app:app@localhost:5432/app\n",
+        "DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app\n",
         encoding="utf-8",
     )
 
@@ -190,7 +201,36 @@ def test_db_check_accepts_default_value_when_it_is_set_in_dotenv(
 
     assert result.exit_code == 0
     assert calls[0][0] == "check"
-    assert "postgresql://localhost:5432/app" in result.stderr
+    assert "postgresql+asyncpg://localhost:5432/app" in result.stderr
+
+
+def test_db_upgrade_requires_explicit_database_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    result = CliRunner().invoke(manage.app, ["db-upgrade"])
+
+    assert result.exit_code == 2
+    assert "DATABASE_URL" in result.stderr
+    assert "configured explicitly" in result.stderr
+
+
+def test_db_upgrade_invokes_alembic_upgrade_when_database_url_is_explicit(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class CommandStub:
+
+        @staticmethod
+        def upgrade(config, revision):
+            calls.append(("upgrade", config, revision))
+
+    monkeypatch.setattr(manage, "alembic_command", CommandStub)
+
+    result = CliRunner().invoke(manage.app, ["db-upgrade"])
+
+    assert result.exit_code == 0
+    assert calls[0][0] == "upgrade"
+    assert calls[0][2] == "head"
 
 
 def test_db_downgrade_requires_explicit_revision():
@@ -198,6 +238,16 @@ def test_db_downgrade_requires_explicit_revision():
 
     assert result.exit_code == 2
     assert "Missing argument" in result.stderr
+
+
+def test_db_downgrade_requires_explicit_database_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    result = CliRunner().invoke(manage.app, ["db-downgrade", "base"])
+
+    assert result.exit_code == 2
+    assert "DATABASE_URL" in result.stderr
+    assert "configured explicitly" in result.stderr
 
 
 def test_db_upgrade_and_downgrade_use_explicit_command_names():
@@ -220,8 +270,8 @@ def test_version_reads_project_version_from_pyproject():
     assert f"Version: {expected_version}" in result.stdout
 
 
-def test_db_revision_autogenerate_requires_explicit_alembic_database_url(monkeypatch):
-    monkeypatch.delenv("ALEMBIC_DATABASE_URL", raising=False)
+def test_db_revision_autogenerate_requires_explicit_database_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
     result = CliRunner().invoke(
         manage.app,
@@ -229,13 +279,13 @@ def test_db_revision_autogenerate_requires_explicit_alembic_database_url(monkeyp
     )
 
     assert result.exit_code == 2
-    assert "ALEMBIC_DATABASE_URL" in result.stderr
+    assert "DATABASE_URL" in result.stderr
     assert "configured explicitly" in result.stderr
 
 
 def test_db_revision_autogenerate_checks_head_before_creating_revision(monkeypatch):
     calls = []
-    monkeypatch.setenv("ALEMBIC_DATABASE_URL", "postgresql://app:app@localhost:5432/app_test")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
 
     class CommandStub:
 
@@ -262,7 +312,7 @@ def test_db_revision_autogenerate_checks_head_before_creating_revision(monkeypat
 
 def test_db_revision_accepts_explicit_revision_id(monkeypatch):
     calls = []
-    monkeypatch.setenv("ALEMBIC_DATABASE_URL", "postgresql://app:app@localhost:5432/app_test")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
 
     class CommandStub:
 
@@ -298,3 +348,142 @@ def test_db_revision_requires_message():
 
     assert result.exit_code == 2
     assert "message" in result.stderr
+
+
+def test_db_prune_auth_requires_at_least_one_threshold():
+    result = CliRunner().invoke(manage.app, ["db-prune-auth"])
+
+    assert result.exit_code == 2
+    assert "at least one" in result.stderr
+
+
+def test_db_prune_auth_prunes_expired_sessions_only(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class RepositoryStub:
+
+        async def delete_expired_sessions(self, expired_before):
+            calls.append(("sessions", expired_before))
+            return 3
+
+        async def delete_audit_logs_created_before(self, created_before):
+            calls.append(("audit", created_before))
+            return 5
+
+    class InjectorStub:
+
+        def get(self, _interface):
+            return RepositoryStub()
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(
+        manage.app,
+        ["db-prune-auth", "--expired-sessions-before", "2026-08-01T00:00:00+00:00"],
+    )
+
+    assert result.exit_code == 0
+    assert [call[0] for call in calls] == ["sessions"]
+    assert "Deleted expired sessions: 3" in result.stdout
+
+
+def test_db_prune_auth_prunes_audit_logs_only(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class RepositoryStub:
+
+        async def delete_expired_sessions(self, expired_before):
+            calls.append(("sessions", expired_before))
+            return 3
+
+        async def delete_audit_logs_created_before(self, created_before):
+            calls.append(("audit", created_before))
+            return 5
+
+    class InjectorStub:
+
+        def get(self, _interface):
+            return RepositoryStub()
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(
+        manage.app,
+        ["db-prune-auth", "--audit-logs-before", "2026-08-01T00:00:00+00:00"],
+    )
+
+    assert result.exit_code == 0
+    assert [call[0] for call in calls] == ["audit"]
+    assert "Deleted audit logs: 5" in result.stdout
+
+
+def test_db_prune_auth_prunes_audit_logs_before_sessions(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class RepositoryStub:
+
+        async def delete_expired_sessions(self, expired_before):
+            calls.append(("sessions", expired_before))
+            return 3
+
+        async def delete_audit_logs_created_before(self, created_before):
+            calls.append(("audit", created_before))
+            return 5
+
+    class InjectorStub:
+
+        def get(self, _interface):
+            return RepositoryStub()
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(
+        manage.app,
+        [
+            "db-prune-auth",
+            "--expired-sessions-before",
+            "2026-08-01T00:00:00+00:00",
+            "--audit-logs-before",
+            "2026-08-01T00:00:00+00:00",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert [call[0] for call in calls] == ["audit", "sessions"]
+
+
+def test_db_prune_auth_rejects_naive_datetime(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    result = CliRunner().invoke(
+        manage.app,
+        ["db-prune-auth", "--expired-sessions-before", "2026-08-01T00:00:00"],
+    )
+
+    assert result.exit_code == 2
+    assert "timezone offset" in result.stderr
+
+
+def test_db_prune_auth_rejects_invalid_datetime_before_database_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    result = CliRunner().invoke(
+        manage.app,
+        ["db-prune-auth", "--expired-sessions-before", "garbage"],
+    )
+
+    assert result.exit_code == 2
+    assert "ISO 8601 datetime" in result.stderr
+    assert "DATABASE_URL" not in result.stderr

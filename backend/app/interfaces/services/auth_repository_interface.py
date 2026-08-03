@@ -18,7 +18,7 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def find_user_by_id(self, user_id: UUID) -> User | None:
+    async def find_user_by_id_for_authentication(self, user_id: UUID) -> User | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -28,6 +28,7 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         session_token_hash: str,
         csrf_token_hash: str,
         created_at: datetime,
+        issued_at: datetime,
         last_seen_at: datetime,
         expires_at: datetime,
         ip_address: str | None,
@@ -66,6 +67,22 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
 
     @abstractmethod
     async def record_user_login(self, user_id: UUID, login_at: datetime) -> User:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def mark_user_deleted(self, user_id: UUID, deleted_at: datetime) -> User:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def revoke_sessions_for_user(self, user_id: UUID, revoked_at: datetime) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_expired_sessions(self, expired_before: datetime) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_audit_logs_created_before(self, created_before: datetime) -> int:
         raise NotImplementedError
 
     @abstractmethod

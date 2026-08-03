@@ -1,6 +1,6 @@
 from ipaddress import ip_network
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +8,7 @@ class AuthSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     AUTH_COOKIE_SECURE: bool | None = None
+    AUTH_SESSION_COOKIE_PREFIX: str = ""
     AUTH_TRUSTED_PROXY_IPS: str = ""
     AUTH_SESSION_ABSOLUTE_TTL_SECONDS: int = 604800
     AUTH_SESSION_IDLE_TTL_SECONDS: int = 86400
@@ -22,11 +23,24 @@ class AuthSettings(BaseSettings):
     AUTH_RATE_LIMIT_MAX_BUCKETS_PER_SCOPE: int = 10000
     AUTH_CSRF_EXEMPT_PATHS: str = ""
 
+    @model_validator(mode="after")
+    def _validate_host_prefixed_session_cookie_requires_secure(self) -> "AuthSettings":
+        if self.AUTH_SESSION_COOKIE_PREFIX == "__Host-" and self.AUTH_COOKIE_SECURE is False:
+            raise ValueError("AUTH_SESSION_COOKIE_PREFIX=__Host- requires AUTH_COOKIE_SECURE=true")
+        return self
+
     @field_validator("AUTH_PASSWORD_HASH_CONCURRENCY")
     @classmethod
     def _validate_positive_password_hash_concurrency(cls, value: int) -> int:
         if value < 1:
             raise ValueError("AUTH_PASSWORD_HASH_CONCURRENCY must be at least 1")
+        return value
+
+    @field_validator("AUTH_SESSION_COOKIE_PREFIX")
+    @classmethod
+    def _validate_session_cookie_prefix(cls, value: str) -> str:
+        if value not in {"", "__Host-"}:
+            raise ValueError("AUTH_SESSION_COOKIE_PREFIX must be empty or __Host-")
         return value
 
     @field_validator(

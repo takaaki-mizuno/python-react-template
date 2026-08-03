@@ -47,7 +47,7 @@ Full-stack ボイラープレート。FastAPI (Python) バックエンド + Reac
 PR をマージする前に **必ず** 以下を通す:
 - Backend static: `cd backend && uv run ruff check .`、`uv run isort . --check-only`、`uv run yapf -dr app/ tests/ alembic/ manage.py`、`uv run mypy app manage.py`
 - Backend unit: `cd backend && uv run pytest tests/unit`
-- Backend integration: PostgreSQL 起動後、`cd backend && ALEMBIC_DATABASE_URL=... uv run python manage.py db-upgrade`、`TEST_DATABASE_URL=... uv run pytest tests/integration -q -ra`、`ALEMBIC_DATABASE_URL=... uv run python manage.py db-check`
+- Backend integration: PostgreSQL 起動後、`cd backend && DATABASE_URL=... uv run python manage.py db-upgrade`、`TEST_DATABASE_URL=... uv run pytest tests/integration -q -ra`、`DATABASE_URL=... uv run python manage.py db-check`
 - Frontend: `cd frontend && npm run check:ci`、`npm test`、`npm run build`
 - Docker: `docker compose config`、`docker build --target runtime ...`、`docker build --target backend-dev ...`
   - 注意: `npm run check` は check-only ではなく整形・自動修正を行う。CI とレビュー前確認では `npm run check:ci` を使う。

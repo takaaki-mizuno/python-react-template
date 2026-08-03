@@ -47,6 +47,32 @@ def test_auth_settings_cookie_secure_defaults_to_none():
     assert settings.AUTH_COOKIE_SECURE is None
 
 
+def test_auth_settings_session_cookie_prefix_defaults_to_empty_string():
+    settings = _settings()
+
+    assert settings.AUTH_SESSION_COOKIE_PREFIX == ""
+
+
+def test_auth_settings_reads_session_cookie_prefix_from_env(monkeypatch):
+    monkeypatch.setenv("AUTH_SESSION_COOKIE_PREFIX", "__Host-")
+
+    settings = _settings()
+
+    assert settings.AUTH_SESSION_COOKIE_PREFIX == "__Host-"
+
+
+def test_auth_settings_rejects_host_prefix_with_insecure_cookie(monkeypatch):
+    monkeypatch.setenv("AUTH_SESSION_COOKIE_PREFIX", "__Host-")
+    monkeypatch.setenv("AUTH_COOKIE_SECURE", "false")
+
+    try:
+        _settings()
+    except ValidationError as error:
+        assert "AUTH_SESSION_COOKIE_PREFIX=__Host- requires AUTH_COOKIE_SECURE=true" in str(error)
+    else:
+        raise AssertionError("Expected settings validation to fail")
+
+
 def test_auth_settings_reads_cookie_secure_from_env(monkeypatch):
     monkeypatch.setenv("AUTH_COOKIE_SECURE", "false")
 

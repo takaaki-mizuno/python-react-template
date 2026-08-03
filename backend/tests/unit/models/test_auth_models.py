@@ -1,8 +1,10 @@
 from typing import get_args
 
+from sqlalchemy import DateTime
 from sqlmodel import SQLModel
 
 import app.models  # noqa: F401
+from app.libraries.sqlalchemy_types import InetString
 from app.models.user import User
 
 
@@ -17,6 +19,9 @@ def test_auth_datetime_columns_are_timezone_aware():
 
     assert users.c.created_at.type.timezone is True
     assert users.c.updated_at.type.timezone is True
+    assert users.c.deleted_at.type.timezone is True
+    assert auth_sessions.c.issued_at.type.timezone is True
+    assert auth_sessions.c.updated_at.type.timezone is True
     assert auth_sessions.c.expires_at.type.timezone is True
     assert auth_sessions.c.revoked_at.type.timezone is True
     assert auth_audit_logs.c.created_at.type.timezone is True
@@ -27,10 +32,42 @@ def test_auth_model_metadata_matches_auth_migration_indexes_and_defaults():
     auth_sessions = SQLModel.metadata.tables["auth_sessions"]
     auth_audit_logs = SQLModel.metadata.tables["auth_audit_logs"]
 
-    assert "uq_users_email_lower" in {index.name for index in users.indexes}
+    index_names = {index.name for index in users.indexes}
+
+    assert "uq_users_email_lower_active" in index_names
     assert "uq_auth_sessions_session_token_hash" in {index.name for index in auth_sessions.indexes}
     assert "ix_auth_audit_logs_event_type" in {index.name for index in auth_audit_logs.indexes}
+    assert "ix_auth_sessions_expires_at" in {index.name for index in auth_sessions.indexes}
+    assert "ix_auth_audit_logs_created_at" in {index.name for index in auth_audit_logs.indexes}
     assert users.c.is_active.server_default is not None
+
+
+def test_user_deleted_at_and_active_email_unique_index_metadata():
+    users = SQLModel.metadata.tables["users"]
+    active_email_index = next(index for index in users.indexes
+                              if index.name == "uq_users_email_lower_active")
+
+    assert users.c.updated_at.onupdate is not None
+    assert users.c.deleted_at.nullable is True
+    assert isinstance(users.c.deleted_at.type, DateTime)
+    assert users.c.deleted_at.type.timezone is True
+    assert active_email_index.unique is True
+    assert "deleted_at IS NULL" in str(active_email_index.dialect_options["postgresql"]["where"])
+
+
+def test_auth_session_operational_fields_metadata():
+    auth_sessions = SQLModel.metadata.tables["auth_sessions"]
+
+    assert auth_sessions.c.issued_at.nullable is False
+    assert auth_sessions.c.updated_at.nullable is False
+    assert auth_sessions.c.updated_at.onupdate is not None
+    assert isinstance(auth_sessions.c.ip_address.type, InetString)
+
+
+def test_auth_audit_log_operational_fields_metadata():
+    auth_audit_logs = SQLModel.metadata.tables["auth_audit_logs"]
+
+    assert isinstance(auth_audit_logs.c.ip_address.type, InetString)
 
 
 def test_user_password_hash_is_nullable_for_oauth_only_users():

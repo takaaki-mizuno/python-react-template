@@ -7,6 +7,8 @@ from app.config.auth import AuthSettings
 from app.controllers.auth_dependencies import (get_auth_settings, get_auth_usecase, get_client_ip,
                                                get_user_agent, require_current_session)
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.libraries.auth_cookies import (clear_auth_cookie, csrf_cookie_name, session_cookie_name,
+                                        set_auth_cookie)
 from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_csrf import SessionCsrfStatus
 from app.models.auth_errors import (EmailAlreadyRegisteredError, InvalidCredentialsError,
@@ -73,15 +75,15 @@ def set_session_cookie(
     session_token: str,
     secure: bool,
     max_age_seconds: int,
+    auth_settings: AuthSettings,
 ) -> None:
-    response.set_cookie(
-        key="session_token",
+    set_auth_cookie(
+        response,
+        key=session_cookie_name(auth_settings),
         value=session_token,
         httponly=True,
-        samesite="lax",
         secure=secure,
-        path="/",
-        max_age=max_age_seconds,
+        max_age_seconds=max_age_seconds,
     )
 
 
@@ -91,38 +93,35 @@ def set_csrf_cookie(
     secure: bool,
     max_age_seconds: int,
 ) -> None:
-    response.set_cookie(
-        key="csrf_token",
+    set_auth_cookie(
+        response,
+        key=csrf_cookie_name(),
         value=csrf_token,
         httponly=False,
-        samesite="lax",
         secure=secure,
-        path="/",
-        max_age=max_age_seconds,
+        max_age_seconds=max_age_seconds,
     )
 
 
-def clear_session_cookie(response: Response, secure: bool) -> None:
-    response.set_cookie(
-        key="session_token",
-        value="",
+def clear_session_cookie(
+    response: Response,
+    secure: bool,
+    auth_settings: AuthSettings,
+) -> None:
+    clear_auth_cookie(
+        response,
+        key=session_cookie_name(auth_settings),
         httponly=True,
-        samesite="lax",
         secure=secure,
-        path="/",
-        max_age=0,
     )
 
 
 def clear_csrf_cookie(response: Response, secure: bool) -> None:
-    response.set_cookie(
-        key="csrf_token",
-        value="",
+    clear_auth_cookie(
+        response,
+        key=csrf_cookie_name(),
         httponly=False,
-        samesite="lax",
         secure=secure,
-        path="/",
-        max_age=0,
     )
 
 
@@ -134,9 +133,9 @@ async def get_csrf(
         usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
 ) -> CsrfTokenResponse:
     response.headers["Cache-Control"] = "no-store"
-    existing_csrf_token = request.cookies.get("csrf_token")
+    existing_csrf_token = request.cookies.get(csrf_cookie_name())
     if existing_csrf_token:
-        session_token = request.cookies.get("session_token")
+        session_token = request.cookies.get(session_cookie_name(auth_settings))
         if not session_token:
             return CsrfTokenResponse(csrfToken=existing_csrf_token)
 
@@ -152,8 +151,8 @@ async def get_csrf(
         }:
             return CsrfTokenResponse(csrfToken=existing_csrf_token)
 
-    csrf_token = await usecase.issue_csrf_token(
-        session_token=request.cookies.get("session_token"), )
+    csrf_token = await usecase.issue_csrf_token(session_token=request.cookies.get(
+        session_cookie_name(auth_settings)), )
     set_csrf_cookie(
         response,
         csrf_token,
@@ -189,7 +188,7 @@ async def register(
         issued_session = await usecase.register(
             email=payload.email,
             password=payload.password,
-            current_session_token=request.cookies.get("session_token"),
+            current_session_token=request.cookies.get(session_cookie_name(auth_settings)),
             ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
@@ -218,6 +217,7 @@ async def register(
         issued_session.session_token,
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
+        auth_settings=auth_settings,
     )
     set_csrf_cookie(
         response,
@@ -244,7 +244,7 @@ async def login(
         issued_session = await usecase.login(
             email=payload.email,
             password=payload.password,
-            current_session_token=request.cookies.get("session_token"),
+            current_session_token=request.cookies.get(session_cookie_name(auth_settings)),
             ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
         )
@@ -267,6 +267,7 @@ async def login(
         issued_session.session_token,
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
+        auth_settings=auth_settings,
     )
     set_csrf_cookie(
         response,
@@ -290,11 +291,11 @@ async def logout(
 ) -> Response:
     secure = is_secure_request(request, auth_settings)
     await usecase.logout(
-        request.cookies.get("session_token"),
+        request.cookies.get(session_cookie_name(auth_settings)),
         ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
         user_agent=get_user_agent(request),
     )
-    clear_session_cookie(response, secure=secure)
+    clear_session_cookie(response, secure=secure, auth_settings=auth_settings)
     clear_csrf_cookie(response, secure=secure)
     response.status_code = 204
     return response

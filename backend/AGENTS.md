@@ -82,8 +82,8 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - スキーマ変更時はマイグレーション戦略を**事前にユーザー確認**
 - sample CRUD のような user-owned resource は `sample_items` の実装をコピー元にする
 - auth 領域の永続化は PostgreSQL を正とし、SQLite in-memory は auth の DB integration test には使わない
-- auth migration の主要コマンドは `python manage.py db-upgrade` / `python manage.py db-downgrade`
-- Alembic revision 生成は `python manage.py db-revision --message "... " --autogenerate --rev-id YYYYMMDD_NNNN` を使い、`ALEMBIC_DATABASE_URL` を明示する
+- auth migration の主要コマンドは `python manage.py db-upgrade` / `python manage.py db-downgrade`。manage.py 経由と bare `alembic` 経由のどちらも `DATABASE_URL` の明示設定を必須とし、既定値だけで DDL を実行しない
+- Alembic revision 生成は `DATABASE_URL=postgresql+asyncpg://... python manage.py db-revision --message "... " --autogenerate --rev-id YYYYMMDD_NNNN` を使い、`DATABASE_URL` を明示する
 - `db-revision --autogenerate` は DB が head であることを前提にする。生成後に timezone-aware column / expression index / JSONB / FK `ON DELETE` / server default を必ず手で確認する
 - 初期 revision を書き換える場合、既存 DB に残る旧 PK/FK 名は Alembic autogenerate / `db-check` だけでは検出できない。正典確認は fresh test DB を作り直して初期 migration から適用し、`pg_constraint` または targeted test で制約名を確認する
 
@@ -111,6 +111,22 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - production では `/docs`、`/redoc`、`/openapi.json` を公開しない
 - `Status` は healthz などの限定用途に使う。CRUD success response の模範にはしない
 
+## Phase 5 認証永続化規約
+
+- `DATABASE_URL` が DB 接続設定の正であり、Alembic もここから async URL を導出する。`ALEMBIC_DATABASE_URL` は使わない
+- `users.is_active` は凍結・停止を表し、`users.deleted_at` は退会または論理削除を表す
+- 通常の active user query は必ず `deleted_at IS NULL` を含める。削除済み user を観測してよい lookup は `find_user_by_id_for_authentication()` のように用途名で明示する
+- 削除済み user は login、`/api/auth/me`、session authentication で認証不可。残存 session は revoke し、deleted / inactive user では専用 audit event を残す
+- `uq_users_email_lower_active` は `deleted_at IS NULL` の partial unique index であり、削除済み user の email は再登録可能。active user 同士の重複は DB が拒否する
+- Phase 5 は公開 account deletion API を追加しない。`DELETE /api/auth/me`、退会 UI、削除後 email 保持/匿名化、本人確認再要求は Phase 6 で設計する
+- physical delete 時は `auth_sessions.user_id` が CASCADE、`auth_audit_logs.user_id` / `session_id` が SET NULL になる
+- `AuthSession.issued_at` は absolute TTL の起点、`created_at` は作成監査時刻。expiry 計算に `created_at` を使わない
+- auth session / audit log の `ip_address` は PostgreSQL `INET` だが、Python model / repository boundary は `str | None` を保つ
+- repository は domain error を投げ、HTTP error を投げない。`revoke_session()` は missing session を成功扱いにする冪等 command
+- `mark_user_deleted()`、`revoke_sessions_for_user()`、`USER_MARKED_DELETED` は Phase 6 account deletion / role revocation / password change 用の先行契約であり、Phase 5 では public caller を持たない。`mark_user_deleted()` は `USER_MARKED_DELETED` audit log を同じ repository 操作内で作成する
+- session cookie prefix は `AUTH_SESSION_COOKIE_PREFIX` だけで制御する。`__Host-` を使う場合は Secure、Path=/、Domain 未指定が必須。`AUTH_SESSION_COOKIE_PREFIX=__Host-` と `AUTH_COOKIE_SECURE=false` の組み合わせは settings validation で拒否する。CSRF cookie 名は frontend が読むため常に `csrf_token`
+- `python manage.py db-prune-auth --audit-logs-before <ISO8601> --expired-sessions-before <ISO8601>` で古い auth audit log と expired session を削除する。両方指定時は audit log、expired session の順に実行するが、それぞれ独立した repository 操作であり、片方の commit 後にもう片方が失敗した場合は部分成功になり得る
+
 ## Sample CRUD 複製手順
 
 新しい user-owned CRUD resource は `/api/samples` をコピー元にする。標準ファイルは次の構成にする。
@@ -131,6 +147,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 ## テスト
 
 - Pytest を使用 (依存に未追加なら `uv add --dev pytest pytest-asyncio` から)
+- pytest は `--import-mode=importlib` を既定にし、unit / integration に同名 test module があっても衝突しないようにする。衝突回避目的で `tests/**/__init__.py` を追加しない
 - 単体テスト: `tests/unit/`、結合テスト: `tests/integration/` を推奨
 - DB を使う integration test は実 PostgreSQL を使用し、DB の挙動をモックしない
 - integration test は `TEST_DATABASE_URL` が指す PostgreSQL を使う。未設定なら skip ではなく fail する

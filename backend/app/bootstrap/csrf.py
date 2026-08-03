@@ -8,6 +8,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.bootstrap.error_handlers import json_error_response
 from app.config.auth import AuthSettings
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.libraries.auth_cookies import csrf_cookie_name, session_cookie_name
 from app.libraries.client_ip import get_user_agent, resolve_client_ip
 from app.models.auth_csrf import SessionCsrfStatus
 
@@ -56,7 +57,7 @@ class CSRFMiddleware:
         return path not in _csrf_exempt_paths(settings.AUTH_CSRF_EXEMPT_PATHS)
 
     async def _validate(self, request: Request) -> Response | None:
-        cookie_token = request.cookies.get("csrf_token")
+        cookie_token = request.cookies.get(csrf_cookie_name())
         header_token = request.headers.get("X-CSRF-Token")
         if not cookie_token or not header_token:
             return _csrf_error_response()
@@ -67,11 +68,11 @@ class CSRFMiddleware:
         ):
             return _csrf_error_response()
 
-        session_token = request.cookies.get("session_token")
+        settings = request.app.state.injector.get(AuthSettings)
+        session_token = request.cookies.get(session_cookie_name(settings))
         if not session_token:
             return None
 
-        settings = request.app.state.injector.get(AuthSettings)
         usecase = request.app.state.injector.get(AuthUsecaseInterface)
         csrf_status = await usecase.validate_session_csrf(
             session_token=session_token,

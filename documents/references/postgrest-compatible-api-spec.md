@@ -1,18 +1,19 @@
-# PostgREST互換 Tables/Views API 仕様（/api/db プレフィックス版・SQLite3/SQLModel想定）
+# PostgREST互換 Tables/Views API 将来検討メモ
 
-本仕様は、PostgREST の Tables/Views API を **`/api/db/{db_name}/{resource}`** 配下で提供する互換 API として定義します。テーブル/ビューは 1 階層のリソースとして公開し、HTTP メソッドとクエリ文字列で操作します（深いネストルートは持ちません）。([PostgREST 14][1])
+> **現行実装との関係:** 2026-08-03 の Phase 5 時点で、このリポジトリは `/api/db/{db_name}/{resource}` を提供していない。現行の user-facing CRUD 例は `/api/samples` であり、PostgREST 互換 Tables/Views API は未実装の将来検討事項である。この文書を現行 API 契約、実装済み仕様、または品質ゲートの根拠として扱ってはいけない。
 
-加えて、以下を **確定仕様**とします。
+このメモは、将来 PostgREST の Tables/Views API に近い互換 API を実装する場合の検討材料として、**仮に** `/{prefix}/{resource}` 形式の 1 階層リソースを採用する案を記録する。実装に着手する場合は、あらためて `documents/plans/` に設計書を作成し、ルーティング、権限、公開対象、PostgreSQL 固有機能、OpenAPI 表現、移行方針を確定する。
 
-* Postgres 固有（配列/範囲/全文検索など）で SQLite に同等機能がない演算子は **`PGRST127` で明示的に拒否**する（HTTP 400）。([PostgREST 14][2])
-* `Prefer: count=planned` / `Prefer: count=estimated` は統計推定を実装しないため **`PGRST127` で拒否**する（HTTP 400）。`count` 自体の値に `exact/planned/estimated` がある点は PostgREST の仕様に準拠します。([PostgREST 14][3])
+Phase 5 後の backend は PostgreSQL / asyncpg を正とし、SQLite / aiosqlite 前提の auth 永続化は持たない。そのため、このメモ内に残る互換演算子や `PGRST127` の扱いは、現行実装の制約ではなく、将来 API を設計する際に再評価する候補である。
 
 ---
 
-## 1. ベース URL / ルーティング
+## 1. ルーティング案
 
-* ベースパス：`/api/db`
-* リソース：`/api/db/{db_name}/{resource}`
+以下は未実装の案であり、現行 API には存在しない。
+
+* ベースパス案：`/api/db`
+* リソース案：`/api/db/{db_name}/{resource}`
 
   * `{db_name}` は **データベース名**
   * `{resource}` は **テーブル名またはビュー名**
@@ -22,7 +23,7 @@
 
 ## 2. メソッドと概要
 
-`/api/db/{db_name}/{resource}` は権限/設定に応じて `OPTIONS, GET, HEAD, POST, PATCH, PUT, DELETE` を提供します（互換 API としては実装対象）。([PostgREST 14][1])
+`/api/db/{db_name}/{resource}` を採用する場合、権限/設定に応じて `OPTIONS, GET, HEAD, POST, PATCH, PUT, DELETE` を提供する案が考えられる。([PostgREST 14][1])
 
 * `GET`：行取得（JSON/CSV 等）
 * `HEAD`：GET 同等だがボディなし（集計を避ける最適化）([PostgREST 14][1])
@@ -221,13 +222,12 @@ OpenAPI では列ごとの任意フィルタ（`?age=lt.13` のように **キ�
 ```yaml
 openapi: 3.1.0
 info:
-  title: PostgREST互換 Tables/Views API（SQLite/SQLModel）
-  version: 1.0.0
+  title: PostgREST互換 Tables/Views API（未実装の将来検討メモ）
+  version: 0.0.0-draft
   description: |
-    PostgRESTのTables/Views互換APIを /api/db/{db_name}/{resource} 配下に提供する。
-    テーブル/ビューは1階層で公開し、GET/HEAD/POST/PATCH/PUT/DELETEをサポートする。  # 互換意図
-    - Postgres固有でSQLiteに同等機能がない演算子はPGRST127で拒否
-    - Prefer: count は exact のみ実装し planned/estimated はPGRST127
+    この OpenAPI 断片は未実装の将来検討メモであり、現行 API 契約ではない。
+    Phase 5 時点のリポジトリは /api/db/{db_name}/{resource} を提供しない。
+    採用する場合は PostgreSQL 前提で再設計し、documents/plans/ に実装計画を作る。
 
 servers:
   - url: /

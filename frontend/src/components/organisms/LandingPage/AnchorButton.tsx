@@ -1,4 +1,4 @@
-import { cn } from '@/libraries/css'
+import { cn } from '@/lib/css'
 
 type AnchorButtonProps = {
   className?: string
