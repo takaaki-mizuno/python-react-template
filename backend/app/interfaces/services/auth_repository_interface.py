@@ -70,7 +70,14 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def mark_user_deleted(self, user_id: UUID, deleted_at: datetime) -> User:
+    async def mark_user_deleted(
+        self,
+        user_id: UUID,
+        deleted_at: datetime,
+        *,
+        session_id: UUID | None,
+        ip_address: str | None,
+    ) -> User:
         raise NotImplementedError
 
     @abstractmethod

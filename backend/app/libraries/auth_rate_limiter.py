@@ -56,6 +56,24 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
                 and len(ip_bucket) < self._max_failures_per_ip
                 and len(email_bucket) < self._max_failures_per_email)
 
+    def is_account_deletion_reauth_allowed(
+        self,
+        ip_address: str,
+        normalized_email: str,
+    ) -> bool:
+        now = self._clock()
+        email_ip_bucket = self._get_existing_bucket(
+            self._email_ip_buckets,
+            self._email_ip_key(ip_address, normalized_email),
+            now,
+            self._window_seconds,
+        )
+        ip_bucket = self._get_existing_bucket(self._ip_buckets, ip_address, now,
+                                              self._window_seconds)
+
+        return (len(email_ip_bucket) < self._max_failures_per_email_ip
+                and len(ip_bucket) < self._max_failures_per_ip)
+
     def record_failure(
         self,
         ip_address: str,

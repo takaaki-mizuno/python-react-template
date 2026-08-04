@@ -3,6 +3,7 @@ import { Input } from '@/components/atoms/input'
 type AuthTextFieldProps = {
   autoComplete: string
   describedBy?: string
+  disabled?: boolean
   id: string
   invalid?: boolean
   label: string
@@ -15,6 +16,7 @@ type AuthTextFieldProps = {
 export function AuthTextField({
   autoComplete,
   describedBy,
+  disabled = false,
   id,
   invalid = false,
   label,
@@ -32,6 +34,7 @@ export function AuthTextField({
         aria-describedby={describedBy}
         aria-invalid={invalid ? true : undefined}
         autoComplete={autoComplete}
+        disabled={disabled}
         id={id}
         onChange={(event) => onChange(event.target.value)}
         required={required}

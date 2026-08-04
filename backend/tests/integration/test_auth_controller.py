@@ -22,6 +22,60 @@ def assert_error_code(response, code: str) -> None:
     assert response.json()["error"]["code"] == code
 
 
+def _csrf(client) -> str:
+    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrfToken"]
+
+
+def _register(client, email: str, password: str = "Password123!"):
+    csrf_token = _csrf(client)
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "email": email,
+            "password": password,
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert response.status_code == 201
+    return response
+
+
+def _login(client, email: str, password: str = "Password123!"):
+    csrf_token = _csrf(client)
+    response = client.post(
+        "/api/auth/login",
+        json={
+            "email": email,
+            "password": password,
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert response.status_code == 200
+    return response
+
+
+def _delete_account(
+    client,
+    confirm_email: str,
+    password: str | None = "Password123!",
+    csrf_token: str | None = None,
+):
+    body = {"confirmEmail": confirm_email}
+    if password is not None:
+        body["password"] = password
+    return client.request(
+        "DELETE",
+        "/api/auth/me",
+        json=body,
+        headers={"X-CSRF-Token": csrf_token or _csrf(client)},
+    )
+
+
+def _restore_auth_cookies(client, session_token: str, csrf_token: str) -> None:
+    client.cookies.set("session_token", session_token, domain="testserver.local", path="/")
+    client.cookies.set("csrf_token", csrf_token, domain="testserver.local", path="/")
+
+
 def test_auth_cookie_security_uses_startup_settings(monkeypatch):
     test_database_url = os.environ["TEST_DATABASE_URL"]
     monkeypatch.setenv("DATABASE_URL", test_database_url)
@@ -339,6 +393,305 @@ def test_logout_rejects_csrf_token_not_bound_to_current_session(client):
 
     assert response.status_code == 403
     assert_error_code(response, "CSRF_VALIDATION_FAILED")
+
+
+@pytest.mark.asyncio
+async def test_delete_me_deletes_user_revokes_all_sessions_and_clears_cookies(
+    client,
+    async_session,
+):
+    client.get("/api/auth/csrf")
+    _register(client, "delete-me@example.com")
+    first_session_token = client.cookies.get("session_token")
+    first_csrf_token = client.cookies.get("csrf_token")
+    assert first_session_token
+    assert first_csrf_token
+
+    client.cookies.clear()
+    client.get("/api/auth/csrf")
+    _login(client, "delete-me@example.com")
+    second_session_token = client.cookies.get("session_token")
+    second_csrf_token = client.cookies.get("csrf_token")
+    assert second_session_token
+    assert second_csrf_token
+    assert second_session_token != first_session_token
+
+    client.cookies.clear()
+    _restore_auth_cookies(client, first_session_token, first_csrf_token)
+    assert client.get("/api/auth/me").status_code == 200
+
+    delete_response = _delete_account(
+        client,
+        "delete-me@example.com",
+        csrf_token=first_csrf_token,
+    )
+
+    assert delete_response.status_code == 204
+    set_cookie_headers = delete_response.headers.get_list("set-cookie")
+    assert any("session_token=" in header and "Max-Age=0" in header
+               for header in set_cookie_headers)
+    assert any("csrf_token=" in header and "Max-Age=0" in header for header in set_cookie_headers)
+    assert client.get("/api/auth/me").status_code == 401
+
+    _restore_auth_cookies(client, second_session_token, second_csrf_token)
+    assert client.get("/api/auth/me").status_code == 401
+
+    user_row = (await async_session.execute(
+        text("SELECT id, deleted_at FROM users WHERE email = :email"),
+        {"email": "delete-me@example.com"},
+    )).one()
+    session_rows = (await async_session.execute(
+        text("SELECT session_token_hash, revoked_at FROM auth_sessions WHERE user_id = :user_id"),
+        {"user_id": user_row.id},
+    )).all()
+    audit_count = await async_session.scalar(
+        text("SELECT count(*) FROM auth_audit_logs "
+             "WHERE user_id = :user_id AND event_type = :event_type"),
+        {
+            "user_id": user_row.id,
+            "event_type": AuthEventType.USER_MARKED_DELETED,
+        },
+    )
+
+    assert user_row.deleted_at is not None
+    assert session_rows
+    assert all(row.revoked_at is not None for row in session_rows)
+    revoked_by_hash = {row.session_token_hash: row.revoked_at for row in session_rows}
+    assert revoked_by_hash[hash_token(first_session_token)] is not None
+    assert revoked_by_hash[hash_token(second_session_token)] is not None
+    assert audit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_me_requires_valid_csrf_and_keeps_user_active(client, async_session):
+    _register(client, "delete-csrf@example.com")
+
+    missing_header_response = client.request(
+        "DELETE",
+        "/api/auth/me",
+        json={
+            "confirmEmail": "delete-csrf@example.com",
+            "password": "Password123!",
+        },
+    )
+    wrong_session_csrf_response = client.request(
+        "DELETE",
+        "/api/auth/me",
+        json={
+            "confirmEmail": "delete-csrf@example.com",
+            "password": "Password123!",
+        },
+        headers={"X-CSRF-Token": "attacker-token"},
+        cookies={
+            "session_token": client.cookies.get("session_token"),
+            "csrf_token": "attacker-token",
+        },
+    )
+    deleted_at = await async_session.scalar(
+        text("SELECT deleted_at FROM users WHERE email = :email"),
+        {"email": "delete-csrf@example.com"},
+    )
+
+    assert missing_header_response.status_code == 403
+    assert_error_code(missing_header_response, "CSRF_VALIDATION_FAILED")
+    assert wrong_session_csrf_response.status_code == 403
+    assert_error_code(wrong_session_csrf_response, "CSRF_VALIDATION_FAILED")
+    assert deleted_at is None
+
+
+@pytest.mark.asyncio
+async def test_delete_me_rejects_mismatched_confirm_email_without_deleting(
+    client,
+    async_session,
+):
+    _register(client, "delete-mismatch@example.com")
+
+    response = _delete_account(client, "other@example.com")
+    deleted_at = await async_session.scalar(
+        text("SELECT deleted_at FROM users WHERE email = :email"),
+        {"email": "delete-mismatch@example.com"},
+    )
+
+    assert response.status_code == 400
+    assert_error_code(response, "ACCOUNT_DELETION_CONFIRMATION_MISMATCH")
+    assert deleted_at is None
+    assert client.get("/api/auth/me").status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_delete_me_requires_correct_password_for_password_users(client, async_session):
+    _register(client, "delete-password@example.com")
+
+    missing_password_response = _delete_account(
+        client,
+        "delete-password@example.com",
+        password=None,
+    )
+    empty_password_response = _delete_account(
+        client,
+        "delete-password@example.com",
+        password="",
+    )
+    wrong_password_response = _delete_account(
+        client,
+        "delete-password@example.com",
+        password="WrongPassword123!",
+    )
+    deleted_at_after_failures = await async_session.scalar(
+        text("SELECT deleted_at FROM users WHERE email = :email"),
+        {"email": "delete-password@example.com"},
+    )
+    success_response = _delete_account(client, "delete-password@example.com")
+
+    assert missing_password_response.status_code == 400
+    assert_error_code(missing_password_response, "ACCOUNT_DELETION_REAUTH_REQUIRED")
+    assert empty_password_response.status_code == 400
+    assert_error_code(empty_password_response, "ACCOUNT_DELETION_REAUTH_REQUIRED")
+    assert wrong_password_response.status_code == 400
+    assert_error_code(wrong_password_response, "ACCOUNT_DELETION_INVALID_PASSWORD")
+    assert deleted_at_after_failures is None
+    assert success_response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_deleted_email_can_be_registered_again(client, async_session):
+    first_response = _register(client, "reuse-delete@example.com")
+    first_user_id = first_response.json()["id"]
+
+    delete_response = _delete_account(client, "reuse-delete@example.com")
+    assert delete_response.status_code == 204
+
+    client.get("/api/auth/csrf")
+    second_response = _register(client, "reuse-delete@example.com")
+    second_user_id = second_response.json()["id"]
+    old_user_deleted_at = await async_session.scalar(
+        text("SELECT deleted_at FROM users WHERE id = :user_id"),
+        {"user_id": first_user_id},
+    )
+
+    assert second_user_id != first_user_id
+    assert client.get("/api/auth/me").json()["id"] == second_user_id
+    assert old_user_deleted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_me_deletes_sample_items_owned_by_user(client, async_session):
+    register_response = _register(client, "delete-samples@example.com")
+    user_id = register_response.json()["id"]
+    create_response = client.post(
+        "/api/samples",
+        json={
+            "title": "Owned sample",
+            "description": None,
+        },
+        headers={"X-CSRF-Token": _csrf(client)},
+    )
+    assert create_response.status_code == 201
+
+    delete_response = _delete_account(client, "delete-samples@example.com")
+    remaining_count = await async_session.scalar(
+        text("SELECT count(*) FROM sample_items WHERE owner_user_id = :user_id"),
+        {"user_id": user_id},
+    )
+
+    assert delete_response.status_code == 204
+    assert remaining_count == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_me_records_success_audit_with_current_session(client, async_session):
+    register_response = _register(client, "delete-audit@example.com")
+    user_id = register_response.json()["id"]
+    session_token = client.cookies.get("session_token")
+    assert session_token
+
+    delete_response = _delete_account(client, "delete-audit@example.com")
+    audit_row = (await async_session.execute(
+        text("""
+            SELECT audit.session_id
+            FROM auth_audit_logs AS audit
+            JOIN auth_sessions AS session
+              ON audit.session_id = session.id
+             AND audit.user_id = session.user_id
+            WHERE audit.user_id = :user_id
+              AND audit.event_type = :event_type
+              AND session.session_token_hash = :session_token_hash
+        """),
+        {
+            "user_id": user_id,
+            "event_type": AuthEventType.USER_MARKED_DELETED,
+            "session_token_hash": hash_token(session_token),
+        },
+    )).one_or_none()
+
+    assert delete_response.status_code == 204
+    assert audit_row is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_me_records_reauth_failure_audit(client, async_session):
+    register_response = _register(client, "delete-reauth-audit@example.com")
+    user_id = register_response.json()["id"]
+    session_token = client.cookies.get("session_token")
+    assert session_token
+
+    response = _delete_account(
+        client,
+        "delete-reauth-audit@example.com",
+        password="WrongPassword123!",
+    )
+    audit_row = (await async_session.execute(
+        text("""
+            SELECT audit.session_id, audit.user_agent
+            FROM auth_audit_logs AS audit
+            JOIN auth_sessions AS session
+              ON audit.session_id = session.id
+             AND audit.user_id = session.user_id
+            WHERE audit.user_id = :user_id
+              AND audit.event_type = :event_type
+              AND session.session_token_hash = :session_token_hash
+        """),
+        {
+            "user_id": user_id,
+            "event_type": AuthEventType.ACCOUNT_DELETION_REAUTH_FAILED,
+            "session_token_hash": hash_token(session_token),
+        },
+    )).one_or_none()
+
+    assert response.status_code == 400
+    assert_error_code(response, "ACCOUNT_DELETION_INVALID_PASSWORD")
+    assert audit_row is not None
+    assert audit_row.user_agent == "testclient"
+
+
+@pytest.mark.asyncio
+async def test_delete_me_second_submit_with_old_cookies_is_unauthorized_and_idempotent(
+    client,
+    async_session,
+):
+    register_response = _register(client, "delete-twice@example.com")
+    user_id = register_response.json()["id"]
+    session_token = client.cookies.get("session_token")
+    csrf_token = client.cookies.get("csrf_token")
+    assert session_token
+    assert csrf_token
+
+    first_response = _delete_account(client, "delete-twice@example.com", csrf_token=csrf_token)
+    _restore_auth_cookies(client, session_token, csrf_token)
+    second_response = _delete_account(client, "delete-twice@example.com", csrf_token=csrf_token)
+    audit_count = await async_session.scalar(
+        text("SELECT count(*) FROM auth_audit_logs "
+             "WHERE user_id = :user_id AND event_type = :event_type"),
+        {
+            "user_id": user_id,
+            "event_type": AuthEventType.USER_MARKED_DELETED,
+        },
+    )
+
+    assert first_response.status_code == 204
+    assert second_response.status_code == 401
+    assert_error_code(second_response, "UNAUTHORIZED")
+    assert audit_count == 1
 
 
 def test_register_requires_matching_csrf_header(client):

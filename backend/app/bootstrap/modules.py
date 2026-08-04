@@ -11,6 +11,8 @@ from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInte
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.sample_item_repository_interface import SampleItemRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
+from app.interfaces.usecases.account_deletion_usecase_interface import \
+    AccountDeletionUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsecaseInterface
 from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
@@ -19,6 +21,7 @@ from app.libraries.password_hasher import PasswordHashExecutor
 from app.services.auth_repository import AuthRepository
 from app.services.sample_item_repository import SampleItemRepository
 from app.services.unit_of_work import UnitOfWork
+from app.usecases.account_deletion_usecase import AccountDeletionUsecase
 from app.usecases.auth_usecase import AuthUsecase
 from app.usecases.sample_item_usecase import SampleItemUsecase
 
@@ -101,3 +104,9 @@ class SampleModule(Module):
     def configure(self, binder: Binder) -> None:
         binder.bind(SampleItemRepositoryInterface, to=SampleItemRepository, scope=singleton)
         binder.bind(SampleItemUsecaseInterface, to=SampleItemUsecase, scope=singleton)
+
+
+class AccountDeletionModule(Module):
+
+    def configure(self, binder: Binder) -> None:
+        binder.bind(AccountDeletionUsecaseInterface, to=AccountDeletionUsecase, scope=singleton)

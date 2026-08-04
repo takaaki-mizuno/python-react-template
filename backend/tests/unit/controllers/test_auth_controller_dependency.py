@@ -8,11 +8,16 @@ from app.bootstrap.error_handlers import register_error_handlers
 from app.config.auth import AuthSettings
 from app.controllers import auth_dependencies
 from app.controllers.auth_controller import router
+from app.interfaces.usecases.account_deletion_usecase_interface import \
+    AccountDeletionUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.models.auth_context import AuthenticatedSessionContext, IssuedAuthSession
 from app.models.auth_csrf import SessionCsrfStatus
-from app.models.auth_errors import (EmailAlreadyRegisteredError, InvalidCredentialsError,
-                                    RateLimitExceededError, WeakPasswordError)
+from app.models.auth_errors import (AccountDeletionConfirmationMismatchError,
+                                    AccountDeletionInvalidPasswordError,
+                                    AccountDeletionReauthRequiredError, EmailAlreadyRegisteredError,
+                                    InvalidCredentialsError, RateLimitExceededError,
+                                    WeakPasswordError)
 from app.models.auth_session import AuthSession
 from app.models.user import User, utcnow
 
@@ -129,11 +134,62 @@ class StubAuthUsecase(AuthUsecaseInterface):
         assert session_token == "session-token"
 
 
-def _client_with_stub(usecase: StubAuthUsecase, ) -> TestClient:
+class StubAccountDeletionUsecase(AccountDeletionUsecaseInterface):
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.delete_account_called = False
+        self.deleted_auth_context: AuthenticatedSessionContext | None = None
+        self.deleted_confirm_email: str | None = None
+        self.deleted_password: str | None = None
+        self.deleted_ip_address: str | None = None
+        self.deleted_user_agent: str | None = None
+
+    async def delete_account(
+        self,
+        auth_context: AuthenticatedSessionContext,
+        confirm_email: str,
+        password: str | None,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> None:
+        self.delete_account_called = True
+        self.deleted_auth_context = auth_context
+        self.deleted_confirm_email = confirm_email
+        self.deleted_password = password
+        self.deleted_ip_address = ip_address
+        self.deleted_user_agent = user_agent
+        if self.error is not None:
+            raise self.error
+
+
+def _authenticated_context(email: str = "user@example.com") -> AuthenticatedSessionContext:
+    user = User(
+        id=uuid4(),
+        email=email,
+        password_hash="hash",
+    )
+    session = AuthSession(
+        user_id=user.id,
+        session_token_hash="session-token-hash",
+        csrf_token_hash="csrf-token-hash",
+        created_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
+    )
+    return AuthenticatedSessionContext(user=user, session=session)
+
+
+def _client_with_stub(
+    usecase: StubAuthUsecase,
+    account_deletion_usecase: StubAccountDeletionUsecase | None = None,
+) -> TestClient:
     app = FastAPI()
     register_error_handlers(app)
     app.include_router(router, prefix="/api")
     app.dependency_overrides[auth_dependencies.get_auth_usecase] = lambda: usecase
+    app.dependency_overrides[auth_dependencies.get_account_deletion_usecase] = (
+        lambda: account_deletion_usecase or StubAccountDeletionUsecase())
     app.dependency_overrides[auth_dependencies.get_auth_settings] = lambda: AuthSettings(
         _env_file=None, AUTH_COOKIE_SECURE=False)
     return TestClient(app)
@@ -194,6 +250,139 @@ def test_logout_uses_overridden_usecase():
 
     assert response.status_code == 204
     assert usecase.logout_called is True
+
+
+def test_delete_me_uses_account_deletion_usecase_and_clears_cookies():
+    auth_context = _authenticated_context()
+    auth_usecase = StubAuthUsecase(auth_context=auth_context)
+    account_deletion_usecase = StubAccountDeletionUsecase()
+    client = _client_with_stub(auth_usecase, account_deletion_usecase)
+    _set_csrf_cookie(client)
+    client.cookies.set("session_token", "session-token")
+
+    response = client.request(
+        "DELETE",
+        "/api/auth/me",
+        json={
+            "confirmEmail": "user@example.com",
+            "password": "Password123!",
+        },
+        headers=_csrf_headers(),
+    )
+
+    assert response.status_code == 204
+    assert account_deletion_usecase.delete_account_called is True
+    assert account_deletion_usecase.deleted_auth_context is auth_context
+    assert account_deletion_usecase.deleted_confirm_email == "user@example.com"
+    assert account_deletion_usecase.deleted_password == "Password123!"
+    assert account_deletion_usecase.deleted_user_agent == "testclient"
+    set_cookie_headers = response.headers.get_list("set-cookie")
+    assert any(
+        header.startswith("session_token=") and "Max-Age=0" in header
+        for header in set_cookie_headers)
+    assert any(
+        header.startswith("csrf_token=") and "Max-Age=0" in header for header in set_cookie_headers)
+
+
+def test_delete_me_confirmation_mismatch_returns_error_without_clearing_cookies():
+    account_deletion_usecase = StubAccountDeletionUsecase(
+        AccountDeletionConfirmationMismatchError())
+    client = _client_with_stub(
+        StubAuthUsecase(auth_context=_authenticated_context()),
+        account_deletion_usecase,
+    )
+    _set_csrf_cookie(client)
+    client.cookies.set("session_token", "session-token")
+
+    response = client.request(
+        "DELETE",
+        "/api/auth/me",
+        json={"confirmEmail": "other@example.com"},
+        headers=_csrf_headers(),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "ACCOUNT_DELETION_CONFIRMATION_MISMATCH"
+    assert response.headers.get_list("set-cookie") == []
+
+
+def test_delete_me_password_reauth_errors_return_400_envelopes():
+    for error, code in [
+        (AccountDeletionReauthRequiredError(), "ACCOUNT_DELETION_REAUTH_REQUIRED"),
+        (AccountDeletionInvalidPasswordError(), "ACCOUNT_DELETION_INVALID_PASSWORD"),
+    ]:
+        account_deletion_usecase = StubAccountDeletionUsecase(error)
+        client = _client_with_stub(
+            StubAuthUsecase(auth_context=_authenticated_context()),
+            account_deletion_usecase,
+        )
+        _set_csrf_cookie(client)
+        client.cookies.set("session_token", "session-token")
+
+        response = client.request(
+            "DELETE",
+            "/api/auth/me",
+            json={
+                "confirmEmail": "user@example.com",
+                "password": "Password123!",
+            },
+            headers=_csrf_headers(),
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == code
+
+
+def test_delete_me_rate_limit_returns_retry_after_header():
+    account_deletion_usecase = StubAccountDeletionUsecase(RateLimitExceededError(3600))
+    client = _client_with_stub(
+        StubAuthUsecase(auth_context=_authenticated_context()),
+        account_deletion_usecase,
+    )
+    _set_csrf_cookie(client)
+    client.cookies.set("session_token", "session-token")
+
+    response = client.request(
+        "DELETE",
+        "/api/auth/me",
+        json={
+            "confirmEmail": "user@example.com",
+            "password": "Password123!",
+        },
+        headers=_csrf_headers(),
+    )
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "3600"
+    assert response.json()["error"]["code"] == "ACCOUNT_DELETION_REAUTH_RATE_LIMITED"
+
+
+def test_delete_me_without_authenticated_session_returns_unauthorized_before_delete():
+    account_deletion_usecase = StubAccountDeletionUsecase()
+    client = _client_with_stub(StubAuthUsecase(auth_context=None), account_deletion_usecase)
+    _set_csrf_cookie(client)
+    client.cookies.set("session_token", "session-token")
+
+    response = client.request(
+        "DELETE",
+        "/api/auth/me",
+        json={"confirmEmail": "user@example.com"},
+        headers=_csrf_headers(),
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+    assert account_deletion_usecase.delete_account_called is False
+
+
+def test_delete_me_openapi_contract():
+    client = _client_with_stub(StubAuthUsecase())
+
+    delete_operation = client.app.openapi()["paths"]["/api/auth/me"]["delete"]
+
+    assert "auth" in delete_operation["tags"]
+    assert "AccountDeletionRequest" in str(delete_operation["requestBody"]["content"])
+    assert set(delete_operation["responses"]) == {"204", "400", "401", "403", "422", "429"}
 
 
 def test_get_me_without_authenticated_session_returns_unauthorized_envelope():

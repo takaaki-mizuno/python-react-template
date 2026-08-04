@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { currentUserQueryOptions, logoutCurrentSession } from '@/lib/authApi'
-import { queryKeys } from '@/lib/queryKeys'
+import { clearAuthenticatedCache } from '@/lib/authCache'
 
 export function useAuthSession() {
   const queryClient = useQueryClient()
@@ -10,8 +10,7 @@ export function useAuthSession() {
   const logout = useMutation({
     mutationFn: logoutCurrentSession,
     onSuccess: () => {
-      queryClient.clear()
-      queryClient.setQueryData(queryKeys.auth.me, null)
+      clearAuthenticatedCache(queryClient)
     },
   })
 

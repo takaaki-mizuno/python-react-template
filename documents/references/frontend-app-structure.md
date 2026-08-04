@@ -101,6 +101,8 @@ components/
   - 共通 UI（例: `<Header />`）をここに置く。
 - `Link` は `@tanstack/react-router` のものを使用（SPA ナビゲーション）。
 - `routeTree.gen.ts` は自動生成のため編集禁止・フォーマット対象外。
+- account settings route は `/app/settings`。認証必須 route なので `_authenticated` 配下に置く。
+- 保護された route が `<Outlet />` を持たない page route と path prefix を共有する場合、TanStack Router の trailing underscore を使う。`/app/settings` は `routes/_authenticated.app_.settings.tsx` として定義し、`_authenticated.app.tsx` に nest させない。
 
 ---
 

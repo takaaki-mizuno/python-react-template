@@ -67,6 +67,19 @@ def test_register_style_failure_can_skip_email_bucket():
     assert limiter.is_allowed("127.0.0.10", "victim@example.com") is True
 
 
+def test_account_deletion_reauth_allowed_ignores_email_only_bucket():
+    limiter = _limiter()
+
+    for index in range(3):
+        limiter.record_failure(f"127.0.10.{index}", "victim@example.com")
+
+    assert limiter.is_allowed("127.0.10.99", "victim@example.com") is False
+    assert limiter.is_account_deletion_reauth_allowed(
+        "127.0.10.99",
+        "victim@example.com",
+    ) is True
+
+
 def test_record_success_clears_only_matching_email_ip_bucket():
     limiter = _limiter()
     limiter.record_failure("127.0.0.1", "user@example.com")

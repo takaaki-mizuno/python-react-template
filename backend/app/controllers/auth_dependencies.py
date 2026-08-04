@@ -3,6 +3,8 @@ from fastapi import Depends, Request
 from app.bootstrap.dependencies import inject
 from app.bootstrap.error_handlers import api_error
 from app.config.auth import AuthSettings
+from app.interfaces.usecases.account_deletion_usecase_interface import \
+    AccountDeletionUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.libraries.auth_cookies import session_cookie_name
 from app.libraries.client_ip import get_user_agent as resolve_user_agent
@@ -11,6 +13,7 @@ from app.models.auth_context import AuthenticatedSessionContext
 
 get_auth_settings = inject(AuthSettings)
 get_auth_usecase = inject(AuthUsecaseInterface)
+get_account_deletion_usecase = inject(AccountDeletionUsecaseInterface)
 
 
 def get_client_ip(request: Request, trusted_proxy_ips: str = "") -> str | None:

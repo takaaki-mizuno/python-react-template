@@ -1,6 +1,9 @@
 from uuid import uuid4
 
-from app.models.auth_errors import AuthSessionNotFoundError, UserNotFoundError
+from app.models.auth_errors import (AccountDeletionConfirmationMismatchError,
+                                    AccountDeletionInvalidPasswordError,
+                                    AccountDeletionReauthRequiredError, AuthSessionNotFoundError,
+                                    UserNotFoundError)
 
 
 def test_user_not_found_error_keeps_user_id_and_message():
@@ -21,3 +24,9 @@ def test_auth_session_not_found_error_keeps_session_id_and_message():
     assert error.session_id == session_id
     assert "AuthSession" in str(error)
     assert str(session_id) in str(error)
+
+
+def test_account_deletion_errors_do_not_embed_user_details():
+    assert str(AccountDeletionConfirmationMismatchError()) == ""
+    assert str(AccountDeletionReauthRequiredError()) == ""
+    assert str(AccountDeletionInvalidPasswordError()) == ""

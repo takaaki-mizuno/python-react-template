@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from inspect import Parameter, signature
 from uuid import uuid4
 
 import pytest
@@ -145,6 +146,17 @@ def test_repository_exposes_only_authentication_specific_user_id_lookup():
     assert not hasattr(AuthRepository, "find_user_by_id")
 
 
+def test_mark_user_deleted_requires_audit_context_keywords():
+    interface_signature = signature(AuthRepositoryInterface.mark_user_deleted)
+    concrete_signature = signature(AuthRepository.mark_user_deleted)
+
+    for target_signature in (interface_signature, concrete_signature):
+        assert target_signature.parameters["session_id"].kind == Parameter.KEYWORD_ONLY
+        assert target_signature.parameters["session_id"].default is Parameter.empty
+        assert target_signature.parameters["ip_address"].kind == Parameter.KEYWORD_ONLY
+        assert target_signature.parameters["ip_address"].default is Parameter.empty
+
+
 @pytest.mark.asyncio
 async def test_find_user_by_email_filters_deleted_users_in_statement() -> None:
     session = CapturingSession()
@@ -187,7 +199,7 @@ async def test_mark_user_deleted_raises_user_not_found_for_missing_user() -> Non
     repository = AuthRepository(unit_of_work=CapturingUnitOfWork(CapturingSession(None)))
 
     with pytest.raises(UserNotFoundError):
-        await repository.mark_user_deleted(user_id, utcnow())
+        await repository.mark_user_deleted(user_id, utcnow(), session_id=None, ip_address=None)
 
 
 @pytest.mark.asyncio
@@ -197,13 +209,20 @@ async def test_mark_user_deleted_records_required_audit_log() -> None:
     user = User(id=user_id, email="delete@example.com")
     session = CapturingSession(user)
     repository = AuthRepository(unit_of_work=CapturingUnitOfWork(session))
+    session_id = uuid4()
 
-    await repository.mark_user_deleted(user_id, deleted_at)
+    await repository.mark_user_deleted(
+        user_id,
+        deleted_at,
+        session_id=session_id,
+        ip_address="127.0.0.1",
+    )
 
     audit_log = next(instance for instance in session.added if instance is not user)
     assert audit_log.user_id == user_id
-    assert audit_log.session_id is None
+    assert audit_log.session_id == session_id
     assert audit_log.event_type == AuthEventType.USER_MARKED_DELETED
+    assert audit_log.ip_address == "127.0.0.1"
     assert audit_log.created_at == deleted_at
 
 

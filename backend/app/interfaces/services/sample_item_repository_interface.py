@@ -34,3 +34,7 @@ class SampleItemRepositoryInterface(metaclass=ABCMeta):
     @abstractmethod
     async def delete(self, item: SampleItem) -> None:
         raise NotImplementedError
+
+    @abstractmethod
+    async def delete_all_for_owner(self, owner_user_id: UUID) -> None:
+        raise NotImplementedError

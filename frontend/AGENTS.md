@@ -82,6 +82,8 @@ npm install -D <pkg>   # devDependencies
 - auth を使う route guard は TanStack Router `beforeLoad` で実装し、未ログイン時は `/login` へ redirect する
 - 認証必須 route は `_authenticated` pathless layout 配下へ置き、個別 route ごとに認証 guard を重複実装しない
 - login/register redirect は `src/lib/authRedirect.ts` で internal href として正規化し、遷移時は `href` を使って search/hash を保持する
+- account management UI は `/app/settings` に置く。`_authenticated.app.tsx` は page で `<Outlet />` を持たないため、settings route は `routes/_authenticated.app_.settings.tsx` の trailing underscore を使い、`_authenticated` guard 配下に置きつつ `/app` の子 route としては nest させない
+- Phase 6 では Header / AuthMenu に settings link を追加しない。`/app` が `/app/settings` への導線を持つ
 
 ## データ取得 (TanStack Query)
 
@@ -90,12 +92,14 @@ npm install -D <pkg>   # devDependencies
 - auth query key は `queryKeys.auth.me` の 1 本を正とし、厳格版などの派生 key を増やさない
 - frontend の API 呼び出しは相対 `/api/...` を正とし、same-origin 配信を前提にする
 - dev server では Vite proxy が `/api` を backend origin へ転送する
+- account deletion success は logout と同じ cache policy を使う。全 TanStack Query cache を clear し、その後 `queryKeys.auth.me` を `null` にする
 
 ## API / Auth UI
 
 - API error の画面表示は `src/lib/apiError.ts` の `toUserMessage()` を使い、各画面で `ApiError.body` を直接 parse しない
 - unsafe request は `src/lib/apiClient.ts` を使い、個別 component / route から `/api/auth/csrf` を直接 fetch しない
 - login/register form は `AuthTextField` / `AuthFormShell` / `Button` / `Input` を使い、field の label・autocomplete・aria 紐付けを共通部品へ寄せる
+- destructive account operations は typed confirmation と `toUserMessage()` による日本語 error message を使う。account deletion の確認 email field は誤操作防止のため `autoComplete="off"` にし、削除 error 表示時は error code に対応する field だけへ `aria-invalid` を立てる。429 や CSRF など field に紐づかない error では input を invalid にしない。account deletion success は `/login?redirect=/app` ではなく `/` へ遷移する
 
 ## スタイル (Tailwind + shadcn/ui)
 

@@ -4,17 +4,23 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from app.bootstrap.error_handlers import api_error
 from app.config.auth import AuthSettings
-from app.controllers.auth_dependencies import (get_auth_settings, get_auth_usecase, get_client_ip,
-                                               get_user_agent, require_current_session)
+from app.controllers.auth_dependencies import (get_account_deletion_usecase, get_auth_settings,
+                                               get_auth_usecase, get_client_ip, get_user_agent,
+                                               require_current_session)
+from app.interfaces.usecases.account_deletion_usecase_interface import \
+    AccountDeletionUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.libraries.auth_cookies import (clear_auth_cookie, csrf_cookie_name, session_cookie_name,
                                         set_auth_cookie)
 from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_csrf import SessionCsrfStatus
-from app.models.auth_errors import (EmailAlreadyRegisteredError, InvalidCredentialsError,
-                                    RateLimitExceededError, WeakPasswordError)
-from app.models.auth_schemas import (AuthUserResponse, CsrfTokenResponse, LoginRequest,
-                                     RegisterRequest)
+from app.models.auth_errors import (AccountDeletionConfirmationMismatchError,
+                                    AccountDeletionInvalidPasswordError,
+                                    AccountDeletionReauthRequiredError, EmailAlreadyRegisteredError,
+                                    InvalidCredentialsError, RateLimitExceededError,
+                                    WeakPasswordError)
+from app.models.auth_schemas import (AccountDeletionRequest, AuthUserResponse, CsrfTokenResponse,
+                                     LoginRequest, RegisterRequest)
 from app.models.error import ErrorResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -56,6 +62,23 @@ LOGIN_ERROR_RESPONSES: ErrorResponses = {
 }
 LOGOUT_ERROR_RESPONSES: ErrorResponses = {
     403: {
+        "model": ErrorResponse
+    },
+}
+DELETE_ACCOUNT_ERROR_RESPONSES: ErrorResponses = {
+    400: {
+        "model": ErrorResponse
+    },
+    401: {
+        "model": ErrorResponse
+    },
+    403: {
+        "model": ErrorResponse
+    },
+    422: {
+        "model": ErrorResponse
+    },
+    429: {
         "model": ErrorResponse
     },
 }
@@ -169,6 +192,64 @@ async def get_me(
 ) -> AuthUserResponse:
     response.headers["Cache-Control"] = "no-store"
     return AuthUserResponse(id=auth_context.user.id, email=auth_context.user.email)
+
+
+@router.delete(
+    "/me",
+    status_code=204,
+    responses=DELETE_ACCOUNT_ERROR_RESPONSES,
+)
+async def delete_me(
+    payload: AccountDeletionRequest,
+    request: Request,
+    response: Response,
+    auth_context: AuthenticatedSessionContext = Depends(require_current_session),
+    auth_settings: AuthSettings = Depends(get_auth_settings),
+    account_deletion_usecase: AccountDeletionUsecaseInterface = Depends(
+        get_account_deletion_usecase),
+) -> Response:
+    try:
+        await account_deletion_usecase.delete_account(
+            auth_context=auth_context,
+            confirm_email=payload.confirm_email,
+            password=payload.password,
+            ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+            user_agent=get_user_agent(request),
+        )
+    except AccountDeletionConfirmationMismatchError as error:
+        raise api_error(
+            400,
+            "ACCOUNT_DELETION_CONFIRMATION_MISMATCH",
+            "Account deletion confirmation did not match",
+        ) from error
+    except AccountDeletionReauthRequiredError as error:
+        raise api_error(
+            400,
+            "ACCOUNT_DELETION_REAUTH_REQUIRED",
+            "Password confirmation is required",
+        ) from error
+    except AccountDeletionInvalidPasswordError as error:
+        raise api_error(
+            400,
+            "ACCOUNT_DELETION_INVALID_PASSWORD",
+            "Password confirmation failed",
+        ) from error
+    except RateLimitExceededError as error:
+        raise api_error(
+            429,
+            "ACCOUNT_DELETION_REAUTH_RATE_LIMITED",
+            "Too many account deletion confirmation attempts",
+            headers={
+                "Retry-After":
+                str(error.retry_after_seconds or auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
+            },
+        ) from error
+
+    secure = is_secure_request(request, auth_settings)
+    clear_session_cookie(response, secure=secure, auth_settings=auth_settings)
+    clear_csrf_cookie(response, secure=secure)
+    response.status_code = 204
+    return response
 
 
 @router.post(

@@ -161,3 +161,19 @@ async def test_delete_deletes_owner_scoped_item_and_persists() -> None:
 
     assert session.deleted == [item]
     assert session.commit_called is True
+
+
+@pytest.mark.asyncio
+async def test_delete_all_for_owner_deletes_only_owner_items_and_persists() -> None:
+    owner_user_id = uuid4()
+    session = SessionStub()
+    repository = SampleItemRepository(unit_of_work=UnitOfWorkStub(session, in_transaction=True))
+
+    result = await repository.delete_all_for_owner(owner_user_id)
+
+    assert result is None
+    sql = _compiled(session.statements[0])
+    assert "DELETE FROM sample_items" in sql
+    assert "sample_items.owner_user_id = " in sql
+    assert session.flush_called is True
+    assert session.commit_called is False

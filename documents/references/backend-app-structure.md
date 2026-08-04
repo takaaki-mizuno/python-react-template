@@ -38,7 +38,7 @@ controllers -> usecases -> services -> models
 
 ## DI
 
-DI は Injector を使う。`bootstrap/modules.py` で `CoreModule`、`DatabaseModule`、`AuthModule`、`SampleModule` を定義し、`bootstrap/container.py` が `Injector` を生成する。
+DI は Injector を使う。`bootstrap/modules.py` で `CoreModule`、`DatabaseModule`、`AuthModule`、`SampleModule`、`AccountDeletionModule` を定義し、`bootstrap/container.py` が `Injector` を生成する。
 
 Controller は `request.app.state.injector.get(...)` を直接呼ばない。`bootstrap/dependencies.py` の `inject(Interface)` を `Depends(...)` に渡す。
 
@@ -75,8 +75,11 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 - `users.is_active` は凍結、`users.deleted_at` は退会または論理削除を表す。通常の user lookup は `deleted_at IS NULL` を含める。
 - 削除済み user は login、`GET /api/auth/me`、session authentication で認証不可。認証時だけ `find_user_by_id_for_authentication()` が deleted / inactive を観測して session revoke と audit に使う。
 - 削除済み user の email は `uq_users_email_lower_active` partial unique index により再登録可能。active user 同士の重複は DB が拒否する。
-- Phase 5 では公開 `DELETE /api/auth/me` と frontend 退会 UI は追加しない。account deletion workflow は Phase 6 の対象。
-- `mark_user_deleted()` は `USER_MARKED_DELETED` audit log を同じ repository 操作内で作成する。Phase 6 の公開 account deletion workflow はこの repository 契約を経由する。
+- `DELETE /api/auth/me` は Phase 6 の公開 self-service account deletion endpoint。`AccountDeletionUsecase` が account management orchestration boundary であり、sample item cleanup、`mark_user_deleted()`、`revoke_sessions_for_user()` を 1 transaction に閉じる。`AuthUsecase` は sample repositories に依存しない。
+- `mark_user_deleted()` は `USER_MARKED_DELETED` audit log を同じ repository 操作内で作成する。Phase 6 の公開 account deletion workflow はこの repository 契約を経由し、current session id と request IP を audit log に残す。`session_id` / `ip_address` は省略不可の keyword-only argument であり、監査 context なしで呼ぶ場合も `None` を明示する。
+- account deletion の password 再認証失敗は `ACCOUNT_DELETION_REAUTH_FAILED` audit log を current user / current session / request IP / user_agent 付きで残す。rate limit は login rate limiter の IP bucket と email+IP bucket だけを読み、email 単独 bucket による退会妨害を避ける。
+- `tests/unit/usecases/test_account_deletion_coverage.py` は SQLModel metadata に読み込まれた `users` への直接 FK table から user-owned cleanup policy coverage を検出する。間接所有、FK なしの `user_id` column、metadata に import されていない model は検出しない。実際の cleanup 呼び出しは `test_account_deletion_usecase.py` と repository integration tests で検証する。
+- Phase 6 の account deletion は既存 schema を使うため、新しい DB migration を作らない。
 - physical delete 時は sessions が CASCADE、audit logs の user/session 参照が SET NULL。
 - `AuthSession.issued_at` は absolute TTL 起点で、`created_at` は監査用の作成時刻。session touch 時の expiry 再計算に `created_at` を使わない。
 - `ip_address` columns は PostgreSQL `INET`、Python model boundary は `str | None`。

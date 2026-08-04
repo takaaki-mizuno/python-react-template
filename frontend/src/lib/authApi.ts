@@ -19,6 +19,11 @@ export type RegisterPayload = {
   password: string
 }
 
+export type DeleteAccountPayload = {
+  confirmEmail: string
+  password?: string
+}
+
 export async function fetchCurrentUserOrNull(options?: {
   signal?: AbortSignal
 }): Promise<AuthUser | null> {
@@ -48,6 +53,12 @@ export async function registerWithPassword(
 
 export async function logoutCurrentSession(): Promise<void> {
   return apiClient.post<void>('/api/auth/logout')
+}
+
+export async function deleteCurrentAccount(
+  payload: DeleteAccountPayload,
+): Promise<void> {
+  return apiClient.delete<void>('/api/auth/me', { body: payload })
 }
 
 export function currentUserQueryOptions() {

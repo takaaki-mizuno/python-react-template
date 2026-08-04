@@ -8,6 +8,14 @@ class LoginRateLimiterInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    def is_account_deletion_reauth_allowed(
+        self,
+        ip_address: str,
+        normalized_email: str,
+    ) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
     def record_failure(
         self,
         ip_address: str,

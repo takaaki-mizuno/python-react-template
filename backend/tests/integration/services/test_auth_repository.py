@@ -29,7 +29,7 @@ def auth_repository(async_session_factory):
 
 async def test_find_user_by_email_ignores_deleted_users(auth_repository):
     user = await auth_repository.create_user("deleted@example.com", "hash")
-    await auth_repository.mark_user_deleted(user.id, utcnow())
+    await auth_repository.mark_user_deleted(user.id, utcnow(), session_id=None, ip_address=None)
 
     assert await auth_repository.find_user_by_email("deleted@example.com") is None
 
@@ -41,7 +41,12 @@ async def test_find_user_by_id_for_authentication_returns_all_user_states(
     active_user = await auth_repository.create_user("active@example.com", "hash")
     deleted_user = await auth_repository.create_user("deleted-auth@example.com", "hash")
     inactive_user = await auth_repository.create_user("inactive@example.com", "hash")
-    deleted_user = await auth_repository.mark_user_deleted(deleted_user.id, utcnow())
+    deleted_user = await auth_repository.mark_user_deleted(
+        deleted_user.id,
+        utcnow(),
+        session_id=None,
+        ip_address=None,
+    )
     persisted_inactive_user = await async_session.get(User, inactive_user.id)
     persisted_inactive_user.is_active = False
     await async_session.commit()
@@ -61,7 +66,12 @@ async def test_find_user_by_id_for_authentication_returns_all_user_states(
 
 async def test_deleted_user_email_can_be_reused(auth_repository):
     deleted_user = await auth_repository.create_user("reuse@example.com", "hash")
-    await auth_repository.mark_user_deleted(deleted_user.id, utcnow())
+    await auth_repository.mark_user_deleted(
+        deleted_user.id,
+        utcnow(),
+        session_id=None,
+        ip_address=None,
+    )
 
     active_user = await auth_repository.create_user("reuse@example.com", "hash")
 

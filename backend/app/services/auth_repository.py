@@ -156,7 +156,14 @@ class AuthRepository(AuthRepositoryInterface):
             await session.refresh(user)
             return user
 
-    async def mark_user_deleted(self, user_id: UUID, deleted_at: datetime) -> User:
+    async def mark_user_deleted(
+        self,
+        user_id: UUID,
+        deleted_at: datetime,
+        *,
+        session_id: UUID | None,
+        ip_address: str | None,
+    ) -> User:
         """Mark a user deleted and record the required deletion audit event."""
         async with self._unit_of_work.session_scope() as session:
             user = await session.get(User, user_id)
@@ -168,8 +175,9 @@ class AuthRepository(AuthRepositoryInterface):
             session.add(
                 AuthAuditLog(
                     user_id=user.id,
-                    session_id=None,
+                    session_id=session_id,
                     event_type=AuthEventType.USER_MARKED_DELETED,
+                    ip_address=ip_address,
                     created_at=deleted_at,
                 ))
             await self._persist(session)

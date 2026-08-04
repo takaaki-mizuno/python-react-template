@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from injector import inject
+from sqlalchemy import delete
 from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -72,4 +73,10 @@ class SampleItemRepository(SampleItemRepositoryInterface):
     async def delete(self, item: SampleItem) -> None:
         async with self._unit_of_work.session_scope() as session:
             await session.delete(item)
+            await self._persist(session)
+
+    async def delete_all_for_owner(self, owner_user_id: UUID) -> None:
+        async with self._unit_of_work.session_scope() as session:
+            statement = delete(SampleItem).where(col(SampleItem.owner_user_id) == owner_user_id)
+            await session.exec(statement)
             await self._persist(session)

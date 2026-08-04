@@ -127,6 +127,20 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - session cookie prefix は `AUTH_SESSION_COOKIE_PREFIX` だけで制御する。`__Host-` を使う場合は Secure、Path=/、Domain 未指定が必須。`AUTH_SESSION_COOKIE_PREFIX=__Host-` と `AUTH_COOKIE_SECURE=false` の組み合わせは settings validation で拒否する。CSRF cookie 名は frontend が読むため常に `csrf_token`
 - `python manage.py db-prune-auth --audit-logs-before <ISO8601> --expired-sessions-before <ISO8601>` で古い auth audit log と expired session を削除する。両方指定時は audit log、expired session の順に実行するが、それぞれ独立した repository 操作であり、片方の commit 後にもう片方が失敗した場合は部分成功になり得る
 
+## Phase 6 Account Deletion 規約
+
+- `DELETE /api/auth/me` が self-service account deletion の正規 endpoint。認証済み session と CSRF middleware validation を必須にする
+- request body は camelCase の `confirmEmail` と optional `password`。`confirmEmail` は current user email と一致させるが、誤操作防止であり認証要素ではない。session hijack 耐性は CSRF middleware と cookie security に依存する
+- password user (`users.password_hash IS NOT NULL`) は現在の password 再認証を要求する。OAuth-only user (`password_hash IS NULL`) は OAuth reauthentication 実装まで `confirmEmail` のみで削除を許可する
+- account deletion の password 再認証判定は既存 login rate limiter の IP bucket と email+IP bucket だけを読む。email 単独 bucket は任意 IP からの login 失敗でログイン済み正規ユーザーの退会を妨害できるため、退会再認証 429 の判定には使わない
+- account deletion の password 再認証失敗は既存 login rate limiter の IP bucket と email+IP bucket に記録し、`ACCOUNT_DELETION_REAUTH_FAILED` audit log を current user / current session / request IP / user_agent 付きで残す
+- 成功時は `users.deleted_at` を設定し、`users.is_active` は変更しない。対象 user の全 session を revoke し、所有する `sample_items` を削除する
+- 成功時の `USER_MARKED_DELETED` audit log は `mark_user_deleted()` が同じ repository 操作内で作成し、公開 account deletion 経由では current session id と request IP を残す。`mark_user_deleted()` の `session_id` / `ip_address` は省略不可の keyword-only argument とし、監査 context なしで呼ぶ場合も `None` を明示する
+- 削除済み user の email は audit/history のため保持するが、`uq_users_email_lower_active` により同一 email の再登録は許可する。同一 email の再登録後は active email uniqueness conflict を解消しない限り旧 deleted user を復元できない
+- user row の logical deletion と sample item の physical deletion は意図的に非対称である。user identity/audit history は保持し、sample content は保持要件がないため削除する
+- 新しい user-owned resource を追加する場合は、resource 追加と同じ変更で `AccountDeletionUsecase` と `tests/unit/usecases/test_account_deletion_coverage.py` の両方を更新する
+- `test_account_deletion_coverage.py` は SQLModel metadata に読み込まれた `users` への直接 FK table から cleanup 方針未決の user-owned table を検出する。間接所有、FK なしの `user_id` column、metadata に import されていない model は検出しないため、実際に削除されることは `test_account_deletion_usecase.py` と repository / integration tests で検証する
+
 ## Sample CRUD 複製手順
 
 新しい user-owned CRUD resource は `/api/samples` をコピー元にする。標準ファイルは次の構成にする。

@@ -15,6 +15,7 @@ import { Route as ForbiddenRouteImport } from './routes/forbidden'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated.app'
+import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated.app_.settings'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -45,6 +46,12 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   path: '/app',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAppSettingsRoute =
+  AuthenticatedAppSettingsRouteImport.update({
+    id: '/app_/settings',
+    path: '/app/settings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -52,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/app': typeof AuthenticatedAppRoute
+  '/app/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -59,6 +67,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/app': typeof AuthenticatedAppRoute
+  '/app/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -68,12 +77,19 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/_authenticated/app': typeof AuthenticatedAppRoute
+  '/_authenticated/app_/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/forbidden' | '/login' | '/register' | '/app'
+  fullPaths:
+    | '/'
+    | '/forbidden'
+    | '/login'
+    | '/register'
+    | '/app'
+    | '/app/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/forbidden' | '/login' | '/register' | '/app'
+  to: '/' | '/forbidden' | '/login' | '/register' | '/app' | '/app/settings'
   id:
     | '__root__'
     | '/'
@@ -82,6 +98,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/_authenticated/app'
+    | '/_authenticated/app_/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -136,15 +153,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/app_/settings': {
+      id: '/_authenticated/app_/settings'
+      path: '/app/settings'
+      fullPath: '/app/settings'
+      preLoaderRoute: typeof AuthenticatedAppSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAppRoute: typeof AuthenticatedAppRoute
+  AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAppRoute: AuthenticatedAppRoute,
+  AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -16,6 +16,18 @@ class RateLimitExceededError(Exception):
         self.retry_after_seconds = retry_after_seconds
 
 
+class AccountDeletionConfirmationMismatchError(Exception):
+    pass
+
+
+class AccountDeletionReauthRequiredError(Exception):
+    pass
+
+
+class AccountDeletionInvalidPasswordError(Exception):
+    pass
+
+
 class WeakPasswordError(Exception):
     pass
 
