@@ -67,7 +67,12 @@ def db_upgrade(revision: str = "head") -> None:
 
 
 @app.command("db-downgrade")
-def db_downgrade(revision: str = typer.Argument(...)) -> None:
+def db_downgrade(
+    revision: Annotated[
+        str,
+        typer.Option("--revision", "-r", help="Target Alembic revision to downgrade to."),
+    ],
+) -> None:
     _get_explicit_database_settings("db-downgrade")
     alembic_command.downgrade(_alembic_config(), revision)
 

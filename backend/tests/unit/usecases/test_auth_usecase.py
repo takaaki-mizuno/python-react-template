@@ -721,3 +721,46 @@ async def test_authenticate_session_touch_interval_zero_touches_every_time():
     )
 
     assert ("touch_session", True) in repository.operations
+
+
+@pytest.mark.asyncio
+async def test_authenticate_session_refreshes_expiry_from_issued_at_not_created_at(monkeypatch, ):
+    unit_of_work = UnitOfWorkStub()
+    fixed_now = utcnow()
+    monkeypatch.setattr("app.usecases.auth_usecase.utcnow", lambda: fixed_now)
+    user = User(
+        email="active@example.com",
+        password_hash="hashed",
+        is_active=True,
+    )
+    active_session = AuthSession(
+        user_id=user.id,
+        session_token_hash="session-token-hash",
+        csrf_token_hash="csrf-token-hash",
+        created_at=fixed_now - timedelta(days=10),
+        issued_at=fixed_now - timedelta(minutes=30),
+        last_seen_at=fixed_now - timedelta(minutes=10),
+        expires_at=fixed_now + timedelta(minutes=10),
+    )
+    repository = TransactionRecordingRepository(
+        unit_of_work=unit_of_work,
+        user=user,
+        active_session=active_session,
+    )
+
+    await _usecase(
+        repository,
+        unit_of_work,
+        auth_settings=AuthSettings(
+            _env_file=None,
+            AUTH_SESSION_TOUCH_INTERVAL_SECONDS=0,
+            AUTH_SESSION_ABSOLUTE_TTL_SECONDS=3600,
+            AUTH_SESSION_IDLE_TTL_SECONDS=86400,
+        ),
+    ).authenticate_session(
+        session_token="session-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert repository.active_session.expires_at == fixed_now + timedelta(minutes=30)

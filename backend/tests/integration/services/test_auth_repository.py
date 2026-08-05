@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.libraries.clock import utcnow
 from app.models.auth_audit_log import AuthAuditLog
 from app.models.auth_errors import EmailAlreadyRegisteredError
+from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
 from app.models.user import User
 from app.services.auth_repository import AuthRepository
@@ -77,6 +79,92 @@ async def test_deleted_user_email_can_be_reused(auth_repository):
 
     assert active_user.id != deleted_user.id
     assert await auth_repository.find_user_by_email("reuse@example.com") == active_user
+
+
+async def test_mark_user_deleted_concurrent_calls_audit_once(async_session_factory):
+    user_repository = AuthRepository(unit_of_work=UnitOfWork(session_factory=async_session_factory))
+    user = await user_repository.create_user("delete-race@example.com", "hash")
+    first_repository = AuthRepository(unit_of_work=UnitOfWork(
+        session_factory=async_session_factory))
+    second_repository = AuthRepository(unit_of_work=UnitOfWork(
+        session_factory=async_session_factory))
+
+    await asyncio.gather(
+        first_repository.mark_user_deleted(
+            user.id,
+            utcnow(),
+            session_id=None,
+            ip_address="127.0.0.1",
+        ),
+        second_repository.mark_user_deleted(
+            user.id,
+            utcnow(),
+            session_id=None,
+            ip_address="127.0.0.1",
+        ),
+    )
+
+    async with async_session_factory() as session:
+        audit_logs = (await session.exec(
+            select(AuthAuditLog).where(
+                AuthAuditLog.user_id == user.id,
+                AuthAuditLog.event_type == AuthEventType.USER_MARKED_DELETED,
+            ))).all()
+
+    assert len(audit_logs) == 1
+
+
+async def test_mark_user_deleted_sequential_calls_keep_first_deleted_at_and_audit_once(
+    auth_repository,
+    async_session,
+):
+    user = await auth_repository.create_user("delete-once@example.com", "hash")
+    first_deleted_at = utcnow()
+    second_deleted_at = first_deleted_at + timedelta(seconds=1)
+
+    first_result = await auth_repository.mark_user_deleted(
+        user.id,
+        first_deleted_at,
+        session_id=None,
+        ip_address="127.0.0.1",
+    )
+    second_result = await auth_repository.mark_user_deleted(
+        user.id,
+        second_deleted_at,
+        session_id=None,
+        ip_address="127.0.0.1",
+    )
+
+    audit_logs = (await async_session.execute(
+        select(AuthAuditLog).where(
+            AuthAuditLog.user_id == user.id,
+            AuthAuditLog.event_type == AuthEventType.USER_MARKED_DELETED,
+        ))).scalars().all()
+
+    assert first_result.deleted_at == first_deleted_at
+    assert second_result.deleted_at == first_deleted_at
+    assert len(audit_logs) == 1
+
+
+async def test_mark_user_deleted_returns_updated_user_inside_transaction(async_session_factory, ):
+    unit_of_work = UnitOfWork(session_factory=async_session_factory)
+    repository = AuthRepository(unit_of_work=unit_of_work)
+    user = await repository.create_user("delete-in-transaction@example.com", "hash")
+    deleted_at = utcnow()
+
+    async with unit_of_work.transaction():
+        loaded_user = await repository.find_user_by_id_for_authentication(user.id)
+        assert loaded_user is not None
+        assert loaded_user.deleted_at is None
+
+        deleted_user = await repository.mark_user_deleted(
+            user.id,
+            deleted_at,
+            session_id=None,
+            ip_address="127.0.0.1",
+        )
+
+    assert deleted_user.deleted_at == deleted_at
 
 
 async def test_active_user_email_duplicates_are_rejected(auth_repository):

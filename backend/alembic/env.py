@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 import app.models  # noqa: F401
+from app.bootstrap.alembic_config import build_alembic_engine_section
 from app.config.database import get_alembic_database_url, get_database_settings
 
 config = context.config
@@ -29,9 +30,6 @@ def get_database_url() -> str:
         return get_alembic_database_url(settings)
     except ValueError as exc:
         raise CommandError(str(exc)) from exc
-
-
-config.set_main_option("sqlalchemy.url", get_database_url())
 
 
 def run_migrations_offline() -> None:
@@ -62,7 +60,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        build_alembic_engine_section(config, get_database_url()),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

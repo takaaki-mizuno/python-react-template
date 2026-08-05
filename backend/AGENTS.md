@@ -123,7 +123,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - `AuthSession.issued_at` は absolute TTL の起点、`created_at` は作成監査時刻。expiry 計算に `created_at` を使わない
 - auth session / audit log の `ip_address` は PostgreSQL `INET` だが、Python model / repository boundary は `str | None` を保つ
 - repository は domain error を投げ、HTTP error を投げない。`revoke_session()` は missing session を成功扱いにする冪等 command
-- `mark_user_deleted()`、`revoke_sessions_for_user()`、`USER_MARKED_DELETED` は Phase 6 account deletion / role revocation / password change 用の先行契約であり、Phase 5 では public caller を持たない。`mark_user_deleted()` は `USER_MARKED_DELETED` audit log を同じ repository 操作内で作成する
+- `mark_user_deleted()`、`revoke_sessions_for_user()`、`USER_MARKED_DELETED` は Phase 6 account deletion / role revocation / password change 用の契約である。`mark_user_deleted()` は `deleted_at IS NULL` の user を初めて削除状態にした場合だけ `USER_MARKED_DELETED` audit log を同じ repository 操作内で作成する。すでに削除済みの user では `deleted_at` を上書きせず、audit log も追加しない
 - session cookie prefix は `AUTH_SESSION_COOKIE_PREFIX` だけで制御する。`__Host-` を使う場合は Secure、Path=/、Domain 未指定が必須。`AUTH_SESSION_COOKIE_PREFIX=__Host-` と `AUTH_COOKIE_SECURE=false` の組み合わせは settings validation で拒否する。CSRF cookie 名は frontend が読むため常に `csrf_token`
 - `python manage.py db-prune-auth --audit-logs-before <ISO8601> --expired-sessions-before <ISO8601>` で古い auth audit log と expired session を削除する。両方指定時は audit log、expired session の順に実行するが、それぞれ独立した repository 操作であり、片方の commit 後にもう片方が失敗した場合は部分成功になり得る
 
@@ -132,10 +132,11 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - `DELETE /api/auth/me` が self-service account deletion の正規 endpoint。認証済み session と CSRF middleware validation を必須にする
 - request body は camelCase の `confirmEmail` と optional `password`。`confirmEmail` は current user email と一致させるが、誤操作防止であり認証要素ではない。session hijack 耐性は CSRF middleware と cookie security に依存する
 - password user (`users.password_hash IS NOT NULL`) は現在の password 再認証を要求する。OAuth-only user (`password_hash IS NULL`) は OAuth reauthentication 実装まで `confirmEmail` のみで削除を許可する
+- OAuth-only user (`password_hash IS NULL`) の削除は OAuth provider reauthentication 実装まで `confirmEmail` のみで許可している。`confirmEmail` は認証要素ではないため、session と CSRF token の両方が奪取された場合は追加の本人確認なしに不可逆削除できる。顧客データ、課金、業務データを扱う派生プロジェクトでは、account deletion 公開前に OAuth reauthentication、削除猶予期間、または復元 workflow を設計する
 - account deletion の password 再認証判定は既存 login rate limiter の IP bucket と email+IP bucket だけを読む。email 単独 bucket は任意 IP からの login 失敗でログイン済み正規ユーザーの退会を妨害できるため、退会再認証 429 の判定には使わない
 - account deletion の password 再認証失敗は既存 login rate limiter の IP bucket と email+IP bucket に記録し、`ACCOUNT_DELETION_REAUTH_FAILED` audit log を current user / current session / request IP / user_agent 付きで残す
 - 成功時は `users.deleted_at` を設定し、`users.is_active` は変更しない。対象 user の全 session を revoke し、所有する `sample_items` を削除する
-- 成功時の `USER_MARKED_DELETED` audit log は `mark_user_deleted()` が同じ repository 操作内で作成し、公開 account deletion 経由では current session id と request IP を残す。`mark_user_deleted()` の `session_id` / `ip_address` は省略不可の keyword-only argument とし、監査 context なしで呼ぶ場合も `None` を明示する
+- 成功時の `USER_MARKED_DELETED` audit log は `mark_user_deleted()` が最初の削除時だけ同じ repository 操作内で作成し、公開 account deletion 経由では current session id と request IP を残す。`mark_user_deleted()` の `session_id` / `ip_address` は省略不可の keyword-only argument とし、監査 context なしで呼ぶ場合も `None` を明示する
 - 削除済み user の email は audit/history のため保持するが、`uq_users_email_lower_active` により同一 email の再登録は許可する。同一 email の再登録後は active email uniqueness conflict を解消しない限り旧 deleted user を復元できない
 - user row の logical deletion と sample item の physical deletion は意図的に非対称である。user identity/audit history は保持し、sample content は保持要件がないため削除する
 - 新しい user-owned resource を追加する場合は、resource 追加と同じ変更で `AccountDeletionUsecase` と `tests/unit/usecases/test_account_deletion_coverage.py` の両方を更新する

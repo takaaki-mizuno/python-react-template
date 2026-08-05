@@ -237,17 +237,43 @@ def test_db_downgrade_requires_explicit_revision():
     result = CliRunner().invoke(manage.app, ["db-downgrade"])
 
     assert result.exit_code == 2
-    assert "Missing argument" in result.stderr
+    assert "Missing option" in result.stderr
+    assert "--revision" in result.stderr
 
 
 def test_db_downgrade_requires_explicit_database_url(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
-    result = CliRunner().invoke(manage.app, ["db-downgrade", "base"])
+    result = CliRunner().invoke(manage.app, ["db-downgrade", "--revision", "base"])
 
     assert result.exit_code == 2
     assert "DATABASE_URL" in result.stderr
     assert "configured explicitly" in result.stderr
+
+
+def test_db_downgrade_accepts_revision_option(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class ConfigStub:
+
+        def __init__(self, path):
+            calls.append(("config", path))
+
+    class CommandStub:
+
+        @staticmethod
+        def downgrade(config, revision):
+            calls.append(("downgrade", revision, config))
+
+    monkeypatch.setattr(manage, "AlembicConfig", ConfigStub)
+    monkeypatch.setattr(manage, "alembic_command", CommandStub)
+
+    result = CliRunner().invoke(manage.app, ["db-downgrade", "--revision", "base"])
+
+    assert result.exit_code == 0
+    assert calls[1][0] == "downgrade"
+    assert calls[1][1] == "base"
 
 
 def test_db_upgrade_and_downgrade_use_explicit_command_names():

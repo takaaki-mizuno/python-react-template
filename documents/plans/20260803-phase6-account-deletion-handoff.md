@@ -1331,3 +1331,7 @@ python3 -c 'import json; data=json.load(open("/tmp/phase6-openapi.json")); op=da
 - Consolidate `/app/settings` account deletion error metadata into one table that maps each backend error code to both user message and invalid field target.
 - Admin-side deleted user audit viewer.
 - Account deletion completion notification email.
+
+## Phase 7 review note
+
+Phase 6 では OAuth-only user (`password_hash IS NULL`) の account deletion を `confirmEmail` のみで暫定許容した。Phase 7 では、この失敗モードを正典へ明記する。`confirmEmail` は誤操作防止であり認証要素ではないため、OAuth provider reauthentication、削除猶予期間、または復元 workflow は派生プロジェクト側で account deletion 公開前に設計する。

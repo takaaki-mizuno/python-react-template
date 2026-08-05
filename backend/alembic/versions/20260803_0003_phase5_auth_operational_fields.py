@@ -142,7 +142,30 @@ def upgrade() -> None:
     )
 
 
+# Deleted email reuse is a Phase 5 feature. Once duplicate lower(email)
+# values exist across deleted and active users, the previous global unique
+# index cannot be restored without deleting or rewriting user data. Offline
+# SQL generation cannot inspect data, so it emits downgrade SQL without this
+# runtime guard.
+def _assert_no_deleted_email_reuse_for_downgrade() -> None:
+    if op.get_context().as_sql:
+        return
+    connection = op.get_bind()
+    duplicated_email = connection.execute(
+        sa.text("""
+            SELECT lower(email) AS email_key
+            FROM users
+            GROUP BY lower(email)
+            HAVING count(*) > 1
+            LIMIT 1
+            """)).fetchone()
+    if duplicated_email is not None:
+        raise RuntimeError("Cannot downgrade 20260803_0003 after deleted email reuse. "
+                           "The previous schema requires lower(email) to be globally unique.")
+
+
 def downgrade() -> None:
+    _assert_no_deleted_email_reuse_for_downgrade()
     op.drop_index("uq_users_email_lower_active", table_name="users")
     op.create_index(
         op.f("uq_users_email_lower"),

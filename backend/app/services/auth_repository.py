@@ -164,25 +164,33 @@ class AuthRepository(AuthRepositoryInterface):
         session_id: UUID | None,
         ip_address: str | None,
     ) -> User:
-        """Mark a user deleted and record the required deletion audit event."""
+        """Mark a user deleted once and record exactly one deletion audit event."""
         async with self._unit_of_work.session_scope() as session:
-            user = await session.get(User, user_id)
-            if user is None:
-                raise UserNotFoundError(user_id)
-            user.deleted_at = deleted_at
-            user.updated_at = deleted_at
-            session.add(user)
+            result = await session.exec(
+                update(User).where(
+                    col(User.id) == user_id,
+                    col(User.deleted_at).is_(None),
+                ).values(deleted_at=deleted_at, updated_at=deleted_at))
+            if int(result.rowcount or 0) == 0:
+                existing_user = await session.get(User, user_id)
+                if existing_user is None:
+                    raise UserNotFoundError(user_id)
+                return existing_user
+
             session.add(
                 AuthAuditLog(
-                    user_id=user.id,
+                    user_id=user_id,
                     session_id=session_id,
                     event_type=AuthEventType.USER_MARKED_DELETED,
                     ip_address=ip_address,
                     created_at=deleted_at,
                 ))
             await self._persist(session)
-            await session.refresh(user)
-            return user
+            deleted_user = await session.get(User, user_id)
+            if deleted_user is None:
+                # Defensive guard for an inconsistent rowcount / identity map state.
+                raise UserNotFoundError(user_id)
+            return deleted_user
 
     async def revoke_sessions_for_user(self, user_id: UUID, revoked_at: datetime) -> int:
         """Internal contract for account deletion, role revocation, and password change."""

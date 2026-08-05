@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
+import { queryKeys } from '@/lib/queryKeys'
 import { renderWithRouter } from '@/test/renderRouter'
 
 vi.mock('@tanstack/react-devtools', () => ({
@@ -17,6 +18,31 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   document.cookie = 'csrf_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+})
+
+test('未認証で /app/settings を開くと login へ redirect する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: 'UNAUTHORIZED', message: 'Unauthorized' },
+        }),
+        {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    ),
+  )
+
+  const { router } = renderWithRouter({ initialEntries: ['/app/settings'] })
+
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/login')
+  })
+  expect(router.state.location.search.redirect).toBe('/app/settings')
+  expect(screen.queryByRole('heading', { name: 'アカウント設定' })).toBeNull()
 })
 
 test('/app/settings で account deletion に成功すると cache を消して / へ遷移する', async () => {
@@ -120,7 +146,17 @@ test.each([
       }),
     )
 
-    renderWithRouter({ initialEntries: ['/app/settings'] })
+    const authUser = {
+      id: '00000000-0000-0000-0000-000000000001',
+      email: 'user@example.com',
+    }
+    const { queryClient } = renderWithRouter({
+      initialEntries: ['/app/settings'],
+      seed: (client) => {
+        client.setQueryData(queryKeys.auth.me, authUser)
+        client.setQueryData(['projects'], [{ id: 'project-1' }])
+      },
+    })
 
     expect(
       await screen.findByRole('heading', { name: 'アカウント削除' }),
@@ -136,6 +172,10 @@ test.each([
     expect(
       screen.getByLabelText('現在のパスワード').getAttribute('aria-invalid'),
     ).toBe(invalidField === 'password' ? 'true' : null)
+    expect(queryClient.getQueryData(queryKeys.auth.me)).toEqual(authUser)
+    expect(queryClient.getQueryData(['projects'])).toEqual([
+      { id: 'project-1' },
+    ])
   },
 )
 

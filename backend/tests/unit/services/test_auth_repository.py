@@ -70,16 +70,17 @@ class ResultStub:
 
 class CapturingSession:
 
-    def __init__(self, get_result: object | None = None) -> None:
+    def __init__(self, get_result: object | None = None, exec_rowcount: int = 2) -> None:
         self.statements = []
         self.added = []
         self.get_result = get_result
+        self.exec_rowcount = exec_rowcount
         self.commit_calls = 0
         self.refresh_calls = 0
 
     async def exec(self, statement):
         self.statements.append(statement)
-        return ResultStub(rowcount=2)
+        return ResultStub(rowcount=self.exec_rowcount)
 
     async def get(self, _model, _identity):
         return self.get_result
@@ -196,10 +197,38 @@ async def test_record_user_login_raises_user_not_found_for_deleted_user() -> Non
 @pytest.mark.asyncio
 async def test_mark_user_deleted_raises_user_not_found_for_missing_user() -> None:
     user_id = uuid4()
-    repository = AuthRepository(unit_of_work=CapturingUnitOfWork(CapturingSession(None)))
+    repository = AuthRepository(
+        unit_of_work=CapturingUnitOfWork(CapturingSession(None, exec_rowcount=0)))
 
     with pytest.raises(UserNotFoundError):
         await repository.mark_user_deleted(user_id, utcnow(), session_id=None, ip_address=None)
+
+
+@pytest.mark.asyncio
+async def test_mark_user_deleted_does_not_audit_when_user_already_deleted() -> None:
+    user_id = uuid4()
+    first_deleted_at = utcnow() - timedelta(minutes=5)
+    second_deleted_at = utcnow()
+    user = User(
+        id=user_id,
+        email="deleted@example.com",
+        password_hash="hashed",
+        deleted_at=first_deleted_at,
+    )
+    session = CapturingSession(user, exec_rowcount=0)
+    repository = AuthRepository(unit_of_work=CapturingUnitOfWork(session))
+
+    deleted_user = await repository.mark_user_deleted(
+        user_id,
+        second_deleted_at,
+        session_id=None,
+        ip_address=None,
+    )
+
+    assert deleted_user.deleted_at == first_deleted_at
+    assert all(
+        getattr(instance, "event_type", None) != AuthEventType.USER_MARKED_DELETED
+        for instance in session.added)
 
 
 @pytest.mark.asyncio
@@ -207,7 +236,7 @@ async def test_mark_user_deleted_records_required_audit_log() -> None:
     user_id = uuid4()
     deleted_at = utcnow()
     user = User(id=user_id, email="delete@example.com")
-    session = CapturingSession(user)
+    session = CapturingSession(user, exec_rowcount=1)
     repository = AuthRepository(unit_of_work=CapturingUnitOfWork(session))
     session_id = uuid4()
 

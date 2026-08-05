@@ -116,11 +116,17 @@ hostから実行する場合:
   cd backend
   export APP_POSTGRES_PORT=5432
   DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app" \
-    uv run python manage.py db-downgrade --revision=-1
+    uv run python manage.py db-downgrade --revision -1
 )
 ```
 
 `db-downgrade`はtableやデータを削除し得る破壊的操作です。実行前に接続先DB、対象revision、保持対象データの有無を確認してください。共有環境や本番DBで安易に実行しないでください。
+
+Phase 5 migration `20260803_0003` の downgrade は destructive です。
+削除済み email を同じ DB で再登録済みの場合、旧 schema の global
+`lower(email)` unique index を復元できないため `Cannot downgrade 20260803_0003 after deleted email reuse` で停止します。重複 email がない
+場合でも、`users.deleted_at`、`auth_sessions.issued_at`、
+`auth_sessions.updated_at`、PostgreSQL `INET` 型への変更は rollback 時に失われます。
 
 ### 専用test DBでround-tripを確認する
 
@@ -187,7 +193,8 @@ docker compose up -d --build backend
 
 ## PostgreSQL付き認証テスト
 
-認証integration testはSQLiteへfallbackせず、`TEST_DATABASE_URL`が指すPostgreSQLを使います。環境変数がない場合はskipされるため、次の形で明示的に実行してください。
+Backend integration test は `TEST_DATABASE_URL` が未設定の場合 skip ではなく fail します。
+実行前に PostgreSQL を起動し、schema 準備には `DATABASE_URL`、pytest 実行には `TEST_DATABASE_URL` を明示してください。
 
 事前にPostgreSQLを起動し、`app_test`の存在を確認して、前節の`db-upgrade --revision head`を`app_test`へ適用してください。test自体はschemaを作成せず、test間で認証tableを`TRUNCATE ... CASCADE`します。
 
@@ -198,7 +205,7 @@ host接続例は標準port`5432`です。ルート`.env`の`POSTGRES_PORT`を変
   cd backend
   export APP_POSTGRES_PORT=5432
   TEST_DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
-    uv run pytest
+    uv run pytest tests/integration -q -ra
 )
 ```
 
@@ -222,19 +229,34 @@ schemaとcontrollerだけを個別に確認する場合:
 (
   cd backend
   export APP_POSTGRES_PORT=5432
+  uv run ruff check .
   uv run isort . --check-only
-  uv run yapf -dr app/ tests/ alembic/
+  uv run yapf -dr app/ tests/ alembic/ manage.py
+  uv run mypy app manage.py
+  uv run pytest tests/unit
+  DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
+    uv run python manage.py db-upgrade --revision head
   TEST_DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
-    uv run pytest
+    uv run pytest tests/integration -q -ra
+  DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app_test" \
+    uv run python manage.py db-check
 )
 ```
 
 ```bash
 (
   cd frontend
-  npm run check
+  npm run check:ci
   npm test
   npm run build
+)
+```
+
+```bash
+(
+  docker compose config
+  docker build --target runtime -t python-react-template-runtime .
+  docker build --target backend-dev -t python-react-template-backend-dev .
 )
 ```
 
