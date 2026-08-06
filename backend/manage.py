@@ -134,7 +134,8 @@ def db_prune_auth(
             deleted_logs = await repository.delete_audit_logs_created_before(audit_logs_before_at)
             typer.echo(f"Deleted audit logs: {deleted_logs}")
         if expired_sessions_before_at is not None:
-            deleted_sessions = await repository.delete_expired_sessions(expired_sessions_before_at)
+            deleted_sessions = await repository.delete_sessions_expired_before(
+                expired_sessions_before_at)
             typer.echo(f"Deleted expired sessions: {deleted_sessions}")
 
     asyncio.run(run_with_container(operation))

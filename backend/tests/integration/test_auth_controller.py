@@ -891,6 +891,86 @@ async def test_me_rejects_revoked_session(client, async_session):
 
 
 @pytest.mark.asyncio
+async def test_me_rejected_session_replay_is_bounded_with_replay_count(client, async_session):
+    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    client.post(
+        "/api/auth/register",
+        json={
+            "email": "bounded-me-replay@example.com",
+            "password": "Password123!",
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    await async_session.execute(
+        text("""
+            UPDATE auth_sessions
+            SET revoked_at = now()
+            WHERE session_token_hash = :session_token_hash
+        """),
+        {"session_token_hash": hash_token(client.cookies.get("session_token"))},
+    )
+    await async_session.commit()
+
+    responses = [client.get("/api/auth/me") for _ in range(3)]
+    audit_summary = (await async_session.execute(
+        text("""
+            SELECT count(*) AS row_count,
+                   max((detail_json->>'replay_count')::int) AS replay_count
+            FROM auth_audit_logs AS audit
+            JOIN auth_sessions AS session
+              ON audit.session_id = session.id
+             AND audit.user_id = session.user_id
+            WHERE audit.event_type = 'session_rejected'
+        """))).one()
+
+    assert [response.status_code for response in responses] == [401, 401, 401]
+    assert audit_summary.row_count == 1
+    assert audit_summary.replay_count == 3
+
+
+@pytest.mark.asyncio
+async def test_csrf_unknown_path_rejected_session_replay_is_bounded(client, async_session):
+    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    client.post(
+        "/api/auth/register",
+        json={
+            "email": "bounded-csrf-replay@example.com",
+            "password": "Password123!",
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    session_token = client.cookies.get("session_token")
+    csrf_token = client.cookies.get("csrf_token")
+    await async_session.execute(
+        text("""
+            UPDATE auth_sessions
+            SET revoked_at = now()
+            WHERE session_token_hash = :session_token_hash
+        """),
+        {"session_token_hash": hash_token(session_token)},
+    )
+    await async_session.commit()
+
+    responses = [
+        client.post("/api/unknown", headers={"X-CSRF-Token": csrf_token}) for _ in range(3)
+    ]
+    audit_summary = (await async_session.execute(
+        text("""
+            SELECT count(*) AS row_count,
+                   max((detail_json->>'replay_count')::int) AS replay_count
+            FROM auth_audit_logs AS audit
+            JOIN auth_sessions AS session
+              ON audit.session_id = session.id
+             AND audit.user_id = session.user_id
+            WHERE audit.event_type = 'session_rejected'
+        """))).one()
+
+    assert [response.status_code for response in responses] == [404, 404, 404]
+    assert audit_summary.row_count == 1
+    assert audit_summary.replay_count == 3
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("session_state", ["expired", "revoked"])
 async def test_login_recovers_from_inactive_session_cookie(
     client,

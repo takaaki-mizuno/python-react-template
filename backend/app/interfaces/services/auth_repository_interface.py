@@ -85,7 +85,7 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def delete_expired_sessions(self, expired_before: datetime) -> int:
+    async def delete_sessions_expired_before(self, expired_before: datetime) -> int:
         raise NotImplementedError
 
     @abstractmethod
@@ -94,4 +94,15 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
 
     @abstractmethod
     async def create_audit_log(self, audit_log: AuthAuditLog) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def record_rejected_session_replay(
+        self,
+        auth_session: AuthSession,
+        ip_address: str | None,
+        user_agent: str | None,
+        replayed_at: datetime,
+        window_seconds: int,
+    ) -> None:
         raise NotImplementedError

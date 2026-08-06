@@ -97,6 +97,7 @@ class AuthRepositoryStub:
         self.recorded_login_user_ids = []
         self.created_users: list[User] = []
         self.revoked_session_ids = []
+        self.rejected_session_replays = []
 
     async def create_user(self, email: str, password_hash: str | None) -> User:
         user = User(email=email, password_hash=password_hash, is_active=True)
@@ -136,6 +137,17 @@ class AuthRepositoryStub:
     async def create_audit_log(self, audit_log) -> None:
         self.audit_logs.append(audit_log)
 
+    async def record_rejected_session_replay(
+        self,
+        auth_session,
+        ip_address,
+        user_agent,
+        replayed_at,
+        window_seconds,
+    ) -> None:
+        self.rejected_session_replays.append(
+            (auth_session, ip_address, user_agent, replayed_at, window_seconds))
+
 
 class CsrfSessionRepository(AuthRepositoryStub):
 
@@ -145,6 +157,16 @@ class CsrfSessionRepository(AuthRepositoryStub):
 
     async def find_active_session_by_token_hash(self, _token_hash: str):
         return self.active_session
+
+
+class KnownRejectedSessionRepository(CsrfSessionRepository):
+
+    def __init__(self, rejected_session: AuthSession) -> None:
+        super().__init__(active_session=None)
+        self.rejected_session = rejected_session
+
+    async def find_session_by_token_hash(self, _token_hash: str):
+        return self.rejected_session
 
 
 def test_dummy_password_hash_is_valid_argon2_with_current_work_factor():
@@ -157,7 +179,9 @@ def test_dummy_password_hash_is_valid_argon2_with_current_work_factor():
 
 @pytest.mark.asyncio
 async def test_validate_session_csrf_returns_no_session_for_unknown_session():
-    status = await _usecase(CsrfSessionRepository(active_session=None)).validate_session_csrf(
+    repository = CsrfSessionRepository(active_session=None)
+
+    status = await _usecase(repository).validate_session_csrf(
         session_token="missing-session",
         csrf_token="csrf-token",
         ip_address="127.0.0.1",
@@ -165,6 +189,39 @@ async def test_validate_session_csrf_returns_no_session_for_unknown_session():
     )
 
     assert status is SessionCsrfStatus.NO_SESSION
+    assert repository.audit_logs == []
+    assert repository.rejected_session_replays == []
+
+
+@pytest.mark.asyncio
+async def test_validate_session_csrf_records_bounded_replay_for_known_rejected_session():
+    rejected_session = AuthSession(
+        user_id=User(email="rejected-csrf@example.com").id,
+        session_token_hash=hash_token("session-token"),
+        csrf_token_hash=hash_token("csrf-token"),
+        created_at=utcnow() - timedelta(minutes=20),
+        issued_at=utcnow() - timedelta(minutes=20),
+        last_seen_at=utcnow() - timedelta(minutes=20),
+        expires_at=utcnow() - timedelta(minutes=10),
+    )
+    repository = KnownRejectedSessionRepository(rejected_session)
+
+    status = await _usecase(repository).validate_session_csrf(
+        session_token="session-token",
+        csrf_token="csrf-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert status is SessionCsrfStatus.NO_SESSION
+    assert repository.audit_logs == []
+    assert len(repository.rejected_session_replays) == 1
+    replay_session, ip_address, user_agent, _replayed_at, window_seconds = (
+        repository.rejected_session_replays[0])
+    assert replay_session == rejected_session
+    assert ip_address == "127.0.0.1"
+    assert user_agent == "pytest"
+    assert window_seconds == 300
 
 
 @pytest.mark.asyncio
@@ -567,6 +624,38 @@ async def test_authenticate_session_uses_one_unit_of_work_transaction():
         ("find_active_session", True),
         ("find_session_by_token_hash", True),
     ]
+
+
+@pytest.mark.asyncio
+async def test_authenticate_session_records_bounded_replay_for_known_rejected_session():
+    unit_of_work = UnitOfWorkStub()
+    user = User(email="rejected-auth@example.com", password_hash="hashed", is_active=True)
+    rejected_session = AuthSession(
+        user_id=user.id,
+        session_token_hash=hash_token("session-token"),
+        csrf_token_hash=hash_token("csrf-token"),
+        created_at=utcnow() - timedelta(minutes=20),
+        issued_at=utcnow() - timedelta(minutes=20),
+        last_seen_at=utcnow() - timedelta(minutes=20),
+        expires_at=utcnow() - timedelta(minutes=10),
+    )
+    repository = KnownRejectedSessionRepository(rejected_session)
+
+    auth_context = await _usecase(repository, unit_of_work).authenticate_session(
+        session_token="session-token",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert auth_context is None
+    assert repository.audit_logs == []
+    assert len(repository.rejected_session_replays) == 1
+    replay_session, ip_address, user_agent, _replayed_at, window_seconds = (
+        repository.rejected_session_replays[0])
+    assert replay_session == rejected_session
+    assert ip_address == "127.0.0.1"
+    assert user_agent == "pytest"
+    assert window_seconds == 300
 
 
 @pytest.mark.asyncio

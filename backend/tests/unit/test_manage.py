@@ -389,7 +389,7 @@ def test_db_prune_auth_prunes_expired_sessions_only(monkeypatch):
 
     class RepositoryStub:
 
-        async def delete_expired_sessions(self, expired_before):
+        async def delete_sessions_expired_before(self, expired_before):
             calls.append(("sessions", expired_before))
             return 3
 
@@ -423,7 +423,7 @@ def test_db_prune_auth_prunes_audit_logs_only(monkeypatch):
 
     class RepositoryStub:
 
-        async def delete_expired_sessions(self, expired_before):
+        async def delete_sessions_expired_before(self, expired_before):
             calls.append(("sessions", expired_before))
             return 3
 
@@ -457,7 +457,7 @@ def test_db_prune_auth_prunes_audit_logs_before_sessions(monkeypatch):
 
     class RepositoryStub:
 
-        async def delete_expired_sessions(self, expired_before):
+        async def delete_sessions_expired_before(self, expired_before):
             calls.append(("sessions", expired_before))
             return 3
 

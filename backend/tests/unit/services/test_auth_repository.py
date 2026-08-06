@@ -147,6 +147,13 @@ def test_repository_exposes_only_authentication_specific_user_id_lookup():
     assert not hasattr(AuthRepository, "find_user_by_id")
 
 
+def test_repository_exposes_explicit_session_pruning_method_name():
+    assert hasattr(AuthRepositoryInterface, "delete_sessions_expired_before")
+    assert hasattr(AuthRepository, "delete_sessions_expired_before")
+    assert not hasattr(AuthRepositoryInterface, "delete_expired_sessions")
+    assert not hasattr(AuthRepository, "delete_expired_sessions")
+
+
 def test_mark_user_deleted_requires_audit_context_keywords():
     interface_signature = signature(AuthRepositoryInterface.mark_user_deleted)
     concrete_signature = signature(AuthRepository.mark_user_deleted)
@@ -273,12 +280,12 @@ async def test_update_session_csrf_token_hash_raises_auth_session_not_found() ->
 
 
 @pytest.mark.asyncio
-async def test_delete_expired_sessions_uses_session_scope_and_expires_threshold() -> None:
+async def test_delete_sessions_expired_before_uses_session_scope_and_expires_threshold() -> None:
     session = CapturingSession()
     unit_of_work = CapturingUnitOfWork(session)
     repository = AuthRepository(unit_of_work=unit_of_work)
 
-    deleted_count = await repository.delete_expired_sessions(utcnow())
+    deleted_count = await repository.delete_sessions_expired_before(utcnow())
 
     compiled_sql = _compiled_sql(session.statements[0])
     assert deleted_count == 2

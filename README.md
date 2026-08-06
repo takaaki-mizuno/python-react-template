@@ -128,6 +128,25 @@ Phase 5 migration `20260803_0003` の downgrade は destructive です。
 場合でも、`users.deleted_at`、`auth_sessions.issued_at`、
 `auth_sessions.updated_at`、PostgreSQL `INET` 型への変更は rollback 時に失われます。
 
+### Auth audit/session pruning
+
+古い認証audit logと期限切れsessionは、`db-prune-auth`で明示的な日時thresholdを指定して削除します。
+
+```bash
+(
+  cd backend
+  export APP_POSTGRES_PORT=5432
+  DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app" \
+    uv run python manage.py db-prune-auth \
+      --audit-logs-before 2026-08-01T00:00:00+00:00 \
+      --expired-sessions-before 2026-08-01T00:00:00+00:00
+)
+```
+
+`--audit-logs-before`は`auth_audit_logs.created_at`、`--expired-sessions-before`は`auth_sessions.expires_at`を基準にします。両方を指定した場合はaudit log、expired sessionの順に削除しますが、それぞれ独立してcommitされるため途中失敗時は部分成功になり得ます。
+
+`auth_audit_logs.session_id`は`ON DELETE SET NULL`です。sessionを物理削除してもaudit log rowは残りますが、削除されたsessionへの参照は`NULL`になります。audit保持期間中にsession idが必要な運用では、session retentionをaudit log retention以上にしてください。`NULL`を許容する運用では、削除済みsession tokenの後続replayを既知sessionとして監査できないことも受け入れる必要があります。
+
 ### 専用test DBでround-tripを確認する
 
 新規migrationやdowngrade変更時は、保持対象データを含まない`app_test`だけを対象に、upgrade → downgrade → upgradeを確認します。以下はすべてrepository rootで実行し、事前確認とmigrationを同じCompose network上のPostgreSQLへ向けます。

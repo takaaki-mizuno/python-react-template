@@ -86,7 +86,8 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 - Phase 5 migration `20260803_0003` の downgrade は destructive です。削除済み email を同じ DB で再登録済みの場合、旧 schema の global `lower(email)` unique index を復元できないため `Cannot downgrade 20260803_0003 after deleted email reuse` で停止します。重複 email がない場合でも、`users.deleted_at`、`auth_sessions.issued_at`、`auth_sessions.updated_at`、PostgreSQL `INET` 型への変更は rollback 時に失われます。
 - `ip_address` columns は PostgreSQL `INET`、Python model boundary は `str | None`。
 - auth repository は domain error を投げる。HTTP error envelope への変換は controller の責務。
-- `db-prune-auth` は古い audit log と expired session を削除する CLI。CLI bootstrap は FastAPI app を作らず DI container を使い、最後に `AsyncEngine.dispose()` を呼ぶ。両 threshold 指定時は audit log、expired session の順に実行するが、repository 操作ごとに commit されるため、途中失敗時は部分成功になり得る。
+- `db-prune-auth` は古い audit log と `expires_at` が threshold より前の session を削除する CLI。CLI bootstrap は FastAPI app を作らず DI container を使い、最後に `AsyncEngine.dispose()` を呼ぶ。両 threshold 指定時は audit log、expired session の順に実行するが、repository 操作ごとに commit されるため、途中失敗時は部分成功になり得る。
+- audit log session retention: `auth_audit_logs.session_id` は `ON DELETE SET NULL`。session を物理削除しても audit log row は残り、session 参照だけが `NULL` になる。audit 保持期間中に session id が必要な場合は session retention を audit log retention 以上にし、`NULL` を許容する場合は削除済み session token の後続 replay を既知 session として監査できないことを受け入れる。
 
 ## Sample CRUD
 

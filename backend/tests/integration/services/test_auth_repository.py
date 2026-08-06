@@ -3,6 +3,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -13,7 +14,8 @@ from app.models.auth_errors import EmailAlreadyRegisteredError
 from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
 from app.models.user import User
-from app.services.auth_repository import AuthRepository
+from app.services.auth_repository import (REJECTED_SESSION_REPLAY_LOCK_CLASS_ID, AuthRepository,
+                                          _rejected_session_replay_lock_object_id)
 from app.services.unit_of_work import UnitOfWork
 
 pytestmark = pytest.mark.integration
@@ -226,7 +228,7 @@ async def test_revoke_sessions_for_user_only_revokes_active_sessions_for_target_
                                                              )).revoked_at is None
 
 
-async def test_delete_expired_sessions_only_deletes_rows_before_threshold(
+async def test_delete_sessions_expired_before_only_deletes_rows_before_threshold(
     auth_repository,
     async_session,
 ):
@@ -255,12 +257,46 @@ async def test_delete_expired_sessions_only_deletes_rows_before_threshold(
         user_agent=None,
     )
 
-    deleted_count = await auth_repository.delete_expired_sessions(now - timedelta(days=1))
+    deleted_count = await auth_repository.delete_sessions_expired_before(now - timedelta(days=1))
 
     assert deleted_count == 1
     remaining_ids = (await async_session.execute(select(AuthSession.id))).scalars().all()
     assert old_session.id not in remaining_ids
     assert fresh_session.id in remaining_ids
+
+
+async def test_delete_sessions_expired_before_keeps_audit_log_with_null_session_id(
+    auth_repository,
+    async_session,
+):
+    user = await auth_repository.create_user("prune-linked-audit@example.com", "hash")
+    now = utcnow()
+    old_session = await auth_repository.create_session(
+        user_id=user.id,
+        session_token_hash="linked-old-session",
+        csrf_token_hash="linked-old-csrf",
+        created_at=now - timedelta(days=3),
+        issued_at=now - timedelta(days=3),
+        last_seen_at=now - timedelta(days=3),
+        expires_at=now - timedelta(days=2),
+        ip_address=None,
+        user_agent=None,
+    )
+    audit_log = AuthAuditLog(
+        user_id=user.id,
+        session_id=old_session.id,
+        event_type=AuthEventType.LOGIN_SUCCESS,
+        created_at=now - timedelta(days=2),
+    )
+    async_session.add(audit_log)
+    await async_session.commit()
+
+    deleted_count = await auth_repository.delete_sessions_expired_before(now - timedelta(days=1))
+
+    assert deleted_count == 1
+    linked_session_id = (await async_session.execute(
+        select(AuthAuditLog.session_id).where(AuthAuditLog.id == audit_log.id))).scalar_one()
+    assert linked_session_id is None
 
 
 async def test_delete_audit_logs_created_before_only_deletes_old_rows(
@@ -291,3 +327,225 @@ async def test_delete_audit_logs_created_before_only_deletes_old_rows(
     remaining_ids = (await async_session.execute(select(AuthAuditLog.id))).scalars().all()
     assert old_log.id not in remaining_ids
     assert fresh_log.id in remaining_ids
+
+
+async def test_record_rejected_session_replay_aggregates_within_window(
+    auth_repository,
+    async_session,
+):
+    user = await auth_repository.create_user("bounded-replay@example.com", "hash")
+    now = utcnow()
+    auth_session = await auth_repository.create_session(
+        user_id=user.id,
+        session_token_hash="bounded-replay-session",
+        csrf_token_hash="bounded-replay-csrf",
+        created_at=now - timedelta(minutes=20),
+        issued_at=now - timedelta(minutes=20),
+        last_seen_at=now - timedelta(minutes=20),
+        expires_at=now - timedelta(minutes=10),
+        ip_address=None,
+        user_agent=None,
+    )
+
+    await auth_repository.record_rejected_session_replay(
+        auth_session,
+        ip_address="127.0.0.1",
+        user_agent="first-agent",
+        replayed_at=now,
+        window_seconds=300,
+    )
+    await auth_repository.record_rejected_session_replay(
+        auth_session,
+        ip_address="127.0.0.2",
+        user_agent="second-agent",
+        replayed_at=now + timedelta(seconds=30),
+        window_seconds=300,
+    )
+
+    audit_logs = (await async_session.execute(
+        select(AuthAuditLog).where(
+            AuthAuditLog.session_id == auth_session.id,
+            AuthAuditLog.event_type == AuthEventType.SESSION_REJECTED,
+        ))).scalars().all()
+    assert len(audit_logs) == 1
+    assert audit_logs[0].user_id == user.id
+    assert audit_logs[0].ip_address == "127.0.0.1"
+    assert audit_logs[0].user_agent == "first-agent"
+    assert audit_logs[0].detail_json == {
+        "distinct_ip_count": 2,
+        "last_ip_address": "127.0.0.2",
+        "last_user_agent": "second-agent",
+        "replay_count": 2,
+        "recent_ip_addresses": ["127.0.0.1", "127.0.0.2"],
+        "window_seconds": 300,
+        "last_replayed_at": (now + timedelta(seconds=30)).isoformat(),
+    }
+
+
+async def test_record_rejected_session_replay_skips_when_session_lock_is_busy(
+    auth_repository,
+    async_session,
+):
+    user = await auth_repository.create_user("bounded-replay-busy-lock@example.com", "hash")
+    now = utcnow()
+    auth_session = await auth_repository.create_session(
+        user_id=user.id,
+        session_token_hash="bounded-replay-busy-lock-session",
+        csrf_token_hash="bounded-replay-busy-lock-csrf",
+        created_at=now - timedelta(minutes=20),
+        issued_at=now - timedelta(minutes=20),
+        last_seen_at=now - timedelta(minutes=20),
+        expires_at=now - timedelta(minutes=10),
+        ip_address=None,
+        user_agent=None,
+    )
+
+    await async_session.execute(
+        text("SELECT pg_advisory_xact_lock(:class_id, :object_id)"),
+        {
+            "class_id": REJECTED_SESSION_REPLAY_LOCK_CLASS_ID,
+            "object_id": _rejected_session_replay_lock_object_id(auth_session.id),
+        },
+    )
+    await asyncio.wait_for(
+        auth_repository.record_rejected_session_replay(
+            auth_session,
+            ip_address="127.0.0.1",
+            user_agent="busy-agent",
+            replayed_at=now,
+            window_seconds=300,
+        ),
+        timeout=0.5,
+    )
+
+    audit_count = (await async_session.execute(select(AuthAuditLog.id))).scalars().all()
+    assert audit_count == []
+
+
+async def test_record_rejected_session_replay_does_not_reuse_raw_rejection_anchor(
+    auth_repository,
+    async_session,
+):
+    user = await auth_repository.create_user("bounded-replay-raw-anchor@example.com", "hash")
+    now = utcnow()
+    auth_session = await auth_repository.create_session(
+        user_id=user.id,
+        session_token_hash="bounded-replay-raw-anchor-session",
+        csrf_token_hash="bounded-replay-raw-anchor-csrf",
+        created_at=now - timedelta(minutes=20),
+        issued_at=now - timedelta(minutes=20),
+        last_seen_at=now - timedelta(minutes=20),
+        expires_at=now - timedelta(minutes=10),
+        ip_address=None,
+        user_agent=None,
+    )
+    async_session.add(
+        AuthAuditLog(
+            user_id=user.id,
+            session_id=auth_session.id,
+            event_type=AuthEventType.SESSION_REJECTED,
+            ip_address="127.0.0.1",
+            user_agent="initial-rejection",
+            created_at=now - timedelta(seconds=30),
+        ))
+    await async_session.commit()
+
+    await auth_repository.record_rejected_session_replay(
+        auth_session,
+        ip_address="127.0.0.2",
+        user_agent="replay-agent",
+        replayed_at=now,
+        window_seconds=300,
+    )
+
+    audit_logs = (await async_session.execute(
+        select(AuthAuditLog).where(
+            AuthAuditLog.session_id == auth_session.id,
+            AuthAuditLog.event_type == AuthEventType.SESSION_REJECTED,
+        ).order_by(AuthAuditLog.created_at))).scalars().all()
+    assert len(audit_logs) == 2
+    assert audit_logs[0].detail_json is None
+    assert audit_logs[1].detail_json["replay_count"] == 1
+
+
+async def test_record_rejected_session_replay_creates_new_row_after_window(
+    auth_repository,
+    async_session,
+):
+    user = await auth_repository.create_user("bounded-replay-window@example.com", "hash")
+    first_replay_at = utcnow() - timedelta(minutes=10)
+    second_replay_at = utcnow()
+    auth_session = await auth_repository.create_session(
+        user_id=user.id,
+        session_token_hash="bounded-replay-window-session",
+        csrf_token_hash="bounded-replay-window-csrf",
+        created_at=first_replay_at - timedelta(minutes=20),
+        issued_at=first_replay_at - timedelta(minutes=20),
+        last_seen_at=first_replay_at - timedelta(minutes=20),
+        expires_at=first_replay_at - timedelta(minutes=10),
+        ip_address=None,
+        user_agent=None,
+    )
+
+    await auth_repository.record_rejected_session_replay(
+        auth_session,
+        ip_address="127.0.0.1",
+        user_agent="first-agent",
+        replayed_at=first_replay_at,
+        window_seconds=300,
+    )
+    await auth_repository.record_rejected_session_replay(
+        auth_session,
+        ip_address="127.0.0.2",
+        user_agent="second-agent",
+        replayed_at=second_replay_at,
+        window_seconds=300,
+    )
+
+    audit_logs = (await async_session.execute(
+        select(AuthAuditLog).where(
+            AuthAuditLog.session_id == auth_session.id,
+            AuthAuditLog.event_type == AuthEventType.SESSION_REJECTED,
+        ).order_by(AuthAuditLog.created_at))).scalars().all()
+    assert [audit_log.detail_json["replay_count"] for audit_log in audit_logs] == [1, 1]
+    assert [audit_log.created_at for audit_log in audit_logs] == [
+        first_replay_at,
+        second_replay_at,
+    ]
+
+
+async def test_record_rejected_session_replay_keeps_single_row_under_concurrency(
+    auth_repository,
+    async_session,
+):
+    user = await auth_repository.create_user("bounded-replay-concurrent@example.com", "hash")
+    now = utcnow()
+    auth_session = await auth_repository.create_session(
+        user_id=user.id,
+        session_token_hash="bounded-replay-concurrent-session",
+        csrf_token_hash="bounded-replay-concurrent-csrf",
+        created_at=now - timedelta(minutes=20),
+        issued_at=now - timedelta(minutes=20),
+        last_seen_at=now - timedelta(minutes=20),
+        expires_at=now - timedelta(minutes=10),
+        ip_address=None,
+        user_agent=None,
+    )
+
+    await asyncio.gather(*[
+        auth_repository.record_rejected_session_replay(
+            auth_session,
+            ip_address=f"127.0.0.{index}",
+            user_agent=f"agent-{index}",
+            replayed_at=now + timedelta(seconds=index),
+            window_seconds=300,
+        ) for index in range(1, 6)
+    ])
+
+    audit_logs = (await async_session.execute(
+        select(AuthAuditLog).where(
+            AuthAuditLog.session_id == auth_session.id,
+            AuthAuditLog.event_type == AuthEventType.SESSION_REJECTED,
+        ))).scalars().all()
+    assert len(audit_logs) == 1
+    assert 1 <= audit_logs[0].detail_json["replay_count"] <= 5

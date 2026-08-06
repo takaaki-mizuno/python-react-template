@@ -24,6 +24,7 @@ from app.models.user import User
 
 DUMMY_PASSWORD_HASH = ("$argon2id$v=19$m=65536,t=3,p=4$TO8J42R39QBv7pem26bDUQ"
                        "$TsSlSgdcZ3mv06Gl9wQ7WaBhED0WIbQhcLhG35aHQd4")
+SESSION_REJECTED_AUDIT_WINDOW_SECONDS = 300
 
 
 class AuthUsecase(AuthUsecaseInterface):
@@ -54,14 +55,13 @@ class AuthUsecase(AuthUsecaseInterface):
         rejected_session = await self._auth_repository.find_session_by_token_hash(token_hash)
         if rejected_session is None:
             return
-        await self._auth_repository.create_audit_log(
-            AuthAuditLog(
-                user_id=rejected_session.user_id,
-                session_id=rejected_session.id,
-                event_type=AuthEventType.SESSION_REJECTED,
-                ip_address=ip_address,
-                user_agent=user_agent,
-            ))
+        await self._auth_repository.record_rejected_session_replay(
+            rejected_session,
+            ip_address,
+            user_agent,
+            replayed_at=utcnow(),
+            window_seconds=SESSION_REJECTED_AUDIT_WINDOW_SECONDS,
+        )
 
     async def issue_csrf_token(self, session_token: str | None = None) -> str:
         csrf_token = generate_token()
