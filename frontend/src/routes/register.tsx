@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link,
   createFileRoute,
@@ -7,10 +7,16 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 
+import { OidcProviderButton } from '@/components/molecules/OidcProviderButton'
 import { AuthFormShell } from '@/components/organisms/Auth/AuthFormShell'
 import RegisterForm from '@/components/organisms/Auth/RegisterForm'
 import { toUserMessage } from '@/lib/apiError'
-import { currentUserQueryOptions, registerWithPassword } from '@/lib/authApi'
+import {
+  currentUserQueryOptions,
+  fetchOidcProviders,
+  registerWithPassword,
+  startOidcLogin,
+} from '@/lib/authApi'
 import { normalizeRedirectHref } from '@/lib/authRedirect'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -19,6 +25,11 @@ function RegisterPage() {
   const queryClient = useQueryClient()
   const { redirect: redirectHref } = Route.useSearch()
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const providers = useQuery({
+    queryKey: queryKeys.auth.oidcProviders,
+    queryFn: fetchOidcProviders,
+    retry: false,
+  })
 
   const register = useMutation({
     mutationFn: registerWithPassword,
@@ -53,6 +64,18 @@ function RegisterPage() {
           register.mutate(values)
         }}
       />
+      {providers.data && providers.data.length > 0 ? (
+        <div className="grid gap-3">
+          {providers.data.map((provider) => (
+            <OidcProviderButton
+              key={provider.providerId}
+              isDisabled={providers.isFetching}
+              onClick={() => startOidcLogin(provider.providerId, redirectHref)}
+              provider={provider}
+            />
+          ))}
+        </div>
+      ) : null}
       <p className="text-sm text-landing-muted">
         すでにアカウントをお持ちの方は{' '}
         <Link

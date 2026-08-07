@@ -891,6 +891,80 @@ async def test_me_rejects_revoked_session(client, async_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_update_sql", "event_type"),
+    [
+        (
+            "UPDATE users SET deleted_at = now() WHERE id = :user_id",
+            AuthEventType.SESSION_REVOKED_DELETED_USER,
+        ),
+        (
+            "UPDATE users SET is_active = false WHERE id = :user_id",
+            AuthEventType.SESSION_REVOKED_INACTIVE_USER,
+        ),
+    ],
+)
+async def test_me_revokes_all_user_sessions_when_observing_deleted_or_inactive_user(
+    client,
+    async_session,
+    user_update_sql,
+    event_type,
+):
+    register_response = _register(client, "status-revoke@example.com")
+    user_id = register_response.json()["id"]
+    first_session_token = client.cookies.get("session_token")
+    first_csrf_token = client.cookies.get("csrf_token")
+    assert first_session_token
+    assert first_csrf_token
+
+    client.cookies.clear()
+    _login(client, "status-revoke@example.com")
+    second_session_token = client.cookies.get("session_token")
+    second_csrf_token = client.cookies.get("csrf_token")
+    assert second_session_token
+    assert second_csrf_token
+    assert second_session_token != first_session_token
+
+    await async_session.execute(text(user_update_sql), {"user_id": user_id})
+    await async_session.commit()
+    _restore_auth_cookies(client, first_session_token, first_csrf_token)
+
+    response = client.get("/api/auth/me")
+    session_rows = (await async_session.execute(
+        text("""
+            SELECT session_token_hash, revoked_at
+            FROM auth_sessions
+            WHERE user_id = :user_id
+            ORDER BY created_at
+        """),
+        {"user_id": user_id},
+    )).all()
+    audit_rows = (await async_session.execute(
+        text("""
+            SELECT audit.session_id, session.session_token_hash
+            FROM auth_audit_logs AS audit
+            JOIN auth_sessions AS session ON session.id = audit.session_id
+            WHERE audit.user_id = :user_id
+              AND audit.event_type = :event_type
+        """),
+        {
+            "user_id": user_id,
+            "event_type": event_type,
+        },
+    )).all()
+
+    assert response.status_code == 401
+    assert_error_code(response, "UNAUTHORIZED")
+    assert [row.session_token_hash for row in session_rows] == [
+        hash_token(first_session_token),
+        hash_token(second_session_token),
+    ]
+    assert all(row.revoked_at is not None for row in session_rows)
+    assert len(audit_rows) == 1
+    assert audit_rows[0].session_token_hash == hash_token(first_session_token)
+
+
+@pytest.mark.asyncio
 async def test_me_rejected_session_replay_is_bounded_with_replay_count(client, async_session):
     csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
     client.post(

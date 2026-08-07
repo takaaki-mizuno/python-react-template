@@ -22,12 +22,37 @@ test('現在の email と確認入力欄を表示し、空や不一致でも sub
   })
 
   expect(screen.getByText('user@example.com')).toBeTruthy()
+  expect(confirmEmail.closest('form')?.hasAttribute('novalidate')).toBe(true)
   expect(password.getAttribute('type')).toBe('password')
   expect(confirmEmail.getAttribute('autocomplete')).toBe('off')
   expect(password.getAttribute('autocomplete')).toBe('current-password')
   expect(confirmEmail.hasAttribute('required')).toBe(false)
   expect(password.hasAttribute('required')).toBe(false)
   expect(submitButton.hasAttribute('disabled')).toBe(false)
+})
+
+test('入力変更時に変更された field 名を通知する', () => {
+  const onFieldChange = vi.fn()
+  render(
+    <AccountDeletionPanel
+      currentEmail="user@example.com"
+      onFieldChange={onFieldChange}
+      onSubmit={vi.fn()}
+    />,
+  )
+
+  fireEvent.change(
+    screen.getByLabelText('メールアドレスを入力して削除を確認'),
+    {
+      target: { value: 'user@example.com' },
+    },
+  )
+  fireEvent.change(screen.getByLabelText('現在のパスワード'), {
+    target: { value: 'Password123!' },
+  })
+
+  expect(onFieldChange).toHaveBeenCalledWith('confirmEmail')
+  expect(onFieldChange).toHaveBeenCalledWith('password')
 })
 
 test('pending 中は入力欄と submit button を disabled にする', () => {

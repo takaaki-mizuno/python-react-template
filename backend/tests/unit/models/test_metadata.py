@@ -6,6 +6,8 @@ EXPECTED_TABLE_MODELS = {
     "users",
     "auth_sessions",
     "auth_audit_logs",
+    "auth_identities",
+    "auth_oidc_authorization_states",
     "sample_items",
 }
 
@@ -23,6 +25,7 @@ def test_sqlmodel_metadata_uses_naming_convention():
 def test_auth_foreign_keys_have_deterministic_names():
     auth_sessions = SQLModel.metadata.tables["auth_sessions"]
     auth_audit_logs = SQLModel.metadata.tables["auth_audit_logs"]
+    auth_identities = SQLModel.metadata.tables["auth_identities"]
 
     assert {constraint.name
             for constraint in auth_sessions.foreign_key_constraints
@@ -32,6 +35,9 @@ def test_auth_foreign_keys_have_deterministic_names():
                 "fk_auth_audit_logs_user_id_users",
                 "fk_auth_audit_logs_session_id_auth_sessions",
             }
+    assert {constraint.name
+            for constraint in auth_identities.foreign_key_constraints
+            } == {"fk_auth_identities_user_id_users"}
 
 
 def test_app_models_init_imports_all_table_models_for_alembic_metadata():

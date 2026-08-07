@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 from logging import Logger
 from uuid import UUID
 
@@ -10,6 +10,7 @@ from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInte
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.libraries.auth_session_issuer import calculate_session_expiry, replace_auth_session
 from app.libraries.clock import utcnow
 from app.libraries.password_hasher import PasswordHashExecutor, validate_password_policy
 from app.libraries.session_tokens import generate_token, hash_token
@@ -20,7 +21,6 @@ from app.models.auth_errors import (EmailAlreadyRegisteredError, InvalidCredenti
                                     RateLimitExceededError, WeakPasswordError)
 from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
-from app.models.user import User
 
 DUMMY_PASSWORD_HASH = ("$argon2id$v=19$m=65536,t=3,p=4$TO8J42R39QBv7pem26bDUQ"
                        "$TsSlSgdcZ3mv06Gl9wQ7WaBhED0WIbQhcLhG35aHQd4")
@@ -100,49 +100,6 @@ class AuthUsecase(AuthUsecaseInterface):
             return SessionCsrfStatus.VALID
         return SessionCsrfStatus.MISMATCH
 
-    def _calculate_session_expiry(
-        self,
-        issued_at: datetime,
-        last_seen_at: datetime,
-    ) -> datetime:
-        absolute_expires_at = issued_at + timedelta(
-            seconds=self._auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS, )
-        idle_expires_at = last_seen_at + timedelta(
-            seconds=self._auth_settings.AUTH_SESSION_IDLE_TTL_SECONDS, )
-        return min(absolute_expires_at, idle_expires_at)
-
-    async def _replace_session(
-        self,
-        user: User,
-        current_session_token: str | None,
-        ip_address: str | None,
-        user_agent: str | None,
-    ) -> tuple[AuthSession, str, str]:
-        if current_session_token:
-            existing_session = await self._auth_repository.find_active_session_by_token_hash(
-                hash_token(current_session_token), )
-            if existing_session:
-                await self._auth_repository.revoke_session(existing_session.id)
-
-        session_token = generate_token()
-        csrf_token = generate_token()
-        issued_at = utcnow()
-        created_at = issued_at
-        last_seen_at = issued_at
-        expires_at = self._calculate_session_expiry(issued_at, last_seen_at)
-        session = await self._auth_repository.create_session(
-            user_id=user.id,
-            session_token_hash=hash_token(session_token),
-            csrf_token_hash=hash_token(csrf_token),
-            created_at=created_at,
-            issued_at=issued_at,
-            last_seen_at=last_seen_at,
-            expires_at=expires_at,
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
-        return session, session_token, csrf_token
-
     async def register(
         self,
         email: str,
@@ -194,7 +151,9 @@ class AuthUsecase(AuthUsecaseInterface):
                 )
                 login_at = utcnow()
                 user = await self._auth_repository.record_user_login(user.id, login_at)
-                session, session_token, csrf_token = await self._replace_session(
+                session, session_token, csrf_token = await replace_auth_session(
+                    self._auth_repository,
+                    self._auth_settings,
                     user=user,
                     current_session_token=current_session_token,
                     ip_address=ip_address,
@@ -266,7 +225,9 @@ class AuthUsecase(AuthUsecaseInterface):
         async with self._unit_of_work.transaction():
             login_at = utcnow()
             user = await self._auth_repository.record_user_login(user.id, login_at)
-            session, session_token, csrf_token = await self._replace_session(
+            session, session_token, csrf_token = await replace_auth_session(
+                self._auth_repository,
+                self._auth_settings,
                 user=user,
                 current_session_token=current_session_token,
                 ip_address=ip_address,
@@ -321,7 +282,7 @@ class AuthUsecase(AuthUsecaseInterface):
                 )
                 return None
             if user.deleted_at is not None:
-                await self._reject_session(
+                await self._reject_user_sessions(
                     auth_session,
                     AuthEventType.SESSION_REVOKED_DELETED_USER,
                     user_id=user.id,
@@ -330,7 +291,7 @@ class AuthUsecase(AuthUsecaseInterface):
                 )
                 return None
             if not user.is_active:
-                await self._reject_session(
+                await self._reject_user_sessions(
                     auth_session,
                     AuthEventType.SESSION_REVOKED_INACTIVE_USER,
                     user_id=user.id,
@@ -355,7 +316,8 @@ class AuthUsecase(AuthUsecaseInterface):
                 refreshed_session = await self._auth_repository.touch_session(
                     auth_session.id,
                     last_seen_at=now,
-                    expires_at=self._calculate_session_expiry(auth_session.issued_at, now),
+                    expires_at=calculate_session_expiry(self._auth_settings, auth_session.issued_at,
+                                                        now),
                 )
             return AuthenticatedSessionContext(user=user, session=refreshed_session)
 
@@ -375,6 +337,26 @@ class AuthUsecase(AuthUsecaseInterface):
                 event_type=event_type,
                 ip_address=ip_address,
                 user_agent=user_agent,
+            ))
+
+    async def _reject_user_sessions(
+        self,
+        auth_session: AuthSession,
+        event_type: AuthEventType,
+        user_id: UUID,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> None:
+        revoked_at = utcnow()
+        await self._auth_repository.revoke_sessions_for_user(user_id, revoked_at)
+        await self._auth_repository.create_audit_log(
+            AuthAuditLog(
+                user_id=user_id,
+                session_id=auth_session.id,
+                event_type=event_type,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                created_at=revoked_at,
             ))
 
     async def logout(

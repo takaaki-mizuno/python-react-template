@@ -6,13 +6,16 @@ from uuid import UUID
 import pytest
 
 from app.config.auth import AuthSettings
+from app.config.oidc import OidcProviderSettings, OidcSettings
 from app.libraries.clock import utcnow
 from app.models.auth_audit_log import AuthAuditLog
 from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_errors import (AccountDeletionConfirmationMismatchError,
                                     AccountDeletionInvalidPasswordError,
+                                    AccountDeletionOidcReauthRequiredError,
                                     AccountDeletionReauthRequiredError, RateLimitExceededError)
 from app.models.auth_event_type import AuthEventType
+from app.models.auth_identity import AuthIdentity
 from app.models.auth_session import AuthSession
 from app.models.user import User
 from app.usecases.account_deletion_usecase import AccountDeletionUsecase
@@ -40,6 +43,8 @@ class AuthRepositoryStub:
         self._unit_of_work = unit_of_work
         self.mark_user_deleted_calls: list[tuple[UUID, object, UUID | None, str | None, bool]] = []
         self.revoke_sessions_for_user_calls: list[tuple[UUID, object, bool]] = []
+        self.delete_auth_identities_for_user_calls: list[tuple[UUID, bool]] = []
+        self.identities: list[AuthIdentity] = []
         self.operation_order: list[str] = []
         self.audit_logs: list[AuthAuditLog] = []
 
@@ -60,6 +65,17 @@ class AuthRepositoryStub:
         self.revoke_sessions_for_user_calls.append(
             (user_id, revoked_at, self._unit_of_work.in_transaction))
         return 1
+
+    async def find_identities_by_user_id(self, user_id: UUID) -> list[AuthIdentity]:
+        return [identity for identity in self.identities if identity.user_id == user_id]
+
+    async def delete_auth_identities_for_user(self, user_id: UUID) -> int:
+        self.operation_order.append("delete_auth_identities_for_user")
+        self.delete_auth_identities_for_user_calls.append(
+            (user_id, self._unit_of_work.in_transaction))
+        deleted = [identity for identity in self.identities if identity.user_id == user_id]
+        self.identities = [identity for identity in self.identities if identity.user_id != user_id]
+        return len(deleted)
 
     async def create_audit_log(self, audit_log: AuthAuditLog) -> None:
         self.audit_logs.append(audit_log)
@@ -124,6 +140,7 @@ class PasswordHashExecutorStub:
 def _auth_context(
     email: str = "user@example.com",
     password_hash: str | None = "hashed-password",
+    last_oidc_auth_time_at=None,
 ) -> AuthenticatedSessionContext:
     now = utcnow()
     user = User(email=email, password_hash=password_hash, is_active=True)
@@ -135,6 +152,7 @@ def _auth_context(
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
+        last_oidc_auth_time_at=last_oidc_auth_time_at,
     )
     return AuthenticatedSessionContext(user=user, session=session)
 
@@ -163,6 +181,17 @@ def _usecase(
         unit_of_work=unit_of_work,
         auth_rate_limiter=rate_limiter,
         auth_settings=AuthSettings(_env_file=None),
+        oidc_settings=OidcSettings(
+            providers=(OidcProviderSettings(
+                provider_id="google",
+                display_name="Google",
+                issuer="https://accounts.example.com",
+                client_id="client-id",
+                client_secret="client-secret",
+                callback_path="/api/auth/oidc/google/callback",
+            ), ),
+            AUTH_OIDC_REDIRECT_BASE_URL="https://app.example.com",
+        ),
         password_hash_executor=password_hash_executor,
     )
     return (
@@ -269,10 +298,66 @@ async def test_wrong_password_records_failure_and_raises_dedicated_error() -> No
 
 
 @pytest.mark.asyncio
-async def test_passwordless_user_can_delete_without_password_or_rate_limit() -> None:
+async def test_oauth_only_user_requires_oidc_reauth_when_auth_time_missing() -> None:
+    usecase, unit_of_work, auth_repository, sample_repository, _, _ = _usecase()
+    auth_context = _auth_context(password_hash=None, last_oidc_auth_time_at=None)
+    auth_repository.identities.append(
+        AuthIdentity(
+            user_id=auth_context.user.id,
+            provider_id="google",
+            provider_subject="subject-1",
+            email=auth_context.user.email,
+            email_verified=True,
+            claims_json={"sub": "subject-1"},
+        ))
+
+    with pytest.raises(AccountDeletionOidcReauthRequiredError) as excinfo:
+        await usecase.delete_account(
+            auth_context=auth_context,
+            confirm_email="user@example.com",
+            password=None,
+            ip_address="127.0.0.1",
+            user_agent="pytest",
+        )
+
+    assert excinfo.value.linked_providers == [{
+        "providerId": "google",
+        "displayName": "Google",
+    }]
+    assert unit_of_work.transaction_entries == 0
+    assert sample_repository.delete_all_for_owner_calls == []
+    assert auth_repository.mark_user_deleted_calls == []
+
+
+@pytest.mark.asyncio
+async def test_oauth_only_user_requires_oidc_reauth_when_auth_time_is_stale() -> None:
+    usecase, unit_of_work, auth_repository, sample_repository, _, _ = _usecase()
+    auth_context = _auth_context(
+        password_hash=None,
+        last_oidc_auth_time_at=utcnow() - timedelta(minutes=10),
+    )
+
+    with pytest.raises(AccountDeletionOidcReauthRequiredError) as excinfo:
+        await usecase.delete_account(
+            auth_context=auth_context,
+            confirm_email="user@example.com",
+            password=None,
+            ip_address="127.0.0.1",
+            user_agent="pytest",
+        )
+
+    assert excinfo.value.linked_providers == []
+    assert unit_of_work.transaction_entries == 0
+    assert sample_repository.delete_all_for_owner_calls == []
+    assert auth_repository.mark_user_deleted_calls == []
+
+
+@pytest.mark.asyncio
+async def test_oauth_only_user_can_delete_with_fresh_oidc_reauth_without_password_or_rate_limit(
+) -> None:
     usecase, _, auth_repository, sample_repository, rate_limiter, password_hash_executor = (
         _usecase())
-    auth_context = _auth_context(password_hash=None)
+    auth_context = _auth_context(password_hash=None, last_oidc_auth_time_at=utcnow())
 
     await usecase.delete_account(
         auth_context=auth_context,
@@ -286,6 +371,7 @@ async def test_passwordless_user_can_delete_without_password_or_rate_limit() -> 
     assert rate_limiter.account_deletion_allowed_calls == []
     assert sample_repository.delete_all_for_owner_calls[0][0] == auth_context.user.id
     assert auth_repository.mark_user_deleted_calls[0][0] == auth_context.user.id
+    assert auth_repository.delete_auth_identities_for_user_calls[0][0] == auth_context.user.id
 
 
 @pytest.mark.asyncio
@@ -330,10 +416,12 @@ async def test_success_deletes_owned_data_marks_user_and_revokes_sessions_in_one
 
     assert auth_repository.operation_order == [
         "delete_all_for_owner",
+        "delete_auth_identities_for_user",
         "mark_user_deleted",
         "revoke_sessions_for_user",
     ]
     assert sample_repository.delete_all_for_owner_calls == [(auth_context.user.id, True)]
+    assert auth_repository.delete_auth_identities_for_user_calls == [(auth_context.user.id, True)]
     marked_user_id, deleted_at, session_id, ip_address, marked_in_transaction = (
         auth_repository.mark_user_deleted_calls[0])
     revoked_user_id, revoked_at, revoked_in_transaction = (

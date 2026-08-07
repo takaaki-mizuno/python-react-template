@@ -22,9 +22,12 @@ def test_db_prune_auth_runs_with_application_container_and_unit_of_work(
             "2026-08-01T00:00:00+00:00",
             "--expired-sessions-before",
             "2026-08-01T00:00:00+00:00",
+            "--oidc-states-before",
+            "2026-08-01T00:00:00+00:00",
         ],
     )
 
     assert result.exit_code == 0
     assert "Deleted audit logs:" in result.stdout
     assert "Deleted expired sessions:" in result.stdout
+    assert "Deleted OIDC authorization states:" in result.stdout

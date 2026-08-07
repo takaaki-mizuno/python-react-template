@@ -2,7 +2,11 @@
 
 import { describe, expect, test } from 'vitest'
 
-import { ApiError, toUserMessage } from './apiError'
+import {
+  ApiError,
+  accountDeletionOidcReauthProviders,
+  toUserMessage,
+} from './apiError'
 
 describe('ApiError', () => {
   test('backend error envelope から code/detail/details を取得できる', () => {
@@ -30,9 +34,46 @@ describe('ApiError', () => {
     )
   })
 
+  test('legacy FastAPI validation detail array を details として扱える', () => {
+    const detail = [{ loc: ['body', 'confirmEmail'], msg: 'Field required' }]
+
+    expect(new ApiError(422, { detail }).details).toEqual(detail)
+  })
+
+  test('numeric Retry-After header を retryAfterSeconds として扱える', () => {
+    const error = new ApiError(429, null, new Headers({ 'Retry-After': '60' }))
+
+    expect(error.retryAfterSeconds).toBe(60)
+  })
+
+  test.each([null, new Headers(), new Headers({ 'Retry-After': 'soon' })])(
+    'Retry-After がないか不正な場合は retryAfterSeconds を null にする',
+    (headers) => {
+      expect(new ApiError(429, null, headers).retryAfterSeconds).toBeNull()
+    },
+  )
+
   test('null や JSON object でない body でも throw しない', () => {
     expect(new ApiError(500, null).code).toBeNull()
     expect(new ApiError(500, 'Internal Server Error').detail).toBeNull()
+  })
+
+  test('account deletion OIDC reauth provider details を型安全に取り出す', () => {
+    const error = new ApiError(400, {
+      error: {
+        code: 'ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED',
+        message: 'OIDC reauth required',
+        details: [
+          { providerId: 'google', displayName: 'Google' },
+          { providerId: 'broken' },
+          { providerSubject: 'secret-subject' },
+        ],
+      },
+    })
+
+    expect(accountDeletionOidcReauthProviders(error)).toEqual([
+      { providerId: 'google', displayName: 'Google' },
+    ])
   })
 })
 

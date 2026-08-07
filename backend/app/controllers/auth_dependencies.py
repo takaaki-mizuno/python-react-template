@@ -1,19 +1,26 @@
+from logging import Logger
+
 from fastapi import Depends, Request
 
 from app.bootstrap.dependencies import inject
 from app.bootstrap.error_handlers import api_error
 from app.config.auth import AuthSettings
+from app.config.oidc import OidcSettings
 from app.interfaces.usecases.account_deletion_usecase_interface import \
     AccountDeletionUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecaseInterface
 from app.libraries.auth_cookies import session_cookie_name
 from app.libraries.client_ip import get_user_agent as resolve_user_agent
 from app.libraries.client_ip import resolve_client_ip
 from app.models.auth_context import AuthenticatedSessionContext
 
 get_auth_settings = inject(AuthSettings)
+get_oidc_settings = inject(OidcSettings)
 get_auth_usecase = inject(AuthUsecaseInterface)
+get_oauth_oidc_usecase = inject(OAuthOidcUsecaseInterface)
 get_account_deletion_usecase = inject(AccountDeletionUsecaseInterface)
+get_logger = inject(Logger)
 
 
 def get_client_ip(request: Request, trusted_proxy_ips: str = "") -> str | None:

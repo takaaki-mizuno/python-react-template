@@ -97,6 +97,7 @@ class AuthRepositoryStub:
         self.recorded_login_user_ids = []
         self.created_users: list[User] = []
         self.revoked_session_ids = []
+        self.revoked_user_session_records = []
         self.rejected_session_replays = []
 
     async def create_user(self, email: str, password_hash: str | None) -> User:
@@ -124,6 +125,10 @@ class AuthRepositoryStub:
 
     async def revoke_session(self, _session_id) -> None:
         self.revoked_session_ids.append(_session_id)
+
+    async def revoke_sessions_for_user(self, user_id, revoked_at):
+        self.revoked_user_session_records.append((user_id, revoked_at))
+        return 1
 
     async def touch_session(self, _session_id, _last_seen_at, _expires_at):
         raise NotImplementedError
@@ -582,6 +587,7 @@ async def test_authenticate_session_uses_one_unit_of_work_transaction():
     )
 
     assert auth_context is not None
+    assert repository.revoked_user_session_records == []
     assert repository.operations == [
         ("find_active_session", True),
         ("find_user_by_id_for_authentication", True),
@@ -717,8 +723,13 @@ async def test_authenticate_session_revokes_deleted_user_session_and_audits():
     )
 
     assert auth_context is None
-    assert repository.revoked_session_ids == [active_session.id]
+    assert repository.revoked_session_ids == []
+    assert len(repository.revoked_user_session_records) == 1
+    revoked_user_id, revoked_at = repository.revoked_user_session_records[0]
+    assert revoked_user_id == user.id
+    assert revoked_at is not None
     assert repository.audit_logs[-1].event_type == AuthEventType.SESSION_REVOKED_DELETED_USER
+    assert repository.audit_logs[-1].session_id == active_session.id
 
 
 @pytest.mark.asyncio
@@ -747,8 +758,13 @@ async def test_authenticate_session_revokes_inactive_user_session_and_audits():
     )
 
     assert auth_context is None
-    assert repository.revoked_session_ids == [active_session.id]
+    assert repository.revoked_session_ids == []
+    assert len(repository.revoked_user_session_records) == 1
+    revoked_user_id, revoked_at = repository.revoked_user_session_records[0]
+    assert revoked_user_id == user.id
+    assert revoked_at is not None
     assert repository.audit_logs[-1].event_type == AuthEventType.SESSION_REVOKED_INACTIVE_USER
+    assert repository.audit_logs[-1].session_id == active_session.id
 
 
 @pytest.mark.asyncio
@@ -777,6 +793,7 @@ async def test_authenticate_session_rejects_missing_user_without_deleted_or_inac
 
     assert auth_context is None
     assert repository.revoked_session_ids == [active_session.id]
+    assert repository.revoked_user_session_records == []
     assert repository.audit_logs[-1].event_type == AuthEventType.SESSION_REJECTED
 
 

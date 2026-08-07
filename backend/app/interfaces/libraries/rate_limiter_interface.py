@@ -37,5 +37,13 @@ class LoginRateLimiterInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    def is_oidc_authorization_allowed(self, ip_address: str) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def record_oidc_authorization(self, ip_address: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def reset(self) -> None:
         raise NotImplementedError

@@ -46,6 +46,10 @@ class AuthSession(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=True),
         default=None,
     )
+    last_oidc_auth_time_at: datetime | None = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+        default=None,
+    )
     ip_address: str | None = Field(
         sa_column=Column(InetString(), nullable=True),
         default=None,

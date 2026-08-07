@@ -10,6 +10,7 @@ def _limiter(now_ref: list[float] | None = None) -> InMemoryLoginRateLimiter:
         max_failures_per_ip=3,
         max_failures_per_email=3,
         max_registrations_per_ip=2,
+        max_oidc_authorizations_per_ip=2,
         max_buckets_per_scope=3,
         clock=lambda: now[0],
     )
@@ -117,6 +118,41 @@ def test_registration_bucket_uses_registration_window():
 
     now[0] = 131.0
     assert limiter.is_registration_allowed("127.0.0.1") is True
+
+
+def test_oidc_authorization_bucket_is_separate_and_records_starts():
+    limiter = _limiter()
+
+    assert limiter.is_oidc_authorization_allowed("127.0.11.1") is True
+    limiter.record_oidc_authorization("127.0.11.1")
+    limiter.record_oidc_authorization("127.0.11.1")
+
+    assert limiter.is_oidc_authorization_allowed("127.0.11.1") is False
+    assert limiter.is_registration_allowed("127.0.11.1") is True
+    assert limiter.is_allowed("127.0.11.1", "user@example.com") is True
+
+
+def test_oidc_authorization_bucket_uses_auth_window():
+    now = [100.0]
+    limiter = _limiter(now)
+    limiter.record_oidc_authorization("127.0.12.1")
+    limiter.record_oidc_authorization("127.0.12.1")
+
+    now[0] = 109.0
+    assert limiter.is_oidc_authorization_allowed("127.0.12.1") is False
+
+    now[0] = 111.0
+    assert limiter.is_oidc_authorization_allowed("127.0.12.1") is True
+
+
+def test_oidc_authorization_bucket_cap_does_not_block_new_untracked_ips(caplog):
+    limiter = _limiter()
+
+    for index in range(6):
+        limiter.record_oidc_authorization(f"127.0.13.{index}")
+
+    assert limiter.is_oidc_authorization_allowed("127.0.13.99") is True
+    assert "Rate limiter oidc_authorization_ip bucket cap reached" in caplog.text
 
 
 def test_only_touched_buckets_are_trimmed():
@@ -245,3 +281,4 @@ def test_reset_clears_all_buckets():
     assert limiter._ip_buckets == {}
     assert limiter._email_buckets == {}
     assert limiter._registration_ip_buckets == {}
+    assert limiter._oidc_authorization_ip_buckets == {}

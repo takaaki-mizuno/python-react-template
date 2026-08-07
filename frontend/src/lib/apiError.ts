@@ -4,8 +4,9 @@ export class ApiError extends Error {
   code: string | null
   detail: string | null
   details: Array<unknown>
+  retryAfterSeconds: number | null
 
-  constructor(status: number, body: unknown) {
+  constructor(status: number, body: unknown, headers: Headers | null = null) {
     super(`API request failed with status ${status}`)
     this.name = 'ApiError'
     this.status = status
@@ -13,7 +14,13 @@ export class ApiError extends Error {
     this.code = extractErrorCode(body)
     this.detail = extractErrorDetail(body)
     this.details = extractErrorDetails(body)
+    this.retryAfterSeconds = extractRetryAfterSeconds(headers)
   }
+}
+
+export type AccountDeletionOidcReauthProvider = {
+  providerId: string
+  displayName: string
 }
 
 type UserMessageOptions = {
@@ -68,6 +75,28 @@ export function toUserMessage(
   )
 }
 
+export function accountDeletionOidcReauthProviders(
+  error: unknown,
+): Array<AccountDeletionOidcReauthProvider> {
+  if (
+    !(error instanceof ApiError) ||
+    error.code !== 'ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED'
+  ) {
+    return []
+  }
+
+  return error.details.flatMap((detail) => {
+    if (!isRecord(detail)) {
+      return []
+    }
+    const { providerId, displayName } = detail
+    if (typeof providerId !== 'string' || typeof displayName !== 'string') {
+      return []
+    }
+    return [{ providerId, displayName }]
+  })
+}
+
 function extractErrorCode(body: unknown): string | null {
   const envelope = extractErrorEnvelope(body)
   const code = envelope?.code
@@ -100,7 +129,15 @@ function extractErrorDetails(body: unknown): Array<unknown> {
   const envelope = extractErrorEnvelope(body)
   const details = envelope?.details
 
-  return Array.isArray(details) ? details : []
+  if (Array.isArray(details)) {
+    return details
+  }
+
+  if (!isRecord(body)) {
+    return []
+  }
+
+  return Array.isArray(body.detail) ? body.detail : []
 }
 
 function extractErrorEnvelope(body: unknown): Record<string, unknown> | null {
@@ -109,6 +146,16 @@ function extractErrorEnvelope(body: unknown): Record<string, unknown> | null {
   }
 
   return body.error
+}
+
+function extractRetryAfterSeconds(headers: Headers | null): number | null {
+  const retryAfter = headers?.get('Retry-After')
+  if (!retryAfter || !/^\d+$/.test(retryAfter)) {
+    return null
+  }
+
+  const seconds = Number(retryAfter)
+  return Number.isSafeInteger(seconds) ? seconds : null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

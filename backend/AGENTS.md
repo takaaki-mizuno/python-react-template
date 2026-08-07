@@ -86,6 +86,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - Alembic revision 生成は `DATABASE_URL=postgresql+asyncpg://... python manage.py db-revision --message "... " --autogenerate --rev-id YYYYMMDD_NNNN` を使い、`DATABASE_URL` を明示する
 - `db-revision --autogenerate` は DB が head であることを前提にする。生成後に timezone-aware column / expression index / JSONB / FK `ON DELETE` / server default を必ず手で確認する
 - 初期 revision を書き換える場合、既存 DB に残る旧 PK/FK 名は Alembic autogenerate / `db-check` だけでは検出できない。正典確認は fresh test DB を作り直して初期 migration から適用し、`pg_constraint` または targeted test で制約名を確認する
+- Phase 5 auth operational migration `20260803_0003` を大規模 production DB に適用する場合は、`documents/references/backend-app-structure.md` の large auth migration playbook を先に確認する。fresh DB / small DB では現 migration を維持し、大規模 DB では nullable shadow column、batch backfill、短時間 swap を別計画で扱う
 
 ## API 設計
 
@@ -116,7 +117,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - `DATABASE_URL` が DB 接続設定の正であり、Alembic もここから async URL を導出する。`ALEMBIC_DATABASE_URL` は使わない
 - `users.is_active` は凍結・停止を表し、`users.deleted_at` は退会または論理削除を表す
 - 通常の active user query は必ず `deleted_at IS NULL` を含める。削除済み user を観測してよい lookup は `find_user_by_id_for_authentication()` のように用途名で明示する
-- 削除済み user は login、`/api/auth/me`、session authentication で認証不可。残存 session は revoke し、deleted / inactive user では専用 audit event を残す
+- 削除済み user は login、`/api/auth/me`、session authentication で認証不可。session authentication で deleted / inactive user を観測した場合は、その user の全 active sessions を `revoke_sessions_for_user()` で revoke し、観測 request / session に対して専用 audit event を 1 件だけ残す。missing user は user id の正当性を保証できないため、従来どおり観測 session だけを revoke する
 - `uq_users_email_lower_active` は `deleted_at IS NULL` の partial unique index であり、削除済み user の email は再登録可能。active user 同士の重複は DB が拒否する
 - Phase 5 は公開 account deletion API を追加しない。`DELETE /api/auth/me`、退会 UI、削除後 email 保持/匿名化、本人確認再要求は Phase 6 で設計する
 - physical delete 時は `auth_sessions.user_id` が CASCADE、`auth_audit_logs.user_id` / `session_id` が SET NULL になる
@@ -125,7 +126,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - repository は domain error を投げ、HTTP error を投げない。`revoke_session()` は missing session を成功扱いにする冪等 command
 - `mark_user_deleted()`、`revoke_sessions_for_user()`、`USER_MARKED_DELETED` は Phase 6 account deletion / role revocation / password change 用の契約である。`mark_user_deleted()` は `deleted_at IS NULL` の user を初めて削除状態にした場合だけ `USER_MARKED_DELETED` audit log を同じ repository 操作内で作成する。すでに削除済みの user では `deleted_at` を上書きせず、audit log も追加しない
 - session cookie prefix は `AUTH_SESSION_COOKIE_PREFIX` だけで制御する。`__Host-` を使う場合は Secure、Path=/、Domain 未指定が必須。`AUTH_SESSION_COOKIE_PREFIX=__Host-` と `AUTH_COOKIE_SECURE=false` の組み合わせは settings validation で拒否する。CSRF cookie 名は frontend が読むため常に `csrf_token`
-- `python manage.py db-prune-auth --audit-logs-before <ISO8601> --expired-sessions-before <ISO8601>` で古い auth audit log と `expires_at` が threshold より前の session を削除する。両方指定時は audit log、expired session の順に実行するが、それぞれ独立した repository 操作であり、片方の commit 後にもう片方が失敗した場合は部分成功になり得る
+- `python manage.py db-prune-auth --audit-logs-before <ISO8601> --expired-sessions-before <ISO8601> --oidc-states-before <ISO8601>` で古い auth audit log、`expires_at` が threshold より前の session、期限切れ OIDC authorization state を削除する。複数指定時は audit log、expired session、OIDC authorization state の順に実行するが、それぞれ独立した repository 操作であり、ある commit 後に後続 operation が失敗した場合は部分成功になり得る
 - audit log session retention: `auth_audit_logs.session_id` は `ON DELETE SET NULL` であり、session を物理削除しても audit log row は残るが `session_id` は `NULL` になる。audit 保持期間中に session id が必要な運用では session retention を audit log retention 以上にする。`NULL` を許容する運用では、削除済み session token の後続 replay は既知 session として監査できないことも受け入れる
 - 派生プロジェクト向け互換性メモ: `AuthRepositoryInterface.delete_expired_sessions()` は実動作を明確にするため `delete_sessions_expired_before()` へ改名済み。外部から repository interface を直接呼んでいる場合は新名へ移行する
 - known rejected session replay は bounded audit として扱う。`authenticate_session()` と `validate_session_csrf()` は既知だが active ではない session token を観測した場合、`SESSION_REJECTED` audit log を 5 分 window で aggregate し、`detail_json.replay_count`、`detail_json.last_replayed_at`、`detail_json.last_ip_address`、`detail_json.last_user_agent`、`detail_json.distinct_ip_count`、`detail_json.recent_ip_addresses` を更新する。repository は session id ごとの PostgreSQL `pg_try_advisory_xact_lock` を使い、lock 取得時だけ read-modify-write を行う。lock が busy の場合は CSRF middleware 経路で DB connection を待たせず、その replay 1 件の記録をスキップするため、強い正確性より availability を優先した契約である。このため `replay_count` は実 replay 数の下限値であり、並行 flood 時ほど過少になり得る。`distinct_ip_count` は capped な `recent_ip_addresses` 窓内での近似で、同じ IP が窓から落ちた後に再登場すると新規として数えるため過大側に振れ得る。raw `SESSION_REJECTED` row は aggregate anchor に流用せず、`detail_json.replay_count` を持つ row だけを更新する。window lookup は既存 `session_id` index から狭める前提で、template 規模では composite index を追加しない。in-memory throttle は複数 worker / instance で audit signal が割れるため採用しない。lock object id は UUID の下位 31 bit から作るため衝突確率は低いが、衝突時は busy lock と同じく記録を skip し得る best-effort audit である。unknown random token は audit log を作らない。deleted / inactive user の active session を初回に revoke する `SESSION_REVOKED_DELETED_USER` / `SESSION_REVOKED_INACTIVE_USER` はこの bounded replay では抑制しない
@@ -199,3 +200,47 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - `python-development` — Python 全般
 - `database-schema-design` — モデル設計
 - `restful-api-design` — API 設計
+
+## Phase 8 OAuth/OIDC 規約
+
+- OAuth/OIDC provider は `AUTH_OIDC_ENABLED_PROVIDERS` と provider id 別 env で追加する。provider id は小文字英数字、`-`、`_` のみを許可し、provider 固有の env suffix は大文字化して使う。JSON を単一 env に詰め込まない。
+- Redirect URI は `AUTH_OIDC_REDIRECT_BASE_URL` と provider の callback path からだけ生成する。request の `Host`、`X-Forwarded-*`、`base_url` を redirect URI 生成に使わない。IdP には例として `http://localhost:8000/api/auth/oidc/google/callback` または本番 origin の同 path を登録する。
+- `trusted verified email` は `AUTH_OIDC_PROVIDER_<ID>_TRUST_VERIFIED_EMAIL=true` の provider だけで信頼する。`email_verified=true` かつ trusted provider の場合だけ自動作成・自動 link の候補にする。
+- 新規 OAuth user 作成は `AUTH_OIDC_PROVIDER_<ID>_AUTO_PROVISION=enabled | link-only` で切り替える。`link-only` は既存 user への link だけを許可し、新規 user を作らない。
+- 既存 user への link は `AUTH_OIDC_PROVIDER_<ID>_LINK_MODE=auto | manual | disabled` で制御する。`auto` のみ verified email 一致で自動 link する。`manual` は今回の実装では `OIDC_IDENTITY_LINK_REQUIRED` で拒否し、明示 link UI は後続計画で扱う。
+- 自動作成・自動 link・login success/failure・reauth success/failure は audit event に残す。ただし provider subject、authorization code、`access_token`、`refresh_token`、raw provider error は audit に残さない。
+- token 非保存を正とする。`access_token` / `refresh_token` は DB、audit log、URL、frontend state に保存しない。保存するのは provider subject と allowlist 済み ID token claims だけである。
+- ID token の署名 alg は安全 allowlist と discovery metadata の積集合だけを許可する。`none` と HS* は無条件で拒否する。JWKS は未知 `kid` の場合だけ cooldown 付きで再取得し、署名不正だけで外向き HTTP を増幅させない。
+- OAuth/OIDC state は DB-backed にし、browser binding cookie と組み合わせて callback を検証する。browser binding cookie は `oidc_binding_<state_lookup_id>`、`HttpOnly`、`SameSite=Lax`、auth cookie と同じ Secure 判定、state TTL と同じ max-age を使い、callback consume 後または terminal failure 後に削除する。
+- `purpose=login` callback は成功時に保存済み internal redirect path へ戻し、失敗時は `/login?oidcError=<machine-code>` へ戻す。`purpose=account_deletion_reauth` は成功時に `oidcReauth=success`、失敗時に `oidcError=<machine-code>` を保存済み settings path に merge する。
+- OIDC redirect query code の対応表は以下を正典とする。`OIDC_PROVIDER_ACCESS_DENIED` は IdP 同意画面のキャンセル等の terminal failure、`OIDC_IDENTITY_UNAVAILABLE` は provider subject または email collision が inactive / deleted user を指す場合に使う。`OIDC_IDENTITY_LINK_DISABLED` と `OIDC_PROVISIONING_DISABLED` は email 登録有無で出し分けられるため、password register の 409 と同じ enumeration 許容範囲として扱う。
+
+| domain error | redirect query code | login redirect | reauth redirect | audit event |
+|---|---|---|---|---|
+| `OidcProviderNotConfiguredError` | `OIDC_PROVIDER_NOT_CONFIGURED` | `/login` | `/app/settings` | なし |
+| `OidcAuthorizationRateLimitedError` | `OIDC_AUTHORIZATION_RATE_LIMITED` | `/login` | `/app/settings` | なし |
+| `OidcStateMismatchError` | `OIDC_STATE_MISMATCH` | `/login` | state context を解決できない場合は `/login` | なし |
+| `OidcBrowserBindingMismatchError` | `OIDC_BROWSER_BINDING_MISMATCH` | `/login` | state context を解決できない場合は `/login` | なし |
+| `OidcTokenExchangeError` | `OIDC_TOKEN_EXCHANGE_FAILED` | `/login` | saved settings path | `OIDC_LOGIN_FAILED` / `OIDC_REAUTH_FAILED` |
+| `OidcProviderAccessDeniedError` | `OIDC_PROVIDER_ACCESS_DENIED` | `/login` | state context を解決できる場合は保存済み settings path | `OIDC_LOGIN_FAILED` / `OIDC_REAUTH_FAILED` |
+| `OidcClaimsValidationError` | `OIDC_CLAIMS_VALIDATION_FAILED` | `/login` | saved settings path | `OIDC_LOGIN_FAILED` / `OIDC_REAUTH_FAILED` |
+| `OidcEmailNotVerifiedError` | `OIDC_EMAIL_NOT_VERIFIED` | `/login` | saved settings path | `OIDC_LOGIN_FAILED` / `OIDC_REAUTH_FAILED` |
+| `OidcProvisioningDisabledError` | `OIDC_PROVISIONING_DISABLED` | `/login` | saved settings path | `OIDC_LOGIN_FAILED` / `OIDC_REAUTH_FAILED` |
+| `OidcIdentityLinkRequiredError` | `OIDC_IDENTITY_LINK_REQUIRED` | `/login` | saved settings path | `OIDC_LOGIN_FAILED` / `OIDC_REAUTH_FAILED` |
+| `OidcIdentityLinkDisabledError` | `OIDC_IDENTITY_LINK_DISABLED` | `/login` | saved settings path | `OIDC_LOGIN_FAILED` / `OIDC_REAUTH_FAILED` |
+| `OidcIdentityUnavailableError` | `OIDC_IDENTITY_UNAVAILABLE` | `/login` | saved settings path | `OIDC_LOGIN_FAILED` / `OIDC_REAUTH_FAILED` |
+| `OidcReauthAuthenticationRequiredError` | `OIDC_REAUTH_AUTHENTICATION_REQUIRED` | `/login` | `/login` | なし |
+| `OidcReauthSubjectMismatchError` | `OIDC_REAUTH_SUBJECT_MISMATCH` | `/login` | saved settings path | `OIDC_REAUTH_FAILED` |
+| `OidcReauthAuthTimeRequiredError` | `OIDC_REAUTH_AUTH_TIME_REQUIRED` | `/login` | saved settings path | `OIDC_REAUTH_FAILED` |
+| `OidcReauthStaleError` | `OIDC_REAUTH_STALE` | `/login` | saved settings path | `OIDC_REAUTH_FAILED` |
+| `OidcProviderUnavailableError` | `OIDC_PROVIDER_UNAVAILABLE` | `/login` | start は `/app/settings`、callback は保存済み settings path | start はなし / callback は failure audit |
+| `OidcProviderMetadataError` | `OIDC_PROVIDER_METADATA_INVALID` | `/login` | start は `/app/settings`、callback は保存済み settings path | start はなし / callback は failure audit |
+| unknown exception | `OIDC_UNEXPECTED_ERROR` | `/login` | callback context があれば保存済み settings path | `logger.exception`; valid state context 後だけ failure audit |
+
+- OIDC authorization start は `AUTH_OIDC_AUTHORIZATION_STARTS_PER_IP` で rate limit する。rate limit で拒否された request は state row を作らず、callback failure audit も作らない。
+- OIDC state pruning は `db-prune-auth --oidc-states-before <ISO8601>` で明示実行する。保持期間 env は用意しないため、運用ジョブ側で閾値を決める。
+- OAuth-only account deletion は `auth_sessions.last_oidc_auth_time_at` と `AUTH_OIDC_REAUTH_FRESHNESS_SECONDS` で判定する。削除 reauth flow は `prompt=login` / `max_age=0` を送り、provider `auth_time` が missing、stale、future leeway 超過の場合は fresh とみなさない。
+- `auth_time` 非対応 IdP では OAuth-only self-service deletion は通さない。Backend は `ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` を返し、linked providers が空の場合は frontend が support/admin deletion message を表示する。
+- Account deletion 成功時は `auth_identities` を同一 transaction で物理削除する。削除済み user が provider subject unique index を占有し、同じ provider subject で再登録できなくなることを避ける。
+- `api_error()` は既存呼び出し互換を保ったまま optional `details` を扱う。`ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` の `error.details` には linked providers の public metadata (`providerId`, `displayName`) だけを含める。
+- OIDC failure audit は bounded にする。有効な未消費 state に到達した通常 failure だけ `OIDC_LOGIN_FAILED` または `OIDC_REAUTH_FAILED` を 1 件記録し、invalid / replayed / rate-limited callback では audit insert を増幅させない。

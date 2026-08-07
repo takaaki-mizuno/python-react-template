@@ -179,17 +179,65 @@ test.each([
   },
 )
 
-test('/app/settings は空の confirmEmail 由来の 422 を入力確認 message にする', async () => {
+test('/app/settings は Retry-After 付き account deletion 429 を retry-aware message にする', async () => {
   document.cookie = 'csrf_token=csrf-123; path=/'
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       if (input === '/api/auth/me' && init?.method === 'DELETE') {
         return Promise.resolve(
-          new Response(JSON.stringify({ detail: [{ msg: 'Invalid email' }] }), {
-            status: 422,
-            headers: { 'Content-Type': 'application/json' },
+          apiErrorResponse(429, 'ACCOUNT_DELETION_REAUTH_RATE_LIMITED', {
+            'Retry-After': '900',
           }),
+        )
+      }
+
+      return Promise.resolve(authUserResponse())
+    }),
+  )
+
+  const authUser = {
+    id: '00000000-0000-0000-0000-000000000001',
+    email: 'user@example.com',
+  }
+  const { queryClient } = renderWithRouter({
+    initialEntries: ['/app/settings'],
+    seed: (client) => {
+      client.setQueryData(queryKeys.auth.me, authUser)
+      client.setQueryData(['projects'], [{ id: 'project-1' }])
+    },
+  })
+
+  expect(
+    await screen.findByRole('heading', { name: 'アカウント削除' }),
+  ).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    '確認の試行回数が多すぎます。15分後に再度お試しください。',
+  )
+  expect(
+    screen
+      .getByLabelText('メールアドレスを入力して削除を確認')
+      .getAttribute('aria-invalid'),
+  ).toBeNull()
+  expect(
+    screen.getByLabelText('現在のパスワード').getAttribute('aria-invalid'),
+  ).toBeNull()
+  expect(queryClient.getQueryData(queryKeys.auth.me)).toEqual(authUser)
+  expect(queryClient.getQueryData(['projects'])).toEqual([{ id: 'project-1' }])
+})
+
+test('/app/settings は OIDC reauth required details から reauth button を表示する', async () => {
+  document.cookie = 'csrf_token=csrf-123; path=/'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === '/api/auth/me' && init?.method === 'DELETE') {
+        return Promise.resolve(
+          apiErrorResponse(400, 'ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED', {}, [
+            { providerId: 'google', displayName: 'Google' },
+          ]),
         )
       }
 
@@ -205,8 +253,292 @@ test('/app/settings は空の confirmEmail 由来の 422 を入力確認 message
   fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
 
   expect((await screen.findByRole('alert')).textContent).toBe(
-    '入力内容を確認してください。',
+    'アカウント削除にはOAuth/OIDC再認証が必要です。',
   )
+  expect(screen.getByRole('button', { name: 'Googleで続行' })).toBeTruthy()
+  expect(
+    screen.getByLabelText('現在のパスワード').getAttribute('aria-invalid'),
+  ).toBeNull()
+})
+
+test('/app/settings は linked providers が空なら reauth button を出さない', async () => {
+  document.cookie = 'csrf_token=csrf-123; path=/'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === '/api/auth/me' && init?.method === 'DELETE') {
+        return Promise.resolve(
+          apiErrorResponse(
+            400,
+            'ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED',
+            {},
+            [],
+          ),
+        )
+      }
+
+      return Promise.resolve(authUserResponse())
+    }),
+  )
+
+  renderWithRouter({ initialEntries: ['/app/settings'] })
+
+  expect(
+    await screen.findByRole('heading', { name: 'アカウント削除' }),
+  ).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    '再認証できる連携プロバイダーがありません。サポートに連絡してください。',
+  )
+  expect(screen.queryByRole('button', { name: 'Googleで続行' })).toBeNull()
+})
+
+test('/app/settings は OIDC reauth callback result query を message にする', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => Promise.resolve(authUserResponse())),
+  )
+
+  renderWithRouter({
+    initialEntries: ['/app/settings?oidcError=OIDC_REAUTH_STALE'],
+  })
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    '再認証の有効期限が切れています。もう一度お試しください。',
+  )
+})
+
+test.each([
+  [
+    'OIDC_PROVIDER_ACCESS_DENIED',
+    '認証プロバイダーで再認証がキャンセルされました。',
+  ],
+  [
+    'OIDC_PROVIDER_UNAVAILABLE',
+    '認証プロバイダーに接続できませんでした。時間をおいて再度お試しください。',
+  ],
+  [
+    'OIDC_IDENTITY_UNAVAILABLE',
+    'この連携アカウントは現在利用できません。管理者に連絡してください。',
+  ],
+])(
+  '/app/settings は OIDC reauth error %s を専用 message にする',
+  async (code, message) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.resolve(authUserResponse())),
+    )
+
+    renderWithRouter({
+      initialEntries: [`/app/settings?oidcError=${code}`],
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(message)
+  },
+)
+
+test('/app/settings は OIDC reauth success query を message にする', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => Promise.resolve(authUserResponse())),
+  )
+
+  renderWithRouter({
+    initialEntries: ['/app/settings?oidcReauth=success'],
+  })
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    '再認証が完了しました。もう一度アカウント削除を実行してください。',
+  )
+})
+
+test('/app/settings はフォーム編集後に OIDC query message を再表示しない', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => Promise.resolve(authUserResponse())),
+  )
+
+  renderWithRouter({
+    initialEntries: ['/app/settings?oidcReauth=success'],
+  })
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    '再認証が完了しました。もう一度アカウント削除を実行してください。',
+  )
+  fireEvent.change(
+    screen.getByLabelText('メールアドレスを入力して削除を確認'),
+    {
+      target: { value: 'user@example.com' },
+    },
+  )
+
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('/app/settings は OIDC reauth 後の full-page load で最新 user を読む', async () => {
+  document.cookie = 'csrf_token=csrf-123; path=/'
+  const fetchMock = vi
+    .fn()
+    .mockImplementation((input: string, init?: RequestInit) => {
+      if (input === '/api/auth/me' && init?.method === 'DELETE') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+
+      return Promise.resolve(
+        authUserResponse({
+          id: '00000000-0000-0000-0000-000000000002',
+          email: 'fresh@example.com',
+        }),
+      )
+    })
+  vi.stubGlobal('fetch', fetchMock)
+
+  renderWithRouter({
+    initialEntries: ['/app/settings?oidcReauth=success'],
+  })
+
+  expect(
+    await screen.findByRole('heading', { name: 'アカウント削除' }),
+  ).toBeTruthy()
+  fireEvent.change(
+    screen.getByLabelText('メールアドレスを入力して削除を確認'),
+    {
+      target: { value: 'fresh@example.com' },
+    },
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/me',
+      expect.objectContaining({
+        method: 'DELETE',
+        body: JSON.stringify({
+          confirmEmail: 'fresh@example.com',
+        }),
+      }),
+    )
+  })
+})
+
+test('/app/settings は空の confirmEmail 由来の 422 を field-specific message にする', async () => {
+  document.cookie = 'csrf_token=csrf-123; path=/'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === '/api/auth/me' && init?.method === 'DELETE') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              detail: [
+                {
+                  loc: ['body', 'confirmEmail'],
+                  msg: 'Field required',
+                },
+              ],
+            }),
+            {
+              status: 422,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          ),
+        )
+      }
+
+      return Promise.resolve(authUserResponse())
+    }),
+  )
+
+  renderWithRouter({ initialEntries: ['/app/settings'] })
+
+  expect(
+    await screen.findByRole('heading', { name: 'アカウント削除' }),
+  ).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    'メールアドレスを入力してください。',
+  )
+  expect(
+    screen
+      .getByLabelText('メールアドレスを入力して削除を確認')
+      .getAttribute('aria-invalid'),
+  ).toBe('true')
+})
+
+test('/app/settings は invalid field 編集時に stale field error を消す', async () => {
+  document.cookie = 'csrf_token=csrf-123; path=/'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === '/api/auth/me' && init?.method === 'DELETE') {
+        return Promise.resolve(
+          apiErrorResponse(400, 'ACCOUNT_DELETION_INVALID_PASSWORD'),
+        )
+      }
+
+      return Promise.resolve(authUserResponse())
+    }),
+  )
+
+  renderWithRouter({ initialEntries: ['/app/settings'] })
+
+  expect(
+    await screen.findByRole('heading', { name: 'アカウント削除' }),
+  ).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    '現在のパスワードが一致しません。',
+  )
+  fireEvent.change(
+    screen.getByLabelText('メールアドレスを入力して削除を確認'),
+    {
+      target: { value: 'user@example.com' },
+    },
+  )
+  expect(screen.queryByRole('alert')).toBeTruthy()
+
+  fireEvent.change(screen.getByLabelText('現在のパスワード'), {
+    target: { value: 'Password123!' },
+  })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(
+    screen.getByLabelText('現在のパスワード').getAttribute('aria-invalid'),
+  ).toBeNull()
+})
+
+test('/app/settings は form-level error を field 編集で消さない', async () => {
+  document.cookie = 'csrf_token=csrf-123; path=/'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === '/api/auth/me' && init?.method === 'DELETE') {
+        return Promise.resolve(
+          apiErrorResponse(429, 'ACCOUNT_DELETION_REAUTH_RATE_LIMITED'),
+        )
+      }
+
+      return Promise.resolve(authUserResponse())
+    }),
+  )
+
+  renderWithRouter({ initialEntries: ['/app/settings'] })
+
+  expect(
+    await screen.findByRole('heading', { name: 'アカウント削除' }),
+  ).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    '確認の試行回数が多すぎます。時間をおいて再度お試しください。',
+  )
+  fireEvent.change(screen.getByLabelText('現在のパスワード'), {
+    target: { value: 'Password123!' },
+  })
+
+  expect(screen.queryByRole('alert')).toBeTruthy()
 })
 
 test('/app/settings は非 ApiError で fallback message を表示する', async () => {
@@ -249,30 +581,35 @@ test('/app には settings への導線がある', async () => {
   ).toBe('/app/settings')
 })
 
-function authUserResponse() {
-  return new Response(
-    JSON.stringify({
-      id: '00000000-0000-0000-0000-000000000001',
-      email: 'user@example.com',
-    }),
-    {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    },
-  )
+function authUserResponse(
+  user = {
+    id: '00000000-0000-0000-0000-000000000001',
+    email: 'user@example.com',
+  },
+) {
+  return new Response(JSON.stringify(user), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
 }
 
-function apiErrorResponse(status: number, code: string) {
+function apiErrorResponse(
+  status: number,
+  code: string,
+  headers?: Record<string, string>,
+  details: Array<unknown> = [],
+) {
   return new Response(
     JSON.stringify({
       error: {
         code,
         message: code,
+        details,
       },
     }),
     {
       status,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
     },
   )
 }

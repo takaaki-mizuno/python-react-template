@@ -3,6 +3,8 @@ from datetime import datetime
 from uuid import UUID
 
 from app.models.auth_audit_log import AuthAuditLog
+from app.models.auth_identity import AuthIdentity
+from app.models.auth_oidc_state import AuthOidcState, AuthOidcStateConsumeResult
 from app.models.auth_session import AuthSession
 from app.models.user import User
 
@@ -18,7 +20,35 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    async def find_user_by_verified_email_for_oidc_link(self, email: str) -> User | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_user_by_email_for_oidc_collision(self, email: str) -> User | None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def find_user_by_id_for_authentication(self, user_id: UUID) -> User | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_identity_by_provider_subject(
+        self,
+        provider_id: str,
+        provider_subject: str,
+    ) -> AuthIdentity | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_identities_by_user_id(self, user_id: UUID) -> list[AuthIdentity]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def create_auth_identity(self, identity: AuthIdentity) -> AuthIdentity:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_auth_identities_for_user(self, user_id: UUID) -> int:
         raise NotImplementedError
 
     @abstractmethod
@@ -70,6 +100,26 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    async def record_oidc_login(
+        self,
+        user_id: UUID,
+        identity_id: UUID,
+        session_id: UUID,
+        login_at: datetime,
+        provider_auth_time: datetime | None,
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def record_oidc_reauth(
+        self,
+        session_id: UUID,
+        auth_time: datetime,
+        reauthenticated_at: datetime,
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def mark_user_deleted(
         self,
         user_id: UUID,
@@ -90,6 +140,23 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
 
     @abstractmethod
     async def delete_audit_logs_created_before(self, created_before: datetime) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def create_oidc_authorization_state(self, state: AuthOidcState) -> AuthOidcState:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def consume_oidc_authorization_state(
+        self,
+        state_hash: str,
+        browser_binding_hash: str,
+        consumed_at: datetime,
+    ) -> AuthOidcStateConsumeResult:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_oidc_states_expired_before(self, expired_before: datetime) -> int:
         raise NotImplementedError
 
     @abstractmethod

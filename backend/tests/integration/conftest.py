@@ -49,6 +49,8 @@ async def clean_auth_tables(async_engine: AsyncEngine) -> AsyncIterator[None]:
 async def _truncate_auth_tables(connection) -> None:
     tables = [
         "sample_items",
+        "auth_oidc_authorization_states",
+        "auth_identities",
         "auth_audit_logs",
         "auth_sessions",
         "users",

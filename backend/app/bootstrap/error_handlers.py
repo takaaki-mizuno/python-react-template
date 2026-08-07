@@ -29,12 +29,14 @@ def api_error(
     code: str,
     message: str,
     headers: dict[str, str] | None = None,
+    details: Sequence[ErrorFieldDetail | dict[str, Any]] | None = None,
 ) -> FastAPIHTTPException:
     return FastAPIHTTPException(
         status_code=status_code,
         detail={
             "code": code,
             "message": message,
+            "details": list(details or []),
         },
         headers=headers,
     )

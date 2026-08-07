@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 
+import type { AccountDeletionOidcReauthProvider } from '@/lib/apiError'
 import { Button } from '@/components/atoms/button'
+import { AuthFormFeedback } from '@/components/molecules/AuthFormFeedback'
 import { AuthTextField } from '@/components/molecules/AuthTextField'
+import { OidcProviderButton } from '@/components/molecules/OidcProviderButton'
 
 export type AccountDeletionInvalidField = 'confirmEmail' | 'password'
 
@@ -11,6 +14,9 @@ export type AccountDeletionPanelProps = {
   errorMessage?: string | null
   invalidField?: AccountDeletionInvalidField | null
   isPending?: boolean
+  linkedProviders?: Array<AccountDeletionOidcReauthProvider>
+  onFieldChange?: (field: AccountDeletionInvalidField) => void
+  onReauth?: (providerId: string) => void
   onSubmit: (payload: { confirmEmail: string; password?: string }) => void
 }
 
@@ -19,6 +25,9 @@ export function AccountDeletionPanel({
   errorMessage = null,
   invalidField = null,
   isPending = false,
+  linkedProviders = [],
+  onFieldChange,
+  onReauth,
   onSubmit,
 }: AccountDeletionPanelProps) {
   const [confirmEmail, setConfirmEmail] = useState('')
@@ -34,7 +43,7 @@ export function AccountDeletionPanel({
   }
 
   return (
-    <form className="grid gap-4" onSubmit={handleSubmit}>
+    <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
       <div className="grid gap-1">
         <h2 className="text-base font-semibold text-landing-ink">
           アカウント削除
@@ -48,7 +57,10 @@ export function AccountDeletionPanel({
         id="account-delete-confirm-email"
         invalid={invalidField === 'confirmEmail'}
         label="メールアドレスを入力して削除を確認"
-        onChange={setConfirmEmail}
+        onChange={(value) => {
+          setConfirmEmail(value)
+          onFieldChange?.('confirmEmail')
+        }}
         type="email"
         value={confirmEmail}
       />
@@ -59,14 +71,25 @@ export function AccountDeletionPanel({
         id="account-delete-password"
         invalid={invalidField === 'password'}
         label="現在のパスワード"
-        onChange={setPassword}
+        onChange={(value) => {
+          setPassword(value)
+          onFieldChange?.('password')
+        }}
         type="password"
         value={password}
       />
-      {errorMessage ? (
-        <p className="text-sm text-red-600" id={errorId} role="alert">
-          {errorMessage}
-        </p>
+      <AuthFormFeedback id={errorId} message={errorMessage} />
+      {linkedProviders.length > 0 ? (
+        <div className="grid gap-3">
+          {linkedProviders.map((provider) => (
+            <OidcProviderButton
+              key={provider.providerId}
+              isDisabled={isPending}
+              onClick={() => onReauth?.(provider.providerId)}
+              provider={provider}
+            />
+          ))}
+        </div>
       ) : null}
       <Button disabled={isPending} type="submit" variant="destructive">
         アカウントを削除

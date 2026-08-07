@@ -100,6 +100,11 @@ npm install -D <pkg>   # devDependencies
 - unsafe request は `src/lib/apiClient.ts` を使い、個別 component / route から `/api/auth/csrf` を直接 fetch しない
 - login/register form は `AuthTextField` / `AuthFormShell` / `Button` / `Input` を使い、field の label・autocomplete・aria 紐付けを共通部品へ寄せる
 - destructive account operations は typed confirmation と `toUserMessage()` による日本語 error message を使う。account deletion の確認 email field は誤操作防止のため `autoComplete="off"` にし、削除 error 表示時は error code に対応する field だけへ `aria-invalid` を立てる。429 や CSRF など field に紐づかない error では input を invalid にしない。account deletion success は `/login?redirect=/app` ではなく `/` へ遷移する
+- auth form feedback は field-specific error と form-level error を区別する。field-specific error は該当 field だけに `aria-invalid` を立て、表示する alert の id を `aria-describedby` で関連付ける。無関係な field を invalid にしない
+- form-level error は `role="alert"` で表示し、無関係な field に `aria-invalid` を立てない。現状の login / register / account deletion component は、form-level error がある場合に対象 form 内の input から alert id を `aria-describedby` で参照する
+- 429、CSRF validation failure、network / fallback error など field に紐づかない error は form-level error として扱う。account deletion では input を invalid にしないが、現状どおり input は form alert を `aria-describedby` で参照してよい
+- login の invalid credentials は現状 form-level error として扱い、email / password を invalid にしない。register の backend duplicate email や rate limit は現状 form-level error として扱う。register の client-side password length / confirmation mismatch は現状 field-specific error として password / password confirmation を invalid にする
+- P8-FE-1 / P8-FE-2 / P8-FE-3 はこの契約に従う。login / register / account deletion の feedback 挙動変更が必要な場合は、component / route tests を明記した別 Task として扱い、shared feedback component 抽出に混ぜない
 
 ## スタイル (Tailwind + shadcn/ui)
 
@@ -123,3 +128,16 @@ npm install -D <pkg>   # devDependencies
 
 - `typescript-development` — TS 全般
 - `ui-design` — デザインシステム
+
+## Phase 8 OAuth/OIDC UI 規約
+
+- OAuth/OIDC login button は login/register の既存 password form と併置する。provider list は backend の `/api/auth/oidc/providers` から読み、`providerId` と `displayName` だけを使う。provider 未設定、loading、error の場合は password form だけを表示し、実装説明文を画面に出さない。
+- OIDC 開始は JSON API ではなく full-page redirect helper を使う。login は `/api/auth/oidc/{providerId}/start?redirect=...`、account deletion reauth は `/api/auth/oidc/{providerId}/reauth?redirect=/app/settings` へ遷移する。redirect は `URLSearchParams` で percent-encode し、query / hash を壊さない。
+- Frontend callback route は作らない。backend callback が authorization code を交換し、session cookie / CSRF cookie を発行し、保存済み internal redirect path への最終 redirect まで完結する。SPA route、frontend state、browser history に authorization code、ID token、`access_token`、`refresh_token` を置かない。
+- Login callback failure は `/login?oidcError=<machine-code>` を form-level message に変換する。`OIDC_IDENTITY_LINK_REQUIRED`、`OIDC_IDENTITY_LINK_DISABLED`、`OIDC_EMAIL_NOT_VERIFIED`、`OIDC_PROVISIONING_DISABLED` は user-facing message を持たせる。`ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` は DELETE `/api/auth/me` の JSON error code であり、login callback query には使わない。
+- Login page は `OIDC_AUTHORIZATION_RATE_LIMITED`、`OIDC_PROVIDER_UNAVAILABLE`、`OIDC_PROVIDER_METADATA_INVALID`、`OIDC_PROVIDER_ACCESS_DENIED`、`OIDC_IDENTITY_UNAVAILABLE`、`OIDC_REAUTH_AUTHENTICATION_REQUIRED` も専用 message を持つ。未知の OIDC query code は generic OAuth/OIDC failure message にする。
+- Account deletion が `ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` を返した場合、`error.details` の linked providers (`providerId`, `displayName`) から reauth button を表示する。field に紐づかない error なので confirm email / password input を invalid にしない。
+- linked providers が空配列の場合は reauth button を表示せず、再認証できる provider がないため support/admin deletion が必要である form-level message を表示する。
+- Account deletion reauth callback result は settings page の form-level feedback として扱う。`oidcReauth=success` は success message、`OIDC_REAUTH_SUBJECT_MISMATCH`、`OIDC_REAUTH_STALE`、`OIDC_REAUTH_AUTH_TIME_REQUIRED`、`OIDC_PROVIDER_ACCESS_DENIED`、`OIDC_PROVIDER_UNAVAILABLE`、`OIDC_IDENTITY_UNAVAILABLE` は account deletion 用 error message にする。login page へ遷移させない。
+- OIDC callback 後の unsafe request は現在の `csrf_token` cookie から `X-CSRF-Token` を読む。個別 route/component から `/api/auth/csrf` を直接 fetch せず、必ず `apiClient` を使う。
+- Reauth callback 後は full-page load と `queryKeys.auth.me` の initial fetch で現在 user を読む。stale user cache を前提に account deletion submit を進めない。

@@ -15,6 +15,8 @@ from app.models.auth_audit_log import AuthAuditLog
 from app.models.auth_errors import (AuthSessionNotFoundError, EmailAlreadyRegisteredError,
                                     UserNotFoundError)
 from app.models.auth_event_type import AuthEventType
+from app.models.auth_identity import AuthIdentity
+from app.models.auth_oidc_state import AuthOidcState, AuthOidcStateConsumeResult
 from app.models.auth_session import AuthSession
 from app.models.user import User
 
@@ -56,11 +58,69 @@ class AuthRepository(AuthRepositoryInterface):
             result = await session.exec(statement)
             return result.one_or_none()
 
+    async def find_user_by_verified_email_for_oidc_link(self, email: str) -> User | None:
+        normalized_email = email.strip().lower()
+        async with self._unit_of_work.session_scope() as session:
+            statement = select(User).where(
+                func.lower(User.email) == normalized_email,
+                col(User.deleted_at).is_(None),
+                col(User.is_active).is_(True),
+            )
+            result = await session.exec(statement)
+            return result.one_or_none()
+
+    async def find_user_by_email_for_oidc_collision(self, email: str) -> User | None:
+        normalized_email = email.strip().lower()
+        async with self._unit_of_work.session_scope() as session:
+            statement = select(User).where(
+                func.lower(User.email) == normalized_email,
+                col(User.deleted_at).is_(None),
+            )
+            result = await session.exec(statement)
+            return result.one_or_none()
+
     async def find_user_by_id_for_authentication(self, user_id: UUID) -> User | None:
         async with self._unit_of_work.session_scope() as session:
             statement = select(User).where(User.id == user_id)
             result = await session.exec(statement)
             return result.one_or_none()
+
+    async def find_identity_by_provider_subject(
+        self,
+        provider_id: str,
+        provider_subject: str,
+    ) -> AuthIdentity | None:
+        async with self._unit_of_work.session_scope() as session:
+            statement = select(AuthIdentity).where(
+                AuthIdentity.provider_id == provider_id,
+                AuthIdentity.provider_subject == provider_subject,
+            )
+            result = await session.exec(statement)
+            return result.one_or_none()
+
+    async def find_identities_by_user_id(self, user_id: UUID) -> list[AuthIdentity]:
+        async with self._unit_of_work.session_scope() as session:
+            result = await session.exec(
+                select(AuthIdentity).join(User,
+                                          col(AuthIdentity.user_id) == col(User.id)).where(
+                                              AuthIdentity.user_id == user_id,
+                                              col(User.deleted_at).is_(None),
+                                          ).order_by(col(AuthIdentity.created_at)))
+            return list(result.all())
+
+    async def create_auth_identity(self, identity: AuthIdentity) -> AuthIdentity:
+        async with self._unit_of_work.session_scope() as session:
+            session.add(identity)
+            await self._persist(session)
+            await session.refresh(identity)
+            return identity
+
+    async def delete_auth_identities_for_user(self, user_id: UUID) -> int:
+        async with self._unit_of_work.session_scope() as session:
+            result = await session.exec(
+                delete(AuthIdentity).where(col(AuthIdentity.user_id) == user_id))
+            await self._persist(session)
+            return int(result.rowcount or 0)
 
     async def create_session(
         self,
@@ -160,6 +220,50 @@ class AuthRepository(AuthRepositoryInterface):
             await session.refresh(user)
             return user
 
+    async def record_oidc_login(
+        self,
+        user_id: UUID,
+        identity_id: UUID,
+        session_id: UUID,
+        login_at: datetime,
+        provider_auth_time: datetime | None,
+    ) -> None:
+        async with self._unit_of_work.session_scope() as session:
+            user = await session.get(User, user_id)
+            if user is None or user.deleted_at is not None:
+                raise UserNotFoundError(user_id)
+            auth_session = await session.get(AuthSession, session_id)
+            if auth_session is None:
+                raise AuthSessionNotFoundError(session_id)
+
+            user.last_login_at = login_at
+            user.updated_at = login_at
+            await session.exec(
+                update(AuthIdentity).where(
+                    col(AuthIdentity.id) == identity_id,
+                    col(AuthIdentity.user_id) == user_id,
+                ).values(last_login_at=login_at, updated_at=login_at))
+            if provider_auth_time is not None:
+                auth_session.last_oidc_auth_time_at = provider_auth_time
+                session.add(auth_session)
+            session.add(user)
+            await self._persist(session)
+
+    async def record_oidc_reauth(
+        self,
+        session_id: UUID,
+        auth_time: datetime,
+        reauthenticated_at: datetime,
+    ) -> None:
+        del reauthenticated_at
+        async with self._unit_of_work.session_scope() as session:
+            auth_session = await session.get(AuthSession, session_id)
+            if auth_session is None:
+                raise AuthSessionNotFoundError(session_id)
+            auth_session.last_oidc_auth_time_at = auth_time
+            session.add(auth_session)
+            await self._persist(session)
+
     async def mark_user_deleted(
         self,
         user_id: UUID,
@@ -218,6 +322,49 @@ class AuthRepository(AuthRepositoryInterface):
         async with self._unit_of_work.session_scope() as session:
             result = await session.exec(
                 delete(AuthAuditLog).where(col(AuthAuditLog.created_at) < created_before))
+            await self._persist(session)
+            return int(result.rowcount or 0)
+
+    async def create_oidc_authorization_state(self, state: AuthOidcState) -> AuthOidcState:
+        async with self._unit_of_work.session_scope() as session:
+            session.add(state)
+            await self._persist(session)
+            await session.refresh(state)
+            return state
+
+    async def consume_oidc_authorization_state(
+        self,
+        state_hash: str,
+        browser_binding_hash: str,
+        consumed_at: datetime,
+    ) -> AuthOidcStateConsumeResult:
+        async with self._unit_of_work.session_scope() as session:
+            result = await session.exec(
+                select(AuthOidcState).where(
+                    AuthOidcState.state_hash == state_hash).with_for_update())
+            state = result.one_or_none()
+            if state is None:
+                return AuthOidcStateConsumeResult(status="state_mismatch")
+            if state.consumed_at is not None:
+                return AuthOidcStateConsumeResult(status="already_consumed", state=state)
+            if state.expires_at <= consumed_at:
+                return AuthOidcStateConsumeResult(status="expired", state=state)
+            if state.browser_binding_hash != browser_binding_hash:
+                return AuthOidcStateConsumeResult(
+                    status="browser_binding_mismatch",
+                    state=state,
+                )
+            state.consumed_at = consumed_at
+            session.add(state)
+            await self._persist(session)
+            await session.refresh(state)
+            return AuthOidcStateConsumeResult(status="consumed", state=state)
+
+    async def delete_oidc_states_expired_before(self, expired_before: datetime) -> int:
+        async with self._unit_of_work.session_scope() as session:
+            result = await session.exec(
+                delete(AuthOidcState).where((col(AuthOidcState.expires_at) < expired_before)
+                                            | (col(AuthOidcState.consumed_at) < expired_before)))
             await self._persist(session)
             return int(result.rowcount or 0)
 

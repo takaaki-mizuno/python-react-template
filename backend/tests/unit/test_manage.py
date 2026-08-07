@@ -397,6 +397,10 @@ def test_db_prune_auth_prunes_expired_sessions_only(monkeypatch):
             calls.append(("audit", created_before))
             return 5
 
+        async def delete_oidc_states_expired_before(self, expired_before):
+            calls.append(("oidc_states", expired_before))
+            return 7
+
     class InjectorStub:
 
         def get(self, _interface):
@@ -430,6 +434,10 @@ def test_db_prune_auth_prunes_audit_logs_only(monkeypatch):
         async def delete_audit_logs_created_before(self, created_before):
             calls.append(("audit", created_before))
             return 5
+
+        async def delete_oidc_states_expired_before(self, expired_before):
+            calls.append(("oidc_states", expired_before))
+            return 7
 
     class InjectorStub:
 
@@ -465,6 +473,10 @@ def test_db_prune_auth_prunes_audit_logs_before_sessions(monkeypatch):
             calls.append(("audit", created_before))
             return 5
 
+        async def delete_oidc_states_expired_before(self, expired_before):
+            calls.append(("oidc_states", expired_before))
+            return 7
+
     class InjectorStub:
 
         def get(self, _interface):
@@ -488,6 +500,44 @@ def test_db_prune_auth_prunes_audit_logs_before_sessions(monkeypatch):
 
     assert result.exit_code == 0
     assert [call[0] for call in calls] == ["audit", "sessions"]
+
+
+def test_db_prune_auth_prunes_oidc_states(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class RepositoryStub:
+
+        async def delete_sessions_expired_before(self, expired_before):
+            calls.append(("sessions", expired_before))
+            return 3
+
+        async def delete_audit_logs_created_before(self, created_before):
+            calls.append(("audit", created_before))
+            return 5
+
+        async def delete_oidc_states_expired_before(self, expired_before):
+            calls.append(("oidc_states", expired_before))
+            return 7
+
+    class InjectorStub:
+
+        def get(self, _interface):
+            return RepositoryStub()
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(
+        manage.app,
+        ["db-prune-auth", "--oidc-states-before", "2026-08-01T00:00:00+00:00"],
+    )
+
+    assert result.exit_code == 0
+    assert [call[0] for call in calls] == ["oidc_states"]
+    assert "Deleted OIDC authorization states: 7" in result.stdout
 
 
 def test_db_prune_auth_rejects_naive_datetime(monkeypatch):

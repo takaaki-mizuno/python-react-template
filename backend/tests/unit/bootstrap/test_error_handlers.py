@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
-from app.bootstrap.error_handlers import register_error_handlers
+from app.bootstrap.error_handlers import api_error, register_error_handlers
 
 
 class Payload(BaseModel):
@@ -25,6 +25,18 @@ def _app() -> FastAPI:
                 "code": "EMAIL_ALREADY_REGISTERED",
                 "message": "Email already registered",
             },
+        )
+
+    @app.get("/with-details")
+    async def with_details():
+        raise api_error(
+            400,
+            "DETAIL_CODE",
+            "Has details",
+            details=[{
+                "kind": "linked_provider",
+                "providerId": "google",
+            }],
         )
 
     @app.get("/custom-cache")
@@ -82,6 +94,24 @@ def test_http_exception_dict_detail_preserves_code_and_message():
             "code": "EMAIL_ALREADY_REGISTERED",
             "message": "Email already registered",
             "details": [],
+        }
+    }
+
+
+def test_api_error_accepts_optional_details_without_breaking_envelope():
+    client = TestClient(_app())
+
+    response = client.get("/with-details")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "code": "DETAIL_CODE",
+            "message": "Has details",
+            "details": [{
+                "kind": "linked_provider",
+                "providerId": "google",
+            }],
         }
     }
 

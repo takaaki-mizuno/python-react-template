@@ -178,6 +178,101 @@ test('login は redirect を引き継いだ register link を表示する', asyn
   ).toBe('/register?redirect=%2Fapp%3Ftab%3Dsettings')
 })
 
+test('login は OIDC provider button を表示する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/oidc/providers') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              providers: [{ providerId: 'google', displayName: 'Google' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }),
+  )
+
+  renderWithRouter({
+    initialEntries: ['/login?redirect=/app%3Ftab%3Dsettings'],
+  })
+
+  expect(
+    await screen.findByRole('button', { name: 'Googleで続行' }),
+  ).toBeTruthy()
+})
+
+test('login は OIDC callback error を form-level message にする', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
+  )
+
+  renderWithRouter({
+    initialEntries: ['/login?oidcError=OIDC_IDENTITY_LINK_REQUIRED'],
+  })
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    '既存アカウントでログインしてから連携してください。',
+  )
+})
+
+test.each([
+  [
+    'OIDC_AUTHORIZATION_RATE_LIMITED',
+    '認証リクエストが多すぎます。時間をおいて再度お試しください。',
+  ],
+  [
+    'OIDC_PROVIDER_UNAVAILABLE',
+    '認証プロバイダーに接続できませんでした。時間をおいて再度お試しください。',
+  ],
+  [
+    'OIDC_PROVIDER_METADATA_INVALID',
+    '認証プロバイダー設定に問題があります。管理者に連絡してください。',
+  ],
+  [
+    'OIDC_PROVIDER_ACCESS_DENIED',
+    '認証プロバイダーでログインがキャンセルされました。',
+  ],
+  [
+    'OIDC_IDENTITY_UNAVAILABLE',
+    'このアカウントは現在利用できません。管理者に連絡してください。',
+  ],
+  [
+    'OIDC_REAUTH_AUTHENTICATION_REQUIRED',
+    '再認証のセッションが切れました。もう一度ログインしてください。',
+  ],
+])('login は OIDC error %s を専用メッセージにする', async (code, message) => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
+  )
+
+  renderWithRouter({
+    initialEntries: [`/login?oidcError=${code}`],
+  })
+
+  expect((await screen.findByRole('alert')).textContent).toBe(message)
+})
+
 test('ログイン済みユーザーが /login を開くと redirect 先へ送られる', async () => {
   vi.stubGlobal(
     'fetch',

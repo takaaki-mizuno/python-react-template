@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link,
   createFileRoute,
@@ -7,18 +7,31 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 
+import { OidcProviderButton } from '@/components/molecules/OidcProviderButton'
 import { AuthFormShell } from '@/components/organisms/Auth/AuthFormShell'
 import LoginForm from '@/components/organisms/Auth/LoginForm'
 import { toUserMessage } from '@/lib/apiError'
-import { currentUserQueryOptions, loginWithPassword } from '@/lib/authApi'
+import {
+  currentUserQueryOptions,
+  fetchOidcProviders,
+  loginWithPassword,
+  startOidcLogin,
+} from '@/lib/authApi'
 import { normalizeRedirectHref } from '@/lib/authRedirect'
 import { queryKeys } from '@/lib/queryKeys'
 
 function LoginPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { redirect: redirectHref } = Route.useSearch()
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const { oidcError, redirect: redirectHref } = Route.useSearch()
+  const [errorMessage, setErrorMessage] = useState<string | null>(() =>
+    oidcLoginErrorMessage(oidcError),
+  )
+  const providers = useQuery({
+    queryKey: queryKeys.auth.oidcProviders,
+    queryFn: fetchOidcProviders,
+    retry: false,
+  })
 
   const login = useMutation({
     mutationFn: loginWithPassword,
@@ -52,6 +65,18 @@ function LoginPage() {
           login.mutate(values)
         }}
       />
+      {providers.data && providers.data.length > 0 ? (
+        <div className="grid gap-3">
+          {providers.data.map((provider) => (
+            <OidcProviderButton
+              key={provider.providerId}
+              isDisabled={providers.isFetching}
+              onClick={() => startOidcLogin(provider.providerId, redirectHref)}
+              provider={provider}
+            />
+          ))}
+        </div>
+      ) : null}
       <p className="text-sm text-landing-muted">
         アカウントをお持ちでない方は{' '}
         <Link
@@ -67,9 +92,14 @@ function LoginPage() {
 }
 
 export const Route = createFileRoute('/login')({
-  validateSearch: (search: Record<string, unknown>) => {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { redirect: string; oidcError?: string } => {
     return {
       redirect: normalizeRedirectHref(search.redirect),
+      ...(typeof search.oidcError === 'string'
+        ? { oidcError: search.oidcError }
+        : {}),
     }
   },
   beforeLoad: async ({ context, search }) => {
@@ -86,3 +116,32 @@ export const Route = createFileRoute('/login')({
   },
   component: LoginPage,
 })
+
+function oidcLoginErrorMessage(code: string | undefined): string | null {
+  if (!code) {
+    return null
+  }
+  const messages: Record<string, string> = {
+    OIDC_IDENTITY_LINK_REQUIRED:
+      '既存アカウントでログインしてから連携してください。',
+    OIDC_IDENTITY_LINK_DISABLED:
+      'このプロバイダーでは既存アカウントへの連携が許可されていません。',
+    OIDC_EMAIL_NOT_VERIFIED:
+      '確認済みメールアドレスを取得できなかったためログインできませんでした。',
+    OIDC_PROVISIONING_DISABLED:
+      'このプロバイダーでは新規アカウントを作成できません。',
+    OIDC_AUTHORIZATION_RATE_LIMITED:
+      '認証リクエストが多すぎます。時間をおいて再度お試しください。',
+    OIDC_PROVIDER_UNAVAILABLE:
+      '認証プロバイダーに接続できませんでした。時間をおいて再度お試しください。',
+    OIDC_PROVIDER_METADATA_INVALID:
+      '認証プロバイダー設定に問題があります。管理者に連絡してください。',
+    OIDC_PROVIDER_ACCESS_DENIED:
+      '認証プロバイダーでログインがキャンセルされました。',
+    OIDC_IDENTITY_UNAVAILABLE:
+      'このアカウントは現在利用できません。管理者に連絡してください。',
+    OIDC_REAUTH_AUTHENTICATION_REQUIRED:
+      '再認証のセッションが切れました。もう一度ログインしてください。',
+  }
+  return messages[code] ?? 'OAuth/OIDCログインに失敗しました。'
+}

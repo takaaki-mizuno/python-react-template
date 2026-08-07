@@ -43,6 +43,24 @@ test('unsafe request では csrf header を付与する', async () => {
   expect(fetchMock).toHaveBeenCalledTimes(1)
 })
 
+test('OIDC callback 後の unsafe request は現在の csrf_token cookie を読む', async () => {
+  document.cookie = 'csrf_token=oidc-csrf-token; path=/'
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(null, { status: 204 }))
+
+  vi.stubGlobal('fetch', fetchMock)
+
+  await apiClient.delete('/api/auth/me', {
+    body: {
+      confirmEmail: 'user@example.com',
+    },
+  })
+
+  const init = fetchMock.mock.calls[0][1] as RequestInit
+  expect(new Headers(init.headers).get('x-csrf-token')).toBe('oidc-csrf-token')
+})
+
 test('csrf_token cookie がない unsafe request では csrf を 1 回 bootstrap する', async () => {
   const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
     if (input === '/api/auth/csrf') {
@@ -269,6 +287,60 @@ test('non-2xx response では ApiError を投げる', async () => {
     expect.objectContaining({
       status: 401,
       body: { message: 'Unauthorized' },
+    }),
+  )
+})
+
+test('429 response の Retry-After header を ApiError へ渡す', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: 'RATE_LIMITED', message: 'Too Many Requests' },
+        }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60',
+          },
+        },
+      ),
+    ),
+  )
+
+  await expect(apiClient.get('/api/rate-limited')).rejects.toEqual(
+    expect.objectContaining({
+      status: 429,
+      retryAfterSeconds: 60,
+    }),
+  )
+})
+
+test('Retry-After header が不正な場合は retryAfterSeconds を null にする', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: 'RATE_LIMITED', message: 'Too Many Requests' },
+        }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': 'soon',
+          },
+        },
+      ),
+    ),
+  )
+
+  await expect(apiClient.get('/api/rate-limited')).rejects.toEqual(
+    expect.objectContaining({
+      status: 429,
+      retryAfterSeconds: null,
     }),
   )
 })

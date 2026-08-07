@@ -18,7 +18,7 @@ async function apiErrorFromResponse(response: Response): Promise<ApiError> {
     .clone()
     .json()
     .catch(() => null)
-  return new ApiError(response.status, body)
+  return new ApiError(response.status, body, response.headers)
 }
 
 async function bootstrapCsrfToken(

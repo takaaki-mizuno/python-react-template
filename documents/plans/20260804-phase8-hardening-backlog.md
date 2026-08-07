@@ -12,17 +12,19 @@
 
 ## 実行順
 
-> 2026-08-06 時点: P8-BE-3 と P8-BE-1 は完了済み。次着手は P8-FE-0。
+> 2026-08-06 時点: P8-BE-3、P8-BE-1、P8-FE-0、P8-FE-1、P8-FE-2、P8-BE-2、P8-FE-3、P8-BE-4 は完了済み。残りは OAuth / product policy 依存の P8-AD-1 / P8-AD-2。
 
 1. **[x] P8-BE-3**: auth session / audit log retention policy は完了済み。`auth_audit_logs.session_id ON DELETE SET NULL` と session pruning の相互作用を docs / tests で固定した。
 2. **[x] P8-BE-1**: CSRF middleware 経路を含む rejected session replay の bounded audit / 集約は完了済み。5 分 window の `detail_json.replay_count` 更新で replay signal を保持する。
-3. **[ ] P8-FE-0**: login / register / account deletion に共通する feedback / a11y 契約を `frontend/AGENTS.md` へ先に固定する。
-4. **P8-FE-1**: account deletion form の field error、stale error clear、native validation 方針を直す。
-5. **P8-FE-2**: `Retry-After` aware な destructive form feedback を追加する。
-6. **P8-BE-2**: deleted / inactive user 観測時の session revoke 方針を、admin revoke usecase / CLI 案と比較して決める。
-7. **P8-FE-3**: feedback component 抽出を行う。P8-FE-0 の契約に従うだけにし、a11y 方針をここで再決定しない。
-8. **P8-BE-4**: INET / auth operational migration の large DB playbook を docs に追加する。
+3. **[x] P8-FE-0**: login / register / account deletion に共通する feedback / a11y 契約は `frontend/AGENTS.md` に固定済み。
+4. **[x] P8-FE-1**: account deletion form の field error、stale error clear、native validation 方針は完了済み。
+5. **[x] P8-FE-2**: `Retry-After` aware な destructive form feedback は完了済み。message-only 方針で server-advised delay を表示する。
+6. **[x] P8-BE-2**: deleted / inactive user 観測時の session revoke 方針は完了済み。認証時に観測した rare branch だけ user 全 active sessions を bulk revoke する。
+7. **[x] P8-FE-3**: feedback component 抽出は完了済み。`AuthFormFeedback` へ login / register / account deletion の alert markup を集約した。
+8. **[x] P8-BE-4**: INET / auth operational migration の large DB playbook は docs に追加済み。
 9. **P8-AD-1 / P8-AD-2**: OAuth/OIDC または product-specific deletion lifecycle の要件が出た時点で個別計画化する。
+
+> 2026-08-07 追記: P8-AD-1 は `documents/plans/20260806-phase8-oauth-oidc-client.md` で OAuth/OIDC client、provider identity、recent `auth_time` freshness、account deletion reauth UX まで実装済み。P8-AD-2 は引き続き product policy dependent。
 
 ## [x] Task P8-BE-3: Auth session / audit log retention policy
 
@@ -120,7 +122,9 @@
 
 **依存:** P8-BE-3 は完了済み。P8-BE-3 で固定した retention policy を前提にする。
 
-## Task P8-FE-0: Auth form feedback / a11y 契約の確定
+## [x] Task P8-FE-0: Auth form feedback / a11y 契約の確定
+
+**状態:** Done (2026-08-06)。実装計画: `documents/plans/20260806-phase8-auth-form-feedback-contract.md`
 
 **問題:** Login、register、account deletion はそれぞれ error feedback をローカルに描画しており、field-level と form-level の扱い、`aria-describedby`、`aria-invalid`、destructive / unsafe action copy が drift し得る。P8-FE-1 / P8-FE-2 で account deletion form を触る前に、現状挙動を追認する共通契約を決めないと手戻りになる。
 
@@ -129,6 +133,7 @@
 - `LoginForm` と `RegisterForm` は form-level `errorMessage` を各 field の `aria-describedby` に渡す。
 - `AccountDeletionPanel` は指定された field だけ `aria-invalid` にするが、`errorMessage` があると両方の input が同じ form error を `aria-describedby` で指す。
 - `frontend/AGENTS.md` は account deletion の 429 / CSRF では input を invalid にしないと書いているが、form-level error と `aria-describedby` の共通方針は未確定。
+- `frontend/AGENTS.md` に field-specific error / form-level error の扱い、429 / CSRF の扱い、login / register の現状追認、将来の挙動変更は別 Task にする方針を追記した。
 
 **対象ファイル候補:**
 
@@ -148,7 +153,9 @@
 
 - Docs grep: `field-specific error`、`form-level error`、`aria-describedby` または同等の grep 可能な語句が `frontend/AGENTS.md` に存在する。
 
-## Task P8-FE-1: Account deletion field errors / stale clear / native validation
+## [x] Task P8-FE-1: Account deletion field errors / stale clear / native validation
+
+**状態:** Done (2026-08-06)。実装計画: `documents/plans/20260806-phase8-account-deletion-field-errors.md`
 
 **問題:** `/app/settings` は backend account deletion errors を user message へ変換するが、空の `confirmEmail` 422 は generic message のままで、input edits も route-level error feedback を次 submit まで消さない。さらに `AccountDeletionPanel` の confirmation email は `type="email"` なので、不正形式では browser native validation が submit を止め、アプリ側の error 表示が出ない可能性がある。jsdom は native validation を再現しないため、Vitest だけでは見落とす。
 
@@ -159,6 +166,7 @@
 - 422 validation error は generic `入力内容を確認してください。` へ変換される。
 - `AccountDeletionPanel` は `required` を渡していないため空文字 submit は backend 422 へ到達する。
 - `type="email"` の native validation は、実ブラウザで `abc` のような値の submit を止める可能性がある。
+- `AccountDeletionPanel` は `noValidate` を持ち、field change を route へ通知する。`/app/settings` は FastAPI validation details から `confirmEmail` / `password` の 422 を field-specific error にし、invalid field 編集時だけ stale field error を消す。
 
 **対象ファイル候補:**
 
@@ -190,16 +198,19 @@
 
 **依存:** P8-FE-0 を先に完了する。
 
-## Task P8-FE-2: Retry-After aware destructive form feedback
+## [x] Task P8-FE-2: Retry-After aware destructive form feedback
+
+**状態:** Done (2026-08-06)。実装計画: `documents/plans/20260806-phase8-account-deletion-retry-after.md`
 
 **問題:** Backend account deletion 429 response は `Retry-After` を返すが、frontend の `ApiError` は response headers を保持しない。ユーザーには generic message しか表示されず、server-advised duration に沿った表示や disabled duration を実装できない。
 
 **現状:**
 
-- `ApiError` は status、body、code、detail、details を持つが response headers を持たない。
-- `apiClient` は `new ApiError(response.status, body)` だけを作る。
+- `ApiError` は status、body、code、detail、details に加えて、numeric `Retry-After` header を `retryAfterSeconds` として保持する。header がない場合や不正値の場合は `null`。
+- `apiClient` は non-2xx response から `ApiError` を作る際に response headers を渡す。
 - `toUserMessage()` は status 429 を generic message へ変換する。
-- `/app/settings` は `ACCOUNT_DELETION_REAUTH_RATE_LIMITED` を generic message へ変換する。
+- `/app/settings` は `ACCOUNT_DELETION_REAUTH_RATE_LIMITED` かつ valid `Retry-After` がある場合に retry timing を含む form-level message を表示する。cooldown 中の submit button disabled は採用せず、message-only 方針にした。
+- Account deletion 429 失敗時は unrelated query cache を消さず、input も invalid にしない。
 
 **対象ファイル候補:**
 
@@ -228,15 +239,19 @@
 
 **依存:** P8-FE-0 と P8-FE-1 の field/form error 契約に従う。
 
-## Task P8-BE-2: Deleted / inactive user 観測時の session revoke 方針
+## [x] Task P8-BE-2: Deleted / inactive user 観測時の session revoke 方針
+
+**状態:** Done (2026-08-06)。実装計画: `documents/plans/20260806-phase8-deleted-inactive-session-revoke.md`
 
 **問題:** Phase 6 account deletion 成功時は `revoke_sessions_for_user()` で対象 user の全 active session を revoke する。一方で、外部管理や手動運用で `users.deleted_at` / `users.is_active` が後から変わった場合、`authenticate_session()` は観測した session だけを revoke する。ただし、認証ホットパスに bulk UPDATE を入れることが正しいとは限らず、admin 用 revoke usecase / CLI で状態変更時に revoke する設計も比較すべきである。
 
 **現状:**
 
 - `AccountDeletionUsecase.delete_account()` は `mark_user_deleted()` と `revoke_sessions_for_user()` を同一 transaction 内で呼ぶ。
-- `AuthUsecase.authenticate_session()` は deleted / inactive user を検知すると `_reject_session()` を呼び、現在の `auth_session.id` だけを revoke する。
-- `_reject_session()` は `revoke_session()` の内部 `utcnow()` を使うため、bulk revoke と組み合わせる場合に `revoked_at` timestamp が揃わない可能性がある。
+- `AuthUsecase.authenticate_session()` は deleted / inactive user を検知すると、同一 user の全 active sessions を `revoke_sessions_for_user(user.id, revoked_at)` で revoke する。通常 active user path では追加 bulk UPDATE は走らない。
+- Audit log は観測 request / session に対して 1 件だけ残し、bulk revoked sessions 分には増やさない。
+- missing user は user id の正当性を保証できないため、従来どおり観測 session だけを `_reject_session()` で revoke する。
+- `_reject_user_sessions()` は 1 つの `revoked_at = utcnow()` を `revoke_sessions_for_user()` と audit `created_at` に使い、観測時刻を揃える。
 
 **対象ファイル候補:**
 
@@ -264,15 +279,18 @@
 
 **依存:** P8-BE-1 を先に完了する。
 
-## Task P8-FE-3: Auth feedback component 抽出
+## [x] Task P8-FE-3: Auth feedback component 抽出
+
+**状態:** Done (2026-08-06)。実装計画: `documents/plans/20260806-phase8-auth-feedback-component.md`
 
 **問題:** Login、register、account deletion の feedback markup が form ごとに散っている。P8-FE-0 で契約を固定し、P8-FE-1 / P8-FE-2 で account deletion の挙動を直した後、重複を減らして今後の drift を防ぐ。
 
 **現状:**
 
-- `LoginForm`、`RegisterForm`、`AccountDeletionPanel` がそれぞれ `<p role="alert">` を持つ。
+- `LoginForm`、`RegisterForm`、`AccountDeletionPanel` は `AuthFormFeedback` 経由で `<p role="alert">` を描画する。
 - Field-specific / form-level の契約は P8-FE-0 で決める。
 - Account deletion 固有の stale clear / Retry-After は P8-FE-1 / P8-FE-2 で扱う。
+- Field association と invalid state は各 form に残し、visible copy と error id は既存のまま維持した。
 
 **対象ファイル候補:**
 
@@ -300,14 +318,17 @@
 
 **依存:** P8-FE-0、P8-FE-1、P8-FE-2 を先に完了する。
 
-## Task P8-BE-4: INET / auth operational migration の large DB playbook
+## [x] Task P8-BE-4: INET / auth operational migration の large DB playbook
+
+**状態:** Done (2026-08-06)。実装計画: `documents/plans/20260806-phase8-large-auth-migration-playbook.md`
 
 **問題:** Phase 5 migration `20260803_0003` は `auth_audit_logs.ip_address` と `auth_sessions.ip_address` の全行 UPDATE / `ALTER COLUMN ... TYPE INET`、`auth_sessions.issued_at` / `updated_at` backfill を含む。テンプレート利用直後の小規模 DB では問題になりにくいが、大規模 DB へ適用する派生プロジェクトでは long lock / rewrite の運用リスクがある。
 
 **現状:**
 
 - Migration は `_phase5_try_inet()` を使って不正 IP を `NULL` に寄せた後、全行 UPDATE と `ALTER COLUMN` を行う。
-- `documents/references/backend-app-structure.md` には INET 型方針はあるが、online / batch migration 手順はない。
+- `documents/references/backend-app-structure.md` に large auth migration playbook を追加し、row count / lock / maintenance window の確認、nullable shadow column、batch backfill、短時間 swap、fresh / small DB では現 migration を維持する方針を明記した。
+- `backend/AGENTS.md` から large auth migration playbook へ導線を追加した。
 
 **対象ファイル候補:**
 
@@ -365,6 +386,16 @@
 - Unit / integration: fresh provider reauth がある OAuth-only user は account deletion できる。
 - Integration: stale / missing provider reauth は期待する error envelope を返す。
 - Frontend: route が provider reauth error を表示し、失敗時 cache を保持する。
+
+### 2026-08-07 追記: P8-AD-1 完了
+
+**状態:** Done。実装計画: `documents/plans/20260806-phase8-oauth-oidc-client.md`
+
+OAuth/OIDC client、`auth_identities`、DB-backed state、browser binding cookie、provider subject link、token 非保存、`last_oidc_auth_time_at` による recent provider `auth_time` freshness、`ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` と linked providers details、frontend の reauth button / `oidcReauth=success` / `OIDC_REAUTH_SUBJECT_MISMATCH` / `OIDC_REAUTH_STALE` / `OIDC_REAUTH_AUTH_TIME_REQUIRED` feedback を実装した。
+
+人間の決定により、汎用 OIDC + provider id 別 env、trusted verified email のみ自動作成、環境変数による link-only 切替、verified email 一致時の自動 link、provider token 非保存、削除前 5 分以内の provider `auth_time` freshness を採用した。`auth_time` 非対応 IdP では OAuth-only self-service deletion を通さず、support/admin deletion message へ誘導する。
+
+残る P8-AD-2 は account deletion grace period / restore / email reuse policy の product policy 決定が必要な別課題であり、P8-AD-1 の blocker ではない。
 
 ## Task P8-AD-2: Account deletion grace period / restore / email reuse policy
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { Button } from '@/components/atoms/button'
+import { AuthFormFeedback } from '@/components/molecules/AuthFormFeedback'
 import { AuthTextField } from '@/components/molecules/AuthTextField'
 
 export type LoginValues = {
@@ -49,11 +50,7 @@ export default function LoginForm({
         type="password"
         value={password}
       />
-      {errorMessage ? (
-        <p className="text-sm text-red-600" id={errorId} role="alert">
-          {errorMessage}
-        </p>
-      ) : null}
+      <AuthFormFeedback id={errorId} message={errorMessage} />
       <Button
         className="bg-landing-ink text-white hover:bg-landing-ink/90"
         disabled={isPending}

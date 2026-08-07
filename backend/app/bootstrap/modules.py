@@ -7,22 +7,27 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Config, get_config
 from app.config.auth import AuthSettings, get_auth_settings
+from app.config.oidc import OidcSettings, get_oidc_settings
 from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.oidc_provider_client_interface import OidcProviderClientInterface
 from app.interfaces.services.sample_item_repository_interface import SampleItemRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.account_deletion_usecase_interface import \
     AccountDeletionUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecaseInterface
 from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsecaseInterface
 from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
 from app.libraries.database_engine import build_engine_and_session_factory
 from app.libraries.password_hasher import PasswordHashExecutor
 from app.services.auth_repository import AuthRepository
+from app.services.oidc_provider_client import OidcProviderClient
 from app.services.sample_item_repository import SampleItemRepository
 from app.services.unit_of_work import UnitOfWork
 from app.usecases.account_deletion_usecase import AccountDeletionUsecase
 from app.usecases.auth_usecase import AuthUsecase
+from app.usecases.oauth_oidc_usecase import OAuthOidcUsecase
 from app.usecases.sample_item_usecase import SampleItemUsecase
 
 
@@ -43,6 +48,11 @@ class CoreModule(Module):
     @provider
     def provide_auth_settings(self) -> AuthSettings:
         return get_auth_settings()
+
+    @singleton
+    @provider
+    def provide_oidc_settings(self) -> OidcSettings:
+        return get_oidc_settings()
 
     @singleton
     @provider
@@ -72,13 +82,16 @@ class AuthModule(Module):
     def configure(self, binder: Binder) -> None:
         binder.bind(UnitOfWorkInterface, to=UnitOfWork, scope=singleton)
         binder.bind(AuthRepositoryInterface, to=AuthRepository, scope=singleton)
+        binder.bind(OidcProviderClientInterface, to=OidcProviderClient, scope=singleton)
         binder.bind(AuthUsecaseInterface, to=AuthUsecase, scope=singleton)
+        binder.bind(OAuthOidcUsecaseInterface, to=OAuthOidcUsecase, scope=singleton)
 
     @singleton
     @provider
     def provide_rate_limiter(
         self,
         settings: AuthSettings,
+        oidc_settings: OidcSettings,
     ) -> LoginRateLimiterInterface:
         return InMemoryLoginRateLimiter(
             window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
@@ -87,6 +100,7 @@ class AuthModule(Module):
             max_failures_per_ip=settings.AUTH_RATE_LIMIT_FAILURES_PER_IP,
             max_failures_per_email=settings.AUTH_RATE_LIMIT_FAILURES_PER_EMAIL,
             max_registrations_per_ip=settings.AUTH_RATE_LIMIT_REGISTRATIONS_PER_IP,
+            max_oidc_authorizations_per_ip=(oidc_settings.AUTH_OIDC_AUTHORIZATION_STARTS_PER_IP),
             max_buckets_per_scope=settings.AUTH_RATE_LIMIT_MAX_BUCKETS_PER_SCOPE,
         )
 

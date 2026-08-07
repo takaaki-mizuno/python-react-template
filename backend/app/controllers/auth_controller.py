@@ -1,27 +1,49 @@
+from logging import Logger
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import RedirectResponse
 
 from app.bootstrap.error_handlers import api_error
 from app.config.auth import AuthSettings
+from app.config.oidc import OidcSettings
 from app.controllers.auth_dependencies import (get_account_deletion_usecase, get_auth_settings,
-                                               get_auth_usecase, get_client_ip, get_user_agent,
-                                               require_current_session)
+                                               get_auth_usecase, get_client_ip, get_logger,
+                                               get_oauth_oidc_usecase, get_oidc_settings,
+                                               get_user_agent, require_current_session)
 from app.interfaces.usecases.account_deletion_usecase_interface import \
     AccountDeletionUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecaseInterface
 from app.libraries.auth_cookies import (clear_auth_cookie, csrf_cookie_name, session_cookie_name,
                                         set_auth_cookie)
+from app.libraries.session_tokens import hash_token
 from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_csrf import SessionCsrfStatus
 from app.models.auth_errors import (AccountDeletionConfirmationMismatchError,
                                     AccountDeletionInvalidPasswordError,
+                                    AccountDeletionOidcReauthRequiredError,
                                     AccountDeletionReauthRequiredError, EmailAlreadyRegisteredError,
                                     InvalidCredentialsError, RateLimitExceededError,
                                     WeakPasswordError)
 from app.models.auth_schemas import (AccountDeletionRequest, AuthUserResponse, CsrfTokenResponse,
                                      LoginRequest, RegisterRequest)
 from app.models.error import ErrorResponse
+# yapf: disable
+from app.models.oidc_errors import (OidcAuthorizationRateLimitedError,
+                                    OidcBrowserBindingMismatchError, OidcCallbackFlowError,
+                                    OidcClaimsValidationError, OidcEmailNotVerifiedError,
+                                    OidcIdentityLinkDisabledError, OidcIdentityLinkRequiredError,
+                                    OidcIdentityUnavailableError, OidcProviderAccessDeniedError,
+                                    OidcProviderMetadataError, OidcProviderNotConfiguredError,
+                                    OidcProviderUnavailableError, OidcProvisioningDisabledError,
+                                    OidcReauthAuthenticationRequiredError,
+                                    OidcReauthAuthTimeRequiredError, OidcReauthStaleError,
+                                    OidcReauthSubjectMismatchError, OidcStateMismatchError,
+                                    OidcTokenExchangeError)
+
+# yapf: enable
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -148,6 +170,388 @@ def clear_csrf_cookie(response: Response, secure: bool) -> None:
     )
 
 
+def oidc_binding_cookie_name_for_state(state: str) -> str:
+    return f"oidc_binding_{hash_token(state)[:16]}"
+
+
+def set_oidc_binding_cookie(
+    response: Response,
+    key: str,
+    value: str,
+    secure: bool,
+    max_age_seconds: int,
+) -> None:
+    set_auth_cookie(
+        response,
+        key=key,
+        value=value,
+        httponly=True,
+        secure=secure,
+        max_age_seconds=max_age_seconds,
+    )
+
+
+def clear_oidc_binding_cookie(response: Response, key: str, secure: bool) -> None:
+    clear_auth_cookie(
+        response,
+        key=key,
+        httponly=True,
+        secure=secure,
+    )
+
+
+def merge_redirect_query(redirect_path: str, **updates: str | None) -> str:
+    parsed = urlparse(redirect_path)
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in updates.items():
+        if value is None:
+            query_items.pop(key, None)
+        else:
+            query_items[key] = value
+    return urlunparse((
+        "",
+        "",
+        parsed.path or "/",
+        "",
+        urlencode(query_items),
+        parsed.fragment,
+    ))
+
+
+OIDC_KNOWN_ERRORS = (
+    OidcProviderNotConfiguredError,
+    OidcAuthorizationRateLimitedError,
+    OidcStateMismatchError,
+    OidcBrowserBindingMismatchError,
+    OidcTokenExchangeError,
+    OidcProviderAccessDeniedError,
+    OidcClaimsValidationError,
+    OidcEmailNotVerifiedError,
+    OidcProvisioningDisabledError,
+    OidcIdentityLinkRequiredError,
+    OidcIdentityLinkDisabledError,
+    OidcIdentityUnavailableError,
+    OidcReauthAuthenticationRequiredError,
+    OidcReauthSubjectMismatchError,
+    OidcReauthAuthTimeRequiredError,
+    OidcReauthStaleError,
+    OidcProviderUnavailableError,
+    OidcProviderMetadataError,
+)
+
+
+def oidc_redirect(redirect_path: str) -> RedirectResponse:
+    return RedirectResponse(redirect_path, status_code=303)
+
+
+def oidc_start_failure_redirect(redirect_path: str, error: Exception) -> RedirectResponse:
+    return RedirectResponse(
+        merge_redirect_query(
+            redirect_path,
+            oidcError=oidc_error_code_for_exception(error),
+            oidcReauth=None,
+        ),
+        status_code=303,
+    )
+
+
+def unwrap_oidc_error(error: Exception) -> Exception:
+    if isinstance(error, OidcCallbackFlowError):
+        return error.error
+    return error
+
+
+def is_known_oidc_error(error: Exception) -> bool:
+    return isinstance(unwrap_oidc_error(error), OIDC_KNOWN_ERRORS)
+
+
+def oidc_error_code_for_exception(error: Exception) -> str:
+    mapping: dict[type[Exception], str] = {
+        OidcProviderNotConfiguredError: "OIDC_PROVIDER_NOT_CONFIGURED",
+        OidcAuthorizationRateLimitedError: "OIDC_AUTHORIZATION_RATE_LIMITED",
+        OidcStateMismatchError: "OIDC_STATE_MISMATCH",
+        OidcBrowserBindingMismatchError: "OIDC_BROWSER_BINDING_MISMATCH",
+        OidcTokenExchangeError: "OIDC_TOKEN_EXCHANGE_FAILED",
+        OidcProviderAccessDeniedError: "OIDC_PROVIDER_ACCESS_DENIED",
+        OidcClaimsValidationError: "OIDC_CLAIMS_VALIDATION_FAILED",
+        OidcEmailNotVerifiedError: "OIDC_EMAIL_NOT_VERIFIED",
+        OidcProvisioningDisabledError: "OIDC_PROVISIONING_DISABLED",
+        OidcIdentityLinkRequiredError: "OIDC_IDENTITY_LINK_REQUIRED",
+        OidcIdentityLinkDisabledError: "OIDC_IDENTITY_LINK_DISABLED",
+        OidcIdentityUnavailableError: "OIDC_IDENTITY_UNAVAILABLE",
+        OidcReauthAuthenticationRequiredError: "OIDC_REAUTH_AUTHENTICATION_REQUIRED",
+        OidcReauthSubjectMismatchError: "OIDC_REAUTH_SUBJECT_MISMATCH",
+        OidcReauthAuthTimeRequiredError: "OIDC_REAUTH_AUTH_TIME_REQUIRED",
+        OidcReauthStaleError: "OIDC_REAUTH_STALE",
+        OidcProviderUnavailableError: "OIDC_PROVIDER_UNAVAILABLE",
+        OidcProviderMetadataError: "OIDC_PROVIDER_METADATA_INVALID",
+    }
+    for error_type, code in mapping.items():
+        if isinstance(unwrap_oidc_error(error), error_type):
+            return code
+    return "OIDC_UNEXPECTED_ERROR"
+
+
+def oidc_loggable_error_description(error_description: str | None) -> str | None:
+    if error_description is None:
+        return None
+    normalized = " ".join(error_description.split())
+    if len(normalized) > 512:
+        return f"{normalized[:512]}..."
+    return normalized
+
+
+def oidc_callback_failure_redirect(
+    error: Exception,
+    *,
+    binding_cookie_name: str | None,
+    secure: bool,
+    logger: Logger,
+) -> RedirectResponse:
+    error_code = oidc_error_code_for_exception(error)
+    if not is_known_oidc_error(error):
+        logger.exception("Unexpected OIDC callback failure")
+    if isinstance(error, OidcCallbackFlowError):
+        purpose = error.purpose
+        redirect_path = error.redirect_path
+    else:
+        purpose = "login"
+        redirect_path = "/app"
+    if purpose == "account_deletion_reauth":
+        target = merge_redirect_query(
+            redirect_path,
+            oidcError=error_code,
+            oidcReauth=None,
+        )
+    else:
+        target = merge_redirect_query(
+            "/login",
+            oidcError=error_code,
+            oidcReauth=None,
+        )
+    response = oidc_redirect(target)
+    if binding_cookie_name is not None:
+        clear_oidc_binding_cookie(response, binding_cookie_name, secure=secure)
+    return response
+
+
+@router.get("/oidc/providers")
+async def list_oidc_providers(
+        response: Response,
+        oidc_settings: OidcSettings = Depends(get_oidc_settings),
+) -> dict[str, list[dict[str, str]]]:
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "providers": [{
+            "providerId": provider.provider_id,
+            "displayName": provider.display_name,
+        } for provider in oidc_settings.providers]
+    }
+
+
+@router.get("/oidc/{provider_id}/start")
+async def start_oidc_login(
+        provider_id: str,
+        request: Request,
+        redirect: str | None = None,
+        auth_settings: AuthSettings = Depends(get_auth_settings),
+        usecase: OAuthOidcUsecaseInterface = Depends(get_oauth_oidc_usecase),
+        logger: Logger = Depends(get_logger),
+) -> RedirectResponse:
+    try:
+        result = await usecase.start_authorization(
+            provider_id=provider_id,
+            redirect_path=redirect,
+            purpose="login",
+            current_session=None,
+            ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+        )
+    except OIDC_KNOWN_ERRORS as error:
+        return oidc_start_failure_redirect("/login", error)
+    except Exception as error:
+        logger.exception("Unexpected OIDC authorization start failure")
+        return oidc_start_failure_redirect("/login", error)
+    response = oidc_redirect(result.authorization_url)
+    set_oidc_binding_cookie(
+        response,
+        key=result.browser_binding_cookie_name,
+        value=result.browser_binding_cookie_value,
+        secure=is_secure_request(request, auth_settings),
+        max_age_seconds=result.browser_binding_cookie_max_age,
+    )
+    return response
+
+
+@router.get("/oidc/{provider_id}/reauth")
+async def start_oidc_reauth(
+        provider_id: str,
+        request: Request,
+        redirect: str | None = None,
+        auth_settings: AuthSettings = Depends(get_auth_settings),
+        auth_usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
+        usecase: OAuthOidcUsecaseInterface = Depends(get_oauth_oidc_usecase),
+        logger: Logger = Depends(get_logger),
+) -> RedirectResponse:
+    auth_context = await auth_usecase.authenticate_session(
+        session_token=request.cookies.get(session_cookie_name(auth_settings)),
+        ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+        user_agent=get_user_agent(request),
+    )
+    if auth_context is None:
+        return oidc_start_failure_redirect(
+            "/login",
+            OidcReauthAuthenticationRequiredError("Current session is required"),
+        )
+    try:
+        result = await usecase.start_authorization(
+            provider_id=provider_id,
+            redirect_path=redirect,
+            purpose="account_deletion_reauth",
+            current_session=auth_context,
+            ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+        )
+    except OIDC_KNOWN_ERRORS as error:
+        return oidc_start_failure_redirect("/app/settings", error)
+    except Exception as error:
+        logger.exception("Unexpected OIDC reauthorization start failure")
+        return oidc_start_failure_redirect("/app/settings", error)
+    response = oidc_redirect(result.authorization_url)
+    set_oidc_binding_cookie(
+        response,
+        key=result.browser_binding_cookie_name,
+        value=result.browser_binding_cookie_value,
+        secure=is_secure_request(request, auth_settings),
+        max_age_seconds=result.browser_binding_cookie_max_age,
+    )
+    return response
+
+
+@router.get("/oidc/{provider_id}/callback")
+async def complete_oidc_callback(
+        provider_id: str,
+        request: Request,
+        state: str | None = None,
+        code: str | None = None,
+        error: str | None = None,
+        error_description: str | None = None,
+        auth_settings: AuthSettings = Depends(get_auth_settings),
+        auth_usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
+        oidc_usecase: OAuthOidcUsecaseInterface = Depends(get_oauth_oidc_usecase),
+        logger: Logger = Depends(get_logger),
+) -> RedirectResponse:
+    secure = is_secure_request(request, auth_settings)
+    binding_cookie_name = oidc_binding_cookie_name_for_state(state) if state else None
+    if error is not None:
+        logger.info(
+            "OIDC provider returned callback error",
+            extra={
+                "provider_id": provider_id,
+                "oidc_error": error,
+                "oidc_error_description": oidc_loggable_error_description(error_description),
+            },
+        )
+        if state is None:
+            return oidc_callback_failure_redirect(
+                OidcStateMismatchError(),
+                binding_cookie_name=binding_cookie_name,
+                secure=secure,
+                logger=logger,
+            )
+        binding_cookie_name = oidc_binding_cookie_name_for_state(state)
+        try:
+            current_session = await auth_usecase.authenticate_session(
+                session_token=request.cookies.get(session_cookie_name(auth_settings)),
+                ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+                user_agent=get_user_agent(request),
+            )
+            await oidc_usecase.complete_error_callback(
+                provider_id=provider_id,
+                state=state,
+                browser_binding_cookie_value=request.cookies.get(binding_cookie_name),
+                provider_error=OidcProviderAccessDeniedError(error),
+                current_session=current_session,
+                ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+                user_agent=get_user_agent(request),
+            )
+        except Exception as callback_error:
+            return oidc_callback_failure_redirect(
+                callback_error,
+                binding_cookie_name=binding_cookie_name,
+                secure=secure,
+                logger=logger,
+            )
+    if state is None or code is None:
+        return oidc_callback_failure_redirect(
+            OidcStateMismatchError(),
+            binding_cookie_name=binding_cookie_name,
+            secure=secure,
+            logger=logger,
+        )
+    binding_cookie_name = oidc_binding_cookie_name_for_state(state)
+    try:
+        current_session = await auth_usecase.authenticate_session(
+            session_token=request.cookies.get(session_cookie_name(auth_settings)),
+            ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+            user_agent=get_user_agent(request),
+        )
+        result = await oidc_usecase.complete_callback(
+            provider_id=provider_id,
+            state=state,
+            code=code,
+            browser_binding_cookie_value=request.cookies.get(binding_cookie_name),
+            current_session=current_session,
+            current_session_token=request.cookies.get(session_cookie_name(auth_settings)),
+            ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+            user_agent=get_user_agent(request),
+        )
+    except Exception as callback_error:
+        return oidc_callback_failure_redirect(
+            callback_error,
+            binding_cookie_name=binding_cookie_name,
+            secure=secure,
+            logger=logger,
+        )
+
+    if result.issued_session is not None:
+        response = oidc_redirect(
+            merge_redirect_query(
+                result.redirect_path,
+                oidcError=None,
+                oidcReauth=None,
+            ))
+        set_session_cookie(
+            response,
+            result.issued_session.session_token,
+            secure=secure,
+            max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
+            auth_settings=auth_settings,
+        )
+        set_csrf_cookie(
+            response,
+            result.issued_session.csrf_token,
+            secure=secure,
+            max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
+        )
+    else:
+        csrf_token = await auth_usecase.issue_csrf_token(session_token=request.cookies.get(
+            session_cookie_name(auth_settings)), )
+        response = oidc_redirect(
+            merge_redirect_query(
+                result.redirect_path,
+                oidcError=None,
+                oidcReauth="success",
+            ))
+        set_csrf_cookie(
+            response,
+            csrf_token,
+            secure=secure,
+            max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
+        )
+    if binding_cookie_name is not None:
+        clear_oidc_binding_cookie(response, binding_cookie_name, secure=secure)
+    return response
+
+
 @router.get("/csrf", response_model=CsrfTokenResponse)
 async def get_csrf(
         request: Request,
@@ -233,6 +637,13 @@ async def delete_me(
             400,
             "ACCOUNT_DELETION_INVALID_PASSWORD",
             "Password confirmation failed",
+        ) from error
+    except AccountDeletionOidcReauthRequiredError as error:
+        raise api_error(
+            400,
+            "ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED",
+            "OIDC reauthentication is required",
+            details=error.linked_providers,
         ) from error
     except RateLimitExceededError as error:
         raise api_error(

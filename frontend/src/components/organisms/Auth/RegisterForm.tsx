@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { Button } from '@/components/atoms/button'
+import { AuthFormFeedback } from '@/components/molecules/AuthFormFeedback'
 import { AuthTextField } from '@/components/molecules/AuthTextField'
 
 export type RegisterValues = {
@@ -82,11 +83,7 @@ export default function RegisterForm({
         type="password"
         value={passwordConfirmation}
       />
-      {displayError ? (
-        <p className="text-sm text-red-600" id={errorId} role="alert">
-          {displayError}
-        </p>
-      ) : null}
+      <AuthFormFeedback id={errorId} message={displayError} />
       <Button
         className="bg-landing-ink text-white hover:bg-landing-ink/90"
         disabled={isPending}

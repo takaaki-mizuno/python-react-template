@@ -18,6 +18,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         max_failures_per_ip: int,
         max_failures_per_email: int,
         max_registrations_per_ip: int,
+        max_oidc_authorizations_per_ip: int,
         max_buckets_per_scope: int,
         clock: Callable[[], float] = monotonic,
     ):
@@ -27,12 +28,14 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         self._max_failures_per_ip = max_failures_per_ip
         self._max_failures_per_email = max_failures_per_email
         self._max_registrations_per_ip = max_registrations_per_ip
+        self._max_oidc_authorizations_per_ip = max_oidc_authorizations_per_ip
         self._max_buckets_per_scope = max_buckets_per_scope
         self._clock = clock
         self._email_ip_buckets: OrderedDict[str, deque[float]] = OrderedDict()
         self._ip_buckets: OrderedDict[str, deque[float]] = OrderedDict()
         self._email_buckets: OrderedDict[str, deque[float]] = OrderedDict()
         self._registration_ip_buckets: OrderedDict[str, deque[float]] = OrderedDict()
+        self._oidc_authorization_ip_buckets: OrderedDict[str, deque[float]] = OrderedDict()
         self._cap_warning_scopes: set[str] = set()
 
     def is_allowed(self, ip_address: str, normalized_email: str) -> bool:
@@ -130,11 +133,34 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         if bucket is not None:
             bucket.append(now)
 
+    def is_oidc_authorization_allowed(self, ip_address: str) -> bool:
+        now = self._clock()
+        bucket = self._get_existing_bucket(
+            self._oidc_authorization_ip_buckets,
+            ip_address,
+            now,
+            self._window_seconds,
+        )
+        return len(bucket) < self._max_oidc_authorizations_per_ip
+
+    def record_oidc_authorization(self, ip_address: str) -> None:
+        now = self._clock()
+        bucket = self._get_or_create_bucket(
+            self._oidc_authorization_ip_buckets,
+            ip_address,
+            now,
+            self._window_seconds,
+            "oidc_authorization_ip",
+        )
+        if bucket is not None:
+            bucket.append(now)
+
     def reset(self) -> None:
         self._email_ip_buckets.clear()
         self._ip_buckets.clear()
         self._email_buckets.clear()
         self._registration_ip_buckets.clear()
+        self._oidc_authorization_ip_buckets.clear()
         self._cap_warning_scopes.clear()
 
     def _get_existing_bucket(

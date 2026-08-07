@@ -124,6 +124,34 @@ test('REGISTER_RATE_LIMITED は rate limit メッセージを表示する', asyn
   )
 })
 
+test('register は OIDC provider button を表示する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/oidc/providers') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              providers: [{ providerId: 'google', displayName: 'Google' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+
+      return Promise.resolve(jsonResponse({ detail: 'Unauthorized' }, 401))
+    }),
+  )
+
+  renderWithRouter({
+    initialEntries: ['/register?redirect=/app%3Ftab%3Dsettings'],
+  })
+
+  expect(
+    await screen.findByRole('button', { name: 'Googleで続行' }),
+  ).toBeTruthy()
+})
+
 test('ログイン済みユーザーが /register を開くと redirect 先へ送られる', async () => {
   vi.stubGlobal(
     'fetch',

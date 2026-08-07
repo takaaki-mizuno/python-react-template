@@ -28,6 +28,13 @@ class AccountDeletionInvalidPasswordError(Exception):
     pass
 
 
+class AccountDeletionOidcReauthRequiredError(Exception):
+
+    def __init__(self, linked_providers: list[dict[str, str]]) -> None:
+        super().__init__("OIDC reauthentication is required")
+        self.linked_providers = linked_providers
+
+
 class WeakPasswordError(Exception):
     pass
 

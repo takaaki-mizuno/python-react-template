@@ -113,10 +113,16 @@ def db_prune_auth(
         str | None,
         typer.Option(help="Delete auth audit logs with created_at before this timestamp."),
     ] = None,
+    oidc_states_before: Annotated[
+        str | None,
+        typer.Option(
+            help="Delete OIDC authorization states with expires_at before this timestamp."),
+    ] = None,
 ) -> None:
-    if expired_sessions_before is None and audit_logs_before is None:
+    if expired_sessions_before is None and audit_logs_before is None and oidc_states_before is None:
         typer.secho(
-            "Specify at least one of --expired-sessions-before or --audit-logs-before.",
+            "Specify at least one of --expired-sessions-before, --audit-logs-before, "
+            "or --oidc-states-before.",
             err=True,
             fg=typer.colors.RED,
         )
@@ -126,6 +132,7 @@ def db_prune_auth(
         "--expired-sessions-before",
     )
     audit_logs_before_at = _parse_cli_datetime(audit_logs_before, "--audit-logs-before")
+    oidc_states_before_at = _parse_cli_datetime(oidc_states_before, "--oidc-states-before")
     _get_explicit_database_settings("db-prune-auth")
 
     async def operation(container: Injector) -> None:
@@ -137,6 +144,10 @@ def db_prune_auth(
             deleted_sessions = await repository.delete_sessions_expired_before(
                 expired_sessions_before_at)
             typer.echo(f"Deleted expired sessions: {deleted_sessions}")
+        if oidc_states_before_at is not None:
+            deleted_oidc_states = await repository.delete_oidc_states_expired_before(
+                oidc_states_before_at)
+            typer.echo(f"Deleted OIDC authorization states: {deleted_oidc_states}")
 
     asyncio.run(run_with_container(operation))
 

@@ -7,10 +7,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.bootstrap import container as container_module
 from app.config import Config
 from app.config.auth import AuthSettings
+from app.config.oidc import OidcProviderSettings, OidcSettings
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.oidc_provider_client_interface import OidcProviderClientInterface
 from app.interfaces.services.sample_item_repository_interface import SampleItemRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecaseInterface
 from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsecaseInterface
 from app.libraries.password_hasher import PasswordHashExecutor
 
@@ -22,11 +25,23 @@ def test_build_container_binds_module_provider_singletons(monkeypatch):
     settings = AuthSettings(_env_file=None,
                             AUTH_COOKIE_SECURE=True,
                             AUTH_SESSION_ABSOLUTE_TTL_SECONDS=123)
+    oidc_settings = OidcSettings(
+        providers=(OidcProviderSettings(
+            provider_id="google",
+            display_name="Google",
+            issuer="https://accounts.example.com",
+            client_id="client-id",
+            client_secret="client-secret",
+            callback_path="/api/auth/oidc/google/callback",
+        ), ),
+        AUTH_OIDC_REDIRECT_BASE_URL="https://app.example.com",
+    )
     engine = object()
     session_factory = object()
 
     monkeypatch.setattr(modules, "get_config", lambda: config)
     monkeypatch.setattr(modules, "get_auth_settings", lambda: settings)
+    monkeypatch.setattr(modules, "get_oidc_settings", lambda: oidc_settings)
     monkeypatch.setattr(
         modules,
         "build_engine_and_session_factory",
@@ -37,11 +52,14 @@ def test_build_container_binds_module_provider_singletons(monkeypatch):
 
     assert injector.get(Config) is config
     assert injector.get(AuthSettings) is settings
+    assert injector.get(OidcSettings) is oidc_settings
     assert injector.get(AsyncEngine) is engine
     assert injector.get(async_sessionmaker[AsyncSession]) is session_factory
     assert isinstance(injector.get(Logger), Logger)
     assert injector.get(AuthSettings) is injector.get(AuthSettings)
     assert injector.get(AuthUsecaseInterface) is injector.get(AuthUsecaseInterface)
+    assert injector.get(OidcProviderClientInterface) is injector.get(OidcProviderClientInterface)
+    assert injector.get(OAuthOidcUsecaseInterface) is injector.get(OAuthOidcUsecaseInterface)
     assert injector.get(SampleItemUsecaseInterface) is injector.get(SampleItemUsecaseInterface)
     assert injector.get(SampleItemRepositoryInterface) is injector.get(
         SampleItemRepositoryInterface)

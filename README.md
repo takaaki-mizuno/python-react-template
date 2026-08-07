@@ -314,3 +314,51 @@ docker compose up -d --force-recreate backend
 ```
 
 Docker Compose内ではfrontendの`/api` proxyが`http://backend:8000`を向き、backendは`postgres:5432/app`へ接続します。local Compose用の`app/app`認証情報を本番環境で使用しないでください。
+
+## OAuth/OIDC login
+
+OAuth/OIDC login は backend 側で authorization code flow、callback、session cookie / CSRF cookie 発行まで完結します。Frontend は `/api/auth/oidc/providers` から provider list を読み、start / reauth endpoint へ full-page redirect するだけです。Frontend callback route は作りません。
+
+`backend/.env` の設定例:
+
+```env
+AUTH_OIDC_ENABLED_PROVIDERS=google
+AUTH_OIDC_REDIRECT_BASE_URL=http://localhost:8000
+AUTH_OIDC_REAUTH_FRESHNESS_SECONDS=300
+AUTH_OIDC_AUTHORIZATION_STARTS_PER_IP=20
+AUTH_OIDC_STATE_TTL_SECONDS=300
+AUTH_OIDC_PROVIDER_GOOGLE_DISPLAY_NAME=Google
+AUTH_OIDC_PROVIDER_GOOGLE_ISSUER=https://accounts.google.com
+AUTH_OIDC_PROVIDER_GOOGLE_CLIENT_ID=<client-id>
+AUTH_OIDC_PROVIDER_GOOGLE_CLIENT_SECRET=<client-secret>
+AUTH_OIDC_PROVIDER_GOOGLE_SCOPE=openid email profile
+AUTH_OIDC_PROVIDER_GOOGLE_TRUST_VERIFIED_EMAIL=true
+AUTH_OIDC_PROVIDER_GOOGLE_AUTO_PROVISION=enabled
+AUTH_OIDC_PROVIDER_GOOGLE_LINK_MODE=auto
+AUTH_OIDC_PROVIDER_GOOGLE_CALLBACK_PATH=/api/auth/oidc/google/callback
+AUTH_OIDC_PROVIDER_GOOGLE_CLAIMS_ALLOWLIST=
+```
+
+Provider 側には次の redirect URI を登録します。
+
+```text
+http://localhost:8000/api/auth/oidc/google/callback
+```
+
+本番では `AUTH_OIDC_REDIRECT_BASE_URL` を公開 backend origin に変更し、同じ callback path を provider に登録します。Redirect URI は request host 由来ではなく `AUTH_OIDC_REDIRECT_BASE_URL` だけから生成されます。
+
+trusted verified email を信頼する provider だけ `AUTH_OIDC_PROVIDER_<ID>_TRUST_VERIFIED_EMAIL=true` にしてください。新規 user 作成を禁止したい環境では `AUTH_OIDC_PROVIDER_<ID>_AUTO_PROVISION=link-only`、verified email 一致での自動 link を避けたい環境では `AUTH_OIDC_PROVIDER_<ID>_LINK_MODE=manual` または `disabled` を使います。
+
+token 非保存が前提です。Provider の `access_token` / `refresh_token` は DB、audit log、URL、frontend state に保存されません。Provider API 代理呼び出しが必要な場合は、refresh token 保存、暗号化、scope、revoke UX を別計画で設計してください。
+
+OAuth-only account deletion は provider `auth_time` を `auth_sessions.last_oidc_auth_time_at` に保存し、`AUTH_OIDC_REAUTH_FRESHNESS_SECONDS` 以内だけ fresh とみなします。`auth_time` がない provider では self-service deletion を通さず、`ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` と linked providers details から reauth / support 導線を出します。Callback redirect result は settings page で `oidcReauth=success`、`OIDC_REAUTH_SUBJECT_MISMATCH`、`OIDC_REAUTH_STALE`、`OIDC_REAUTH_AUTH_TIME_REQUIRED` として扱います。
+
+OIDC state は DB-backed で、state ごとの browser binding cookie と組み合わせて検証します。Expired / consumed state の pruning は次のように明示実行します。
+
+```bash
+(
+  cd backend
+  DATABASE_URL="postgresql+asyncpg://app:app@localhost:${APP_POSTGRES_PORT}/app" \
+    uv run python manage.py db-prune-auth --oidc-states-before "2026-08-01T00:00:00+00:00"
+)
+```
