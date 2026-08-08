@@ -69,6 +69,21 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 
 `Status` は healthz などの限定用途に使う。CRUD success response の模範にはしない。
 
+## Authorization / RBAC
+
+権限管理は RBAC を正とする。`users.is_active` は凍結・停止であり、管理者権限ではない。
+
+- DB table は `roles`、`permissions`、`user_roles`、`role_permissions`。
+- role は permission の集合で、endpoint 保護は role ではなく permission code で行う。
+- 初期定義は `app/config/authorization.py` の `DEFAULT_AUTHORIZATION_PERMISSIONS` と `DEFAULT_AUTHORIZATION_DEFINITIONS` に置く。
+- 定義同期は `python manage.py authz-sync` で行う。operation 全体を `UnitOfWorkInterface.transaction()` に閉じ、途中失敗で部分適用しない。
+- 復旧用 role 付与は `python manage.py authz-grant-role --email <email> --role <roleCode>` を使う。inactive user も対象に含め、deleted user は通常 user lookup で対象外にする。
+- `GET /api/auth/me` と login/register response は `roles: list[str]` と `permissions: list[str]` を返す。public response は安定順にする。
+- 認可の正は Backend の FastAPI dependency である。`require_permission("admin:access")` / `require_any_permission([...])` を使い、Frontend の表示制御だけを信頼しない。
+- `GET /api/admin/roles` は role 一覧と permission catalog を返す。`PUT /api/admin/users/{user_id}/roles` は role set 置換で、CSRF middleware の対象から外さない。
+- role 付与・剥奪は `auth_audit_logs` に `ROLE_GRANTED` / `ROLE_REVOKED` として記録する。API 経由では actor user/session を、CLI 経由では `source: "cli"` を `detail_json` に残す。
+- self-service account deletion は `user_roles` を物理削除する。復元が必要な派生アプリでは admin workflow 側で再付与する。
+
 ## Auth Persistence
 
 - DB 接続は `DATABASE_URL` を正とする。Alembic も同じ設定から `postgresql+asyncpg://` URL を導出し、`ALEMBIC_DATABASE_URL` は使わない。`db-upgrade` / `db-downgrade` / `db-check` / `db-revision` / `db-prune-auth` と bare `alembic current/upgrade` は明示 `DATABASE_URL` を必須にし、既定値だけで DDL や schema check を実行しない。

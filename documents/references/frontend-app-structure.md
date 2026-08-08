@@ -114,6 +114,16 @@ components/
 - ルート単位での初期データは TanStack Router の `loader` を併用可。
 - API 呼び出しの共通処理は `lib/` または `hooks/` に集約する。
 
+## 5.1 Auth / Permission Guard
+
+- `AuthUser` は `id`、`email`、`roles`、`permissions` を持つ。Frontend の role / permission は表示制御と navigation guard 用であり、最終的な認可境界ではない。
+- permission check helper は `src/lib/permissions.ts` の `hasPermission()` / `hasAnyPermission()` を使う。role 名ではなく permission code を見る。
+- 認証必須 route は `_authenticated` parent route の `requireAuth()` で守る。個別 permission が必要な route は `requirePermission("permission:code")` または `requireAnyPermission([...])` を `beforeLoad` に追加する。
+- `_authenticated` 配下の child guard は `queryClient.ensureQueryData(currentUserQueryOptions())` を使い、parent `requireAuth()` が直前に取得した `/api/auth/me` cache を再利用する。
+- user がいない場合は `/login?redirect=<current href>` へ送る。user はいるが permission がない場合は `/forbidden` へ送る。`/api/auth/me` の 5xx は redirect に変換しない。
+- Header などの共通 UI で admin link を出す場合も `hasPermission(user, "admin:access")` で表示制御するだけに留め、Backend API は必ず permission dependency で守る。
+- 自分自身の role / permission を変更する UI を後続で作る場合は、成功後に `queryClient.invalidateQueries({ queryKey: queryKeys.auth.me })` を呼び、auth cache を更新する。
+
 ---
 
 ## 6. スタイリング（Tailwind CSS）

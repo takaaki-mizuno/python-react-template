@@ -1,10 +1,20 @@
 import tomllib
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 from typer.testing import CliRunner
 
 import manage
+from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.authorization_repository_interface import \
+    AuthorizationRepositoryInterface
+from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
+from app.models.auth_event_type import AuthEventType
+from app.models.authorization import UserAuthorization, UserRoleReplacementResult
+from app.models.authorization_errors import RoleNotFoundError
+from app.models.user import User
 
 
 def test_serve_accepts_runtime_options(monkeypatch):
@@ -563,3 +573,242 @@ def test_db_prune_auth_rejects_invalid_datetime_before_database_url(monkeypatch)
     assert result.exit_code == 2
     assert "ISO 8601 datetime" in result.stderr
     assert "DATABASE_URL" not in result.stderr
+
+
+def test_authz_sync_runs_definition_sync_in_transaction(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class UnitOfWorkStub:
+
+        def __init__(self) -> None:
+            self.in_transaction = False
+
+        @asynccontextmanager
+        async def transaction(self):
+            calls.append(("transaction", "enter"))
+            self.in_transaction = True
+            try:
+                yield
+            finally:
+                self.in_transaction = False
+                calls.append(("transaction", "exit"))
+
+    class AuthorizationRepositoryStub:
+
+        def __init__(self, unit_of_work) -> None:
+            self._unit_of_work = unit_of_work
+
+        async def upsert_permission_definition(self, definition):
+            calls.append(("permission", definition.code, self._unit_of_work.in_transaction))
+
+        async def upsert_role_definition(self, definition):
+            calls.append(("role", definition.code, self._unit_of_work.in_transaction))
+
+        async def replace_role_permissions(self, role_code, permission_codes):
+            calls.append(("role_permissions", role_code, self._unit_of_work.in_transaction))
+
+    unit_of_work = UnitOfWorkStub()
+    authorization_repository = AuthorizationRepositoryStub(unit_of_work)
+
+    class InjectorStub:
+
+        def get(self, interface):
+            if interface is UnitOfWorkInterface:
+                return unit_of_work
+            if interface is AuthorizationRepositoryInterface:
+                return authorization_repository
+            raise AssertionError(interface)
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(manage.app, ["authz-sync"])
+
+    assert result.exit_code == 0
+    assert calls[0] == ("transaction", "enter")
+    assert calls[-1] == ("transaction", "exit")
+    assert all(call[-1] is True for call in calls[1:-1])
+
+
+def test_authz_grant_role_records_cli_audit(monkeypatch):
+    user = User(id=uuid4(), email="admin@example.com", password_hash="hash")
+    audit_logs = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class UnitOfWorkStub:
+
+        @asynccontextmanager
+        async def transaction(self):
+            yield
+
+    class AuthRepositoryStub:
+
+        async def find_user_by_email(self, email):
+            assert email == "admin@example.com"
+            return user
+
+        async def create_audit_log(self, audit_log):
+            audit_logs.append(audit_log)
+
+    class AuthorizationRepositoryStub:
+
+        async def get_user_authorization(self, user_id):
+            return UserAuthorization(
+                user_id=user_id,
+                roles=frozenset(),
+                permissions=frozenset(),
+            )
+
+        async def replace_user_roles(self, user_id, role_codes, assigned_by_user_id):
+            assert user_id == user.id
+            assert role_codes == ("admin", )
+            assert assigned_by_user_id is None
+            return UserRoleReplacementResult(
+                user_id=user_id,
+                granted_role_codes=("admin", ),
+                revoked_role_codes=(),
+                current_role_codes=("admin", ),
+                current_permission_codes=("admin:access", ),
+            )
+
+    class InjectorStub:
+
+        def get(self, interface):
+            if interface is UnitOfWorkInterface:
+                return UnitOfWorkStub()
+            if interface is AuthRepositoryInterface:
+                return AuthRepositoryStub()
+            if interface is AuthorizationRepositoryInterface:
+                return AuthorizationRepositoryStub()
+            raise AssertionError(interface)
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(
+        manage.app,
+        ["authz-grant-role", "--email", "Admin@Example.com", "--role", "admin"],
+    )
+
+    assert result.exit_code == 0
+    assert len(audit_logs) == 1
+    assert audit_logs[0].user_id is None
+    assert audit_logs[0].session_id is None
+    assert audit_logs[0].event_type == AuthEventType.ROLE_GRANTED
+    assert audit_logs[0].detail_json == {
+        "source": "cli",
+        "actorUserId": None,
+        "targetUserId": str(user.id),
+        "roleCode": "admin",
+        "resultingRoles": ["admin"],
+    }
+
+
+def test_authz_grant_role_exits_when_user_is_not_found(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class UnitOfWorkStub:
+
+        @asynccontextmanager
+        async def transaction(self):
+            yield
+
+    class AuthRepositoryStub:
+
+        async def find_user_by_email(self, email):
+            assert email == "missing@example.com"
+            return None
+
+    class AuthorizationRepositoryStub:
+        pass
+
+    class InjectorStub:
+
+        def get(self, interface):
+            if interface is UnitOfWorkInterface:
+                return UnitOfWorkStub()
+            if interface is AuthRepositoryInterface:
+                return AuthRepositoryStub()
+            if interface is AuthorizationRepositoryInterface:
+                return AuthorizationRepositoryStub()
+            raise AssertionError(interface)
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(
+        manage.app,
+        ["authz-grant-role", "--email", "Missing@Example.com", "--role", "admin"],
+    )
+
+    assert result.exit_code == 1
+    assert "User not found." in result.stderr
+
+
+def test_authz_grant_role_exits_when_role_is_not_found(monkeypatch):
+    user = User(id=uuid4(), email="admin@example.com", password_hash="hash")
+    audit_logs = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+
+    class UnitOfWorkStub:
+
+        @asynccontextmanager
+        async def transaction(self):
+            yield
+
+    class AuthRepositoryStub:
+
+        async def find_user_by_email(self, email):
+            assert email == "admin@example.com"
+            return user
+
+        async def create_audit_log(self, audit_log):
+            audit_logs.append(audit_log)
+
+    class AuthorizationRepositoryStub:
+
+        async def get_user_authorization(self, user_id):
+            assert user_id == user.id
+            return UserAuthorization(
+                user_id=user.id,
+                roles=frozenset(),
+                permissions=frozenset(),
+            )
+
+        async def replace_user_roles(self, user_id, role_codes, assigned_by_user_id):
+            assert user_id == user.id
+            assert role_codes == ("missing", )
+            assert assigned_by_user_id is None
+            raise RoleNotFoundError({"missing"})
+
+    class InjectorStub:
+
+        def get(self, interface):
+            if interface is UnitOfWorkInterface:
+                return UnitOfWorkStub()
+            if interface is AuthRepositoryInterface:
+                return AuthRepositoryStub()
+            if interface is AuthorizationRepositoryInterface:
+                return AuthorizationRepositoryStub()
+            raise AssertionError(interface)
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(
+        manage.app,
+        ["authz-grant-role", "--email", "Admin@Example.com", "--role", "missing"],
+    )
+
+    assert result.exit_code == 1
+    assert "Role not found: missing" in result.stderr
+    assert audit_logs == []

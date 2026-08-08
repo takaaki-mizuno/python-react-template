@@ -18,3 +18,5 @@ class AuthEventType(StrEnum):
     OIDC_USER_PROVISIONED = "oidc_user_provisioned"
     OIDC_REAUTH_SUCCESS = "oidc_reauth_success"
     OIDC_REAUTH_FAILED = "oidc_reauth_failed"
+    ROLE_GRANTED = "role_granted"
+    ROLE_REVOKED = "role_revoked"

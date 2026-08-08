@@ -91,6 +91,8 @@ class StubAuthUsecase(AuthUsecaseInterface):
             session=session,
             session_token="new-session-token",
             csrf_token="new-csrf-token",
+            roles=frozenset(),
+            permissions=frozenset(),
         )
 
     async def login(
@@ -124,6 +126,8 @@ class StubAuthUsecase(AuthUsecaseInterface):
             session=session,
             session_token="new-session-token",
             csrf_token="new-csrf-token",
+            roles=frozenset({"admin"}),
+            permissions=frozenset({"admin:access"}),
         )
 
     async def authenticate_session(
@@ -253,6 +257,8 @@ class StubOAuthOidcUsecase(OAuthOidcUsecaseInterface):
                 session=session,
                 session_token="oidc-session-token",
                 csrf_token="oidc-csrf-token",
+                roles=frozenset(),
+                permissions=frozenset(),
             ),
         )
 
@@ -307,7 +313,12 @@ def _authenticated_context(email: str = "user@example.com") -> AuthenticatedSess
         last_seen_at=utcnow(),
         expires_at=utcnow() + timedelta(minutes=10),
     )
-    return AuthenticatedSessionContext(user=user, session=session)
+    return AuthenticatedSessionContext(
+        user=user,
+        session=session,
+        roles=frozenset(),
+        permissions=frozenset(),
+    )
 
 
 def _client_with_stub(

@@ -60,6 +60,8 @@ test('logout 後は cached user を使わず /me を再確認する', async () =
       queryClient.setQueryData(queryKeys.auth.me, {
         id: '00000000-0000-0000-0000-000000000001',
         email: 'user@example.com',
+        roles: [],
+        permissions: [],
       })
     },
   })
@@ -108,6 +110,8 @@ test('Header は guard 直後の auth.me cache があれば /me を二重取得�
       JSON.stringify({
         id: '00000000-0000-0000-0000-000000000001',
         email: 'user@example.com',
+        roles: [],
+        permissions: [],
       }),
       {
         status: 200,
@@ -144,6 +148,8 @@ test('/app 表示後に query が 401 になると /login へ遷移し auth cach
   queryClient.setQueryData(queryKeys.auth.me, {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
+    roles: [],
+    permissions: [],
   })
 
   await queryClient
@@ -245,6 +251,31 @@ test('CSRF 以外の 403 は /forbidden へ遷移する', async () => {
   })
 })
 
+test('/admin は admin:access permission があれば表示する', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    authUserResponse({
+      roles: ['admin'],
+      permissions: ['admin:access'],
+    }),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+
+  renderWithRouter({ initialEntries: ['/admin'] })
+
+  expect(await screen.findByRole('heading', { name: '管理' })).toBeTruthy()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})
+
+test('/admin は admin:access permission がなければ /forbidden へ遷移する', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(authUserResponse()))
+
+  renderWithRouter({ initialEntries: ['/admin'] })
+
+  expect(
+    await screen.findByRole('heading', { name: 'アクセスできません' }),
+  ).toBeTruthy()
+})
+
 test('mutation の CSRF 以外の 403 は /forbidden へ遷移する', async () => {
   vi.stubGlobal(
     'fetch',
@@ -323,11 +354,16 @@ function ForbiddenMutationButton() {
   )
 }
 
-function authUserResponse() {
+function authUserResponse(overrides?: {
+  roles?: Array<string>
+  permissions?: Array<string>
+}) {
   return new Response(
     JSON.stringify({
       id: '00000000-0000-0000-0000-000000000001',
       email: 'user@example.com',
+      roles: overrides?.roles ?? [],
+      permissions: overrides?.permissions ?? [],
     }),
     {
       status: 200,

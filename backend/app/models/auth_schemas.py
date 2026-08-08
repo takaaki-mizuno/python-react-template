@@ -29,6 +29,8 @@ class AccountDeletionRequest(AuthSchema):
 class AuthUserResponse(SQLModel):
     id: UUID
     email: EmailStr
+    roles: list[str]
+    permissions: list[str]
 
 
 class CsrfTokenResponse(SQLModel):

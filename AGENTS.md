@@ -68,6 +68,8 @@ PR をマージする前に **必ず** 以下を通す:
 - `.env` / 認証情報 / API キーをコミットしない (`.gitignore` 設定済み)
 - シークレットは環境変数経由のみ
 - 依存追加時はライセンスと既知脆弱性を確認
+- アプリケーション権限は `roles` / `permissions` / `user_roles` / `role_permissions` による RBAC を正とする。Frontend の roles / permissions は表示制御用であり、Backend endpoint は permission dependency で必ず再検証する。
+- `users.is_active` は凍結・停止であり、管理者権限ではない。inactive user は session authentication では拒否するが、role 管理 API / CLI の対象には含める。deleted user は role 管理対象外にする。
 
 ## 安全な操作 / 確認が必要な操作
 

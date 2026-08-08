@@ -9,6 +9,7 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from app.controllers.auth_controller import router as auth_router
+from app.controllers.authorization_controller import router as authorization_router
 from app.controllers.healthz_controller import router as healthz_router
 from app.controllers.sample_controller import router as sample_router
 
@@ -75,6 +76,7 @@ def setup_routes(
 
 def _setup_api_routes(app: FastAPI) -> FastAPI:
     router = APIRouter()
+    router.include_router(authorization_router)
     router.include_router(auth_router)
     router.include_router(healthz_router)
     router.include_router(sample_router)

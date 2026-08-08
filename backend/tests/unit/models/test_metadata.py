@@ -8,7 +8,11 @@ EXPECTED_TABLE_MODELS = {
     "auth_audit_logs",
     "auth_identities",
     "auth_oidc_authorization_states",
+    "permissions",
+    "role_permissions",
+    "roles",
     "sample_items",
+    "user_roles",
 }
 
 
@@ -52,3 +56,36 @@ def test_auth_operational_columns_are_registered_for_alembic_metadata():
     assert "deleted_at" in users.c
     assert "issued_at" in auth_sessions.c
     assert "updated_at" in auth_sessions.c
+
+
+def test_authorization_foreign_keys_have_deterministic_names():
+    user_roles = SQLModel.metadata.tables["user_roles"]
+    role_permissions = SQLModel.metadata.tables["role_permissions"]
+
+    assert {constraint.name
+            for constraint in user_roles.foreign_key_constraints} == {
+                "fk_user_roles_assigned_by_user_id_users",
+                "fk_user_roles_role_id_roles",
+                "fk_user_roles_user_id_users",
+            }
+    assert {constraint.name
+            for constraint in role_permissions.foreign_key_constraints} == {
+                "fk_role_permissions_permission_id_permissions",
+                "fk_role_permissions_role_id_roles",
+            }
+
+
+def test_authorization_table_shape_matches_plan():
+    roles = SQLModel.metadata.tables["roles"]
+    permissions = SQLModel.metadata.tables["permissions"]
+    user_roles = SQLModel.metadata.tables["user_roles"]
+    role_permissions = SQLModel.metadata.tables["role_permissions"]
+
+    assert roles.c.code.type.length == 64
+    assert roles.c.display_name.type.length == 120
+    assert roles.c.description.type.length == 500
+    assert permissions.c.code.type.length == 120
+    assert permissions.c.display_name.type.length == 120
+    assert permissions.c.description.type.length == 500
+    assert "created_at" in role_permissions.c
+    assert {index.name for index in user_roles.indexes} == {"ix_user_roles_role_id"}

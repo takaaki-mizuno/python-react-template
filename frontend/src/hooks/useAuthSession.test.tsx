@@ -59,6 +59,8 @@ test('logout 成功時は表示中userを null にして auth 以外の cache �
   const user = {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
+    roles: [],
+    permissions: [],
   }
   let loggedOut = false
   vi.stubGlobal(
@@ -131,6 +133,8 @@ test('未ログイン状態から auth cache が更新されると user を返�
   const nextUser = {
     id: '00000000-0000-0000-0000-000000000002',
     email: 'next@example.com',
+    roles: [],
+    permissions: [],
   }
 
   act(() => {

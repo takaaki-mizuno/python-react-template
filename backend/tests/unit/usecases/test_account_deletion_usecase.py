@@ -81,6 +81,19 @@ class AuthRepositoryStub:
         self.audit_logs.append(audit_log)
 
 
+class AuthorizationRepositoryStub:
+
+    def __init__(self, unit_of_work: UnitOfWorkStub, auth_repository: AuthRepositoryStub) -> None:
+        self._unit_of_work = unit_of_work
+        self._auth_repository = auth_repository
+        self.delete_roles_for_user_calls: list[tuple[UUID, bool]] = []
+
+    async def delete_roles_for_user(self, user_id: UUID) -> int:
+        self._auth_repository.operation_order.append("delete_roles_for_user")
+        self.delete_roles_for_user_calls.append((user_id, self._unit_of_work.in_transaction))
+        return 1
+
+
 class SampleItemRepositoryStub:
 
     def __init__(self, unit_of_work: UnitOfWorkStub, auth_repository: AuthRepositoryStub) -> None:
@@ -154,7 +167,12 @@ def _auth_context(
         expires_at=now + timedelta(minutes=10),
         last_oidc_auth_time_at=last_oidc_auth_time_at,
     )
-    return AuthenticatedSessionContext(user=user, session=session)
+    return AuthenticatedSessionContext(
+        user=user,
+        session=session,
+        roles=frozenset(),
+        permissions=frozenset(),
+    )
 
 
 def _usecase(
@@ -172,11 +190,13 @@ def _usecase(
 ]:
     unit_of_work = unit_of_work or UnitOfWorkStub()
     auth_repository = AuthRepositoryStub(unit_of_work)
+    authorization_repository = AuthorizationRepositoryStub(unit_of_work, auth_repository)
     sample_repository = SampleItemRepositoryStub(unit_of_work, auth_repository)
     rate_limiter = rate_limiter or RateLimiterStub()
     password_hash_executor = password_hash_executor or PasswordHashExecutorStub()
     usecase = AccountDeletionUsecase(
         auth_repository=auth_repository,
+        authorization_repository=authorization_repository,
         sample_item_repository=sample_repository,
         unit_of_work=unit_of_work,
         auth_rate_limiter=rate_limiter,
@@ -416,6 +436,7 @@ async def test_success_deletes_owned_data_marks_user_and_revokes_sessions_in_one
 
     assert auth_repository.operation_order == [
         "delete_all_for_owner",
+        "delete_roles_for_user",
         "delete_auth_identities_for_user",
         "mark_user_deleted",
         "revoke_sessions_for_user",

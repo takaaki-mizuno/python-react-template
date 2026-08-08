@@ -19,7 +19,7 @@ from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecas
 from app.libraries.auth_cookies import (clear_auth_cookie, csrf_cookie_name, session_cookie_name,
                                         set_auth_cookie)
 from app.libraries.session_tokens import hash_token
-from app.models.auth_context import AuthenticatedSessionContext
+from app.models.auth_context import AuthenticatedSessionContext, IssuedAuthSession
 from app.models.auth_csrf import SessionCsrfStatus
 from app.models.auth_errors import (AccountDeletionConfirmationMismatchError,
                                     AccountDeletionInvalidPasswordError,
@@ -595,7 +595,7 @@ async def get_me(
     auth_context: AuthenticatedSessionContext = Depends(require_current_session),
 ) -> AuthUserResponse:
     response.headers["Cache-Control"] = "no-store"
-    return AuthUserResponse(id=auth_context.user.id, email=auth_context.user.email)
+    return _auth_user_response(auth_context)
 
 
 @router.delete(
@@ -717,7 +717,7 @@ async def register(
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
-    return AuthUserResponse(id=issued_session.user.id, email=issued_session.user.email)
+    return _auth_user_response(issued_session)
 
 
 @router.post(
@@ -767,7 +767,7 @@ async def login(
         secure=secure,
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
-    return AuthUserResponse(id=issued_session.user.id, email=issued_session.user.email)
+    return _auth_user_response(issued_session)
 
 
 @router.post(
@@ -791,3 +791,13 @@ async def logout(
     clear_csrf_cookie(response, secure=secure)
     response.status_code = 204
     return response
+
+
+def _auth_user_response(
+    source: AuthenticatedSessionContext | IssuedAuthSession, ) -> AuthUserResponse:
+    return AuthUserResponse(
+        id=source.user.id,
+        email=source.user.email,
+        roles=sorted(source.roles),
+        permissions=sorted(source.permissions),
+    )

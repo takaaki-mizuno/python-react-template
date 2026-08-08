@@ -191,10 +191,14 @@ describe('Header', () => {
     const firstUser = {
       id: '00000000-0000-0000-0000-000000000001',
       email: 'user@example.com',
+      roles: [],
+      permissions: [],
     }
     const nextUser = {
       id: '00000000-0000-0000-0000-000000000002',
       email: 'next@example.com',
+      roles: [],
+      permissions: [],
     }
     let session: 'first' | 'none' | 'next' = 'first'
     vi.stubGlobal(
@@ -249,6 +253,8 @@ function authUserResponse() {
   return jsonResponse({
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
+    roles: [],
+    permissions: [],
   })
 }
 

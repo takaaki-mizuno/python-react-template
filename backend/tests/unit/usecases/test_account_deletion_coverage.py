@@ -3,7 +3,7 @@ from sqlmodel import SQLModel
 import app.models  # noqa: F401
 
 AUTH_INTERNAL_TABLES = {"auth_sessions", "auth_audit_logs"}
-HANDLED_TABLES = {"auth_identities", "sample_items"}
+HANDLED_TABLES = {"auth_identities", "sample_items", "user_roles"}
 
 
 def test_every_user_owned_table_is_handled_on_account_deletion() -> None:

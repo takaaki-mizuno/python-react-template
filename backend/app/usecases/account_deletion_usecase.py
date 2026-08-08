@@ -7,6 +7,8 @@ from app.config.auth import AuthSettings
 from app.config.oidc import OidcSettings
 from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.authorization_repository_interface import \
+    AuthorizationRepositoryInterface
 from app.interfaces.services.sample_item_repository_interface import SampleItemRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.account_deletion_usecase_interface import \
@@ -28,6 +30,7 @@ class AccountDeletionUsecase(AccountDeletionUsecaseInterface):
     def __init__(
         self,
         auth_repository: AuthRepositoryInterface,
+        authorization_repository: AuthorizationRepositoryInterface,
         sample_item_repository: SampleItemRepositoryInterface,
         unit_of_work: UnitOfWorkInterface,
         auth_rate_limiter: LoginRateLimiterInterface,
@@ -36,6 +39,7 @@ class AccountDeletionUsecase(AccountDeletionUsecaseInterface):
         password_hash_executor: PasswordHashExecutor,
     ) -> None:
         self._auth_repository = auth_repository
+        self._authorization_repository = authorization_repository
         self._sample_item_repository = sample_item_repository
         self._unit_of_work = unit_of_work
         self._auth_rate_limiter = auth_rate_limiter
@@ -88,6 +92,7 @@ class AccountDeletionUsecase(AccountDeletionUsecaseInterface):
         deleted_at = utcnow()
         async with self._unit_of_work.transaction():
             await self._sample_item_repository.delete_all_for_owner(auth_context.user.id)
+            await self._authorization_repository.delete_roles_for_user(auth_context.user.id)
             await self._auth_repository.delete_auth_identities_for_user(auth_context.user.id)
             await self._auth_repository.mark_user_deleted(
                 auth_context.user.id,

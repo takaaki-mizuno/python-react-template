@@ -10,23 +10,28 @@ from app.config.auth import AuthSettings, get_auth_settings
 from app.config.oidc import OidcSettings, get_oidc_settings
 from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.authorization_repository_interface import \
+    AuthorizationRepositoryInterface
 from app.interfaces.services.oidc_provider_client_interface import OidcProviderClientInterface
 from app.interfaces.services.sample_item_repository_interface import SampleItemRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.account_deletion_usecase_interface import \
     AccountDeletionUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
+from app.interfaces.usecases.authorization_usecase_interface import AuthorizationUsecaseInterface
 from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecaseInterface
 from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsecaseInterface
 from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
 from app.libraries.database_engine import build_engine_and_session_factory
 from app.libraries.password_hasher import PasswordHashExecutor
 from app.services.auth_repository import AuthRepository
+from app.services.authorization_repository import AuthorizationRepository
 from app.services.oidc_provider_client import OidcProviderClient
 from app.services.sample_item_repository import SampleItemRepository
 from app.services.unit_of_work import UnitOfWork
 from app.usecases.account_deletion_usecase import AccountDeletionUsecase
 from app.usecases.auth_usecase import AuthUsecase
+from app.usecases.authorization_usecase import AuthorizationUsecase
 from app.usecases.oauth_oidc_usecase import OAuthOidcUsecase
 from app.usecases.sample_item_usecase import SampleItemUsecase
 
@@ -82,8 +87,10 @@ class AuthModule(Module):
     def configure(self, binder: Binder) -> None:
         binder.bind(UnitOfWorkInterface, to=UnitOfWork, scope=singleton)
         binder.bind(AuthRepositoryInterface, to=AuthRepository, scope=singleton)
+        binder.bind(AuthorizationRepositoryInterface, to=AuthorizationRepository, scope=singleton)
         binder.bind(OidcProviderClientInterface, to=OidcProviderClient, scope=singleton)
         binder.bind(AuthUsecaseInterface, to=AuthUsecase, scope=singleton)
+        binder.bind(AuthorizationUsecaseInterface, to=AuthorizationUsecase, scope=singleton)
         binder.bind(OAuthOidcUsecaseInterface, to=OAuthOidcUsecase, scope=singleton)
 
     @singleton

@@ -149,6 +149,8 @@ test.each([
     const authUser = {
       id: '00000000-0000-0000-0000-000000000001',
       email: 'user@example.com',
+      roles: [],
+      permissions: [],
     }
     const { queryClient } = renderWithRouter({
       initialEntries: ['/app/settings'],
@@ -199,6 +201,8 @@ test('/app/settings は Retry-After 付き account deletion 429 を retry-aware 
   const authUser = {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
+    roles: [],
+    permissions: [],
   }
   const { queryClient } = renderWithRouter({
     initialEntries: ['/app/settings'],
@@ -587,10 +591,17 @@ function authUserResponse(
     email: 'user@example.com',
   },
 ) {
-  return new Response(JSON.stringify(user), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
+  return new Response(
+    JSON.stringify({
+      roles: [],
+      permissions: [],
+      ...user,
+    }),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    },
+  )
 }
 
 function apiErrorResponse(

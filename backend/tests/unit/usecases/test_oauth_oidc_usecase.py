@@ -197,6 +197,20 @@ class AuthRepositoryStub:
         self.audit_logs.append((audit_log, self._unit_of_work.in_transaction))
 
 
+class AuthorizationRepositoryStub:
+
+    async def get_existing_user_authorization(self, user_id):
+        return type(
+            "Authorization",
+            (),
+            {
+                "user_id": user_id,
+                "roles": frozenset({"admin"}),
+                "permissions": frozenset({"admin:access"}),
+            },
+        )()
+
+
 class RateLimiterStub:
 
     def __init__(self, allowed: bool = True) -> None:
@@ -313,7 +327,12 @@ def _auth_context(email: str = "user@example.com") -> AuthenticatedSessionContex
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
     )
-    return AuthenticatedSessionContext(user=user, session=session)
+    return AuthenticatedSessionContext(
+        user=user,
+        session=session,
+        roles=frozenset(),
+        permissions=frozenset(),
+    )
 
 
 def _user(email: str = "user@example.com", *, password_hash: str | None = "hash") -> User:
@@ -386,6 +405,7 @@ def _usecase(
     provider_client = OidcProviderClientStub()
     usecase = OAuthOidcUsecase(
         auth_repository=repository,
+        authorization_repository=AuthorizationRepositoryStub(),
         unit_of_work=unit_of_work,
         auth_rate_limiter=rate_limiter,
         auth_settings=AuthSettings(_env_file=None),

@@ -23,6 +23,8 @@ test('account deletion 成功時は logout と同じ cache policy を適用す�
   queryClient.setQueryData(queryKeys.auth.me, {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
+    roles: [],
+    permissions: [],
   })
   queryClient.setQueryData(['projects'], [{ id: 'project-1' }])
   const wrapper = ({ children }: { children: ReactNode }) => (

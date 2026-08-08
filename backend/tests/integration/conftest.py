@@ -53,6 +53,10 @@ async def _truncate_auth_tables(connection) -> None:
         "auth_identities",
         "auth_audit_logs",
         "auth_sessions",
+        "role_permissions",
+        "user_roles",
+        "permissions",
+        "roles",
         "users",
     ]
     existing_tables = []

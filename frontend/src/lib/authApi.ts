@@ -7,6 +7,8 @@ import { queryKeys } from './queryKeys'
 export type AuthUser = {
   id: string
   email: string
+  roles: Array<string>
+  permissions: Array<string>
 }
 
 export type LoginPayload = {

@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable, Iterable
 from logging import Logger
 
 from fastapi import Depends, Request
@@ -44,3 +45,33 @@ async def require_current_session(
     if auth_context is None:
         raise api_error(401, "UNAUTHORIZED", "Unauthorized")
     return auth_context
+
+
+AuthDependency = Callable[..., Awaitable[AuthenticatedSessionContext]]
+
+
+def require_permission(permission_code: str) -> AuthDependency:
+
+    async def dependency(
+        auth_context: AuthenticatedSessionContext = Depends(require_current_session),
+    ) -> AuthenticatedSessionContext:
+        if permission_code not in auth_context.permissions:
+            raise api_error(403, "PERMISSION_DENIED", "Permission denied")
+        return auth_context
+
+    return dependency
+
+
+def require_any_permission(permission_codes: Iterable[str]) -> AuthDependency:
+    required_permissions = frozenset(permission_codes)
+    if not required_permissions:
+        raise ValueError("permission_codes must not be empty")
+
+    async def dependency(
+        auth_context: AuthenticatedSessionContext = Depends(require_current_session),
+    ) -> AuthenticatedSessionContext:
+        if not auth_context.permissions.intersection(required_permissions):
+            raise api_error(403, "PERMISSION_DENIED", "Permission denied")
+        return auth_context
+
+    return dependency

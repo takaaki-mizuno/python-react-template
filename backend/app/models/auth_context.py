@@ -8,6 +8,8 @@ from app.models.user import User
 class AuthenticatedSessionContext:
     user: User
     session: AuthSession
+    roles: frozenset[str]
+    permissions: frozenset[str]
 
 
 @dataclass(slots=True)
@@ -16,3 +18,5 @@ class IssuedAuthSession:
     session: AuthSession
     session_token: str
     csrf_token: str
+    roles: frozenset[str]
+    permissions: frozenset[str]

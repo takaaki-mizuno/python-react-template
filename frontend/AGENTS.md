@@ -98,6 +98,9 @@ npm install -D <pkg>   # devDependencies
 
 - API error の画面表示は `src/lib/apiError.ts` の `toUserMessage()` を使い、各画面で `ApiError.body` を直接 parse しない
 - unsafe request は `src/lib/apiClient.ts` を使い、個別 component / route から `/api/auth/csrf` を直接 fetch しない
+- `AuthUser.roles` / `AuthUser.permissions` は UI 表示制御と route guard 用であり、セキュリティ境界ではない。権限が必要な Backend endpoint は必ず Backend 側の permission dependency で守る
+- permission 判定は `src/lib/permissions.ts` を使う。protected route では `_authenticated` parent の `requireAuth()` が `/api/auth/me` を server-confirming fetch した後、子 route の permission guard は `ensureQueryData(currentUserQueryOptions())` で同じ cache を読む
+- 新しい file-based route を追加した場合は `src/routeTree.gen.ts` を再生成し、差分に含める
 - login/register form は `AuthTextField` / `AuthFormShell` / `Button` / `Input` を使い、field の label・autocomplete・aria 紐付けを共通部品へ寄せる
 - destructive account operations は typed confirmation と `toUserMessage()` による日本語 error message を使う。account deletion の確認 email field は誤操作防止のため `autoComplete="off"` にし、削除 error 表示時は error code に対応する field だけへ `aria-invalid` を立てる。429 や CSRF など field に紐づかない error では input を invalid にしない。account deletion success は `/login?redirect=/app` ではなく `/` へ遷移する
 - auth form feedback は field-specific error と form-level error を区別する。field-specific error は該当 field だけに `aria-invalid` を立て、表示する alert の id を `aria-describedby` で関連付ける。無関係な field を invalid にしない

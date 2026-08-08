@@ -154,6 +154,20 @@ class AuthRepositoryStub:
             (auth_session, ip_address, user_agent, replayed_at, window_seconds))
 
 
+class AuthorizationRepositoryStub:
+
+    async def get_existing_user_authorization(self, user_id):
+        return type(
+            "Authorization",
+            (),
+            {
+                "user_id": user_id,
+                "roles": frozenset({"admin"}),
+                "permissions": frozenset({"admin:access"}),
+            },
+        )()
+
+
 class CsrfSessionRepository(AuthRepositoryStub):
 
     def __init__(self, active_session: AuthSession | None) -> None:
@@ -284,6 +298,7 @@ def _usecase(
 ) -> AuthUsecase:
     return AuthUsecase(
         auth_repository=repository,
+        authorization_repository=AuthorizationRepositoryStub(),
         unit_of_work=unit_of_work or UnitOfWorkStub(),
         auth_rate_limiter=rate_limiter or AllowingRateLimiter(),
         auth_settings=auth_settings or AuthSettings(_env_file=None),

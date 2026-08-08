@@ -75,6 +75,8 @@ test('login 成功後は正規化済み redirect 先へ遷移し auth cache を�
   const user = {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
+    roles: ['admin'],
+    permissions: ['admin:access'],
   }
   let loginSucceeded = false
   vi.stubGlobal(
@@ -282,6 +284,8 @@ test('ログイン済みユーザーが /login を開くと redirect 先へ送�
           JSON.stringify({
             id: '00000000-0000-0000-0000-000000000001',
             email: 'user@example.com',
+            roles: [],
+            permissions: [],
           }),
           {
             status: 200,

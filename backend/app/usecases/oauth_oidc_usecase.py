@@ -11,6 +11,8 @@ from app.config.auth import AuthSettings
 from app.config.oidc import OidcProviderSettings, OidcSettings
 from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.authorization_repository_interface import \
+    AuthorizationRepositoryInterface
 from app.interfaces.services.oidc_provider_client_interface import OidcProviderClientInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecaseInterface
@@ -47,6 +49,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
     def __init__(
         self,
         auth_repository: AuthRepositoryInterface,
+        authorization_repository: AuthorizationRepositoryInterface,
         unit_of_work: UnitOfWorkInterface,
         auth_rate_limiter: LoginRateLimiterInterface,
         auth_settings: AuthSettings,
@@ -54,6 +57,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
         oidc_provider_client: OidcProviderClientInterface,
     ) -> None:
         self._auth_repository = auth_repository
+        self._authorization_repository = authorization_repository
         self._unit_of_work = unit_of_work
         self._auth_rate_limiter = auth_rate_limiter
         self._auth_settings = auth_settings
@@ -337,6 +341,8 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
                     ip_address,
                     user_agent,
                 ))
+        authorization = await self._authorization_repository.get_existing_user_authorization(user.id
+                                                                                             )
         return OidcCallbackResult(
             redirect_path=oidc_state.redirect_path,
             issued_session=IssuedAuthSession(
@@ -344,6 +350,8 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
                 session=session,
                 session_token=session_token,
                 csrf_token=csrf_token,
+                roles=authorization.roles,
+                permissions=authorization.permissions,
             ),
         )
 

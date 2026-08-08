@@ -116,6 +116,12 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 
 - `DATABASE_URL` が DB 接続設定の正であり、Alembic もここから async URL を導出する。`ALEMBIC_DATABASE_URL` は使わない
 - `users.is_active` は凍結・停止を表し、`users.deleted_at` は退会または論理削除を表す
+- アプリケーション認可は `roles` / `permissions` / `user_roles` / `role_permissions` による RBAC を使う。endpoint は role ではなく permission code で守り、`admin` role は `admin:access` permission を含む初期 role として扱う
+- `GET /api/auth/me`、password login、register、OIDC login は `roles` / `permissions` を返す。public response は安定順に sort する
+- `require_permission()` / `require_any_permission()` は Backend の認可境界である。Frontend の roles / permissions は表示制御と route guard 用であり、Backend の permission dependency を省略してはいけない
+- `PUT /api/admin/users/{user_id}/roles` は unsafe `/api` request として CSRF middleware の対象にする。個別 CSRF dependency や CSRF exempt path は追加しない
+- inactive user は role 管理 API / `authz-grant-role` CLI の対象に含める。deleted user は `USER_NOT_FOUND` として扱う
+- `authz-sync` は default authorization definitions を 1 transaction で同期し、既存 user へ role を自動付与しない。初期 admin 付与や復旧は `authz-grant-role --email <email> --role admin` を使う
 - 通常の active user query は必ず `deleted_at IS NULL` を含める。削除済み user を観測してよい lookup は `find_user_by_id_for_authentication()` のように用途名で明示する
 - 削除済み user は login、`/api/auth/me`、session authentication で認証不可。session authentication で deleted / inactive user を観測した場合は、その user の全 active sessions を `revoke_sessions_for_user()` で revoke し、観測 request / session に対して専用 audit event を 1 件だけ残す。missing user は user id の正当性を保証できないため、従来どおり観測 session だけを revoke する
 - `uq_users_email_lower_active` は `deleted_at IS NULL` の partial unique index であり、削除済み user の email は再登録可能。active user 同士の重複は DB が拒否する

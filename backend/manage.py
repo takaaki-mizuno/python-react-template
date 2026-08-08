@@ -12,8 +12,16 @@ from sqlalchemy.engine import make_url
 
 from app.bootstrap.cli import run_with_container
 from app.config import get_config
+from app.config.authorization import (DEFAULT_AUTHORIZATION_DEFINITIONS,
+                                      DEFAULT_AUTHORIZATION_PERMISSIONS)
 from app.config.database import DatabaseSettings, get_alembic_database_url, get_database_settings
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.authorization_repository_interface import \
+    AuthorizationRepositoryInterface
+from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
+from app.models.auth_audit_log import AuthAuditLog
+from app.models.auth_event_type import AuthEventType
+from app.models.authorization_errors import RoleNotFoundError
 
 app = typer.Typer()
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -150,6 +158,82 @@ def db_prune_auth(
             typer.echo(f"Deleted OIDC authorization states: {deleted_oidc_states}")
 
     asyncio.run(run_with_container(operation))
+
+
+@app.command("authz-sync")
+def authz_sync() -> None:
+    _get_explicit_database_settings("authz-sync")
+
+    async def operation(container: Injector) -> None:
+        repository = container.get(AuthorizationRepositoryInterface)
+        unit_of_work = container.get(UnitOfWorkInterface)
+        async with unit_of_work.transaction():
+            await _sync_default_authorization(repository)
+        typer.echo("Authorization definitions synced.")
+
+    asyncio.run(run_with_container(operation))
+
+
+@app.command("authz-grant-role")
+def authz_grant_role(
+    email: Annotated[str, typer.Option("--email", help="Target user email.")],
+    role: Annotated[str, typer.Option("--role", help="Role code to grant.")],
+) -> None:
+    _get_explicit_database_settings("authz-grant-role")
+
+    async def operation(container: Injector) -> None:
+        auth_repository = container.get(AuthRepositoryInterface)
+        authorization_repository = container.get(AuthorizationRepositoryInterface)
+        unit_of_work = container.get(UnitOfWorkInterface)
+        normalized_email = email.strip().lower()
+        async with unit_of_work.transaction():
+            user = await auth_repository.find_user_by_email(normalized_email)
+            if user is None:
+                typer.secho("User not found.", err=True, fg=typer.colors.RED)
+                raise typer.Exit(code=1)
+            authorization = await authorization_repository.get_user_authorization(user.id)
+            existing_roles = authorization.roles if authorization is not None else frozenset()
+            try:
+                result = await authorization_repository.replace_user_roles(
+                    user.id,
+                    tuple(sorted(existing_roles | frozenset({role}))),
+                    assigned_by_user_id=None,
+                )
+            except RoleNotFoundError as exc:
+                typer.secho(
+                    f"Role not found: {', '.join(sorted(exc.role_codes))}",
+                    err=True,
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(code=1) from exc
+            for granted_role_code in result.granted_role_codes:
+                await auth_repository.create_audit_log(
+                    AuthAuditLog(
+                        user_id=None,
+                        session_id=None,
+                        event_type=AuthEventType.ROLE_GRANTED,
+                        ip_address=None,
+                        user_agent=None,
+                        detail_json={
+                            "source": "cli",
+                            "actorUserId": None,
+                            "targetUserId": str(user.id),
+                            "roleCode": granted_role_code,
+                            "resultingRoles": list(result.current_role_codes),
+                        },
+                    ))
+        typer.echo(f"Granted role {role} to {normalized_email}.")
+
+    asyncio.run(run_with_container(operation))
+
+
+async def _sync_default_authorization(repository: AuthorizationRepositoryInterface, ) -> None:
+    for permission in DEFAULT_AUTHORIZATION_PERMISSIONS:
+        await repository.upsert_permission_definition(permission)
+    for role in DEFAULT_AUTHORIZATION_DEFINITIONS:
+        await repository.upsert_role_definition(role)
+    for role in DEFAULT_AUTHORIZATION_DEFINITIONS:
+        await repository.replace_role_permissions(role.code, role.permission_codes)
 
 
 def _parse_cli_datetime(value: str | None, option_name: str) -> datetime | None:

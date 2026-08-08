@@ -8,6 +8,8 @@ from injector import inject
 from app.config.auth import AuthSettings
 from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
+from app.interfaces.services.authorization_repository_interface import \
+    AuthorizationRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.libraries.auth_session_issuer import calculate_session_expiry, replace_auth_session
@@ -33,6 +35,7 @@ class AuthUsecase(AuthUsecaseInterface):
     def __init__(
         self,
         auth_repository: AuthRepositoryInterface,
+        authorization_repository: AuthorizationRepositoryInterface,
         unit_of_work: UnitOfWorkInterface,
         auth_rate_limiter: LoginRateLimiterInterface,
         auth_settings: AuthSettings,
@@ -40,6 +43,7 @@ class AuthUsecase(AuthUsecaseInterface):
         logger: Logger,
     ) -> None:
         self._auth_repository = auth_repository
+        self._authorization_repository = authorization_repository
         self._unit_of_work = unit_of_work
         self._auth_rate_limiter = auth_rate_limiter
         self._auth_settings = auth_settings
@@ -188,6 +192,8 @@ class AuthUsecase(AuthUsecaseInterface):
             session=session,
             session_token=session_token,
             csrf_token=csrf_token,
+            roles=frozenset(),
+            permissions=frozenset(),
         )
 
     async def login(
@@ -242,11 +248,15 @@ class AuthUsecase(AuthUsecaseInterface):
                     user_agent=user_agent,
                 ))
         self._auth_rate_limiter.record_success(rate_limit_ip, normalized_email)
+        authorization = await self._authorization_repository.get_existing_user_authorization(user.id
+                                                                                             )
         return IssuedAuthSession(
             user=user,
             session=session,
             session_token=session_token,
             csrf_token=csrf_token,
+            roles=authorization.roles,
+            permissions=authorization.permissions,
         )
 
     async def authenticate_session(
@@ -319,7 +329,14 @@ class AuthUsecase(AuthUsecaseInterface):
                     expires_at=calculate_session_expiry(self._auth_settings, auth_session.issued_at,
                                                         now),
                 )
-            return AuthenticatedSessionContext(user=user, session=refreshed_session)
+            authorization = await self._authorization_repository.get_existing_user_authorization(
+                user.id)
+            return AuthenticatedSessionContext(
+                user=user,
+                session=refreshed_session,
+                roles=authorization.roles,
+                permissions=authorization.permissions,
+            )
 
     async def _reject_session(
         self,
