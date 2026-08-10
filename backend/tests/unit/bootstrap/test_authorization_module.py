@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from injector import Injector
 
-from app.bootstrap.modules import AuthModule, DatabaseModule
+from app.bootstrap.modules import AuthModule, CoreModule, DatabaseModule
 from app.bootstrap.route import setup_routes
 from app.interfaces.services.authorization_repository_interface import \
     AuthorizationRepositoryInterface
@@ -31,7 +31,7 @@ def test_auth_module_binds_authorization_repository_and_usecase() -> None:
 
 
 def test_auth_module_resolves_authorization_usecase_from_container() -> None:
-    injector = Injector([DatabaseModule(), AuthModule()])
+    injector = Injector([CoreModule(), DatabaseModule(), AuthModule()])
 
     assert isinstance(
         injector.get(AuthorizationRepositoryInterface),

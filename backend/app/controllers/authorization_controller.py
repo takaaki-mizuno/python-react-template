@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.bootstrap.dependencies import inject
 from app.bootstrap.error_handlers import api_error
 from app.config.auth import AuthSettings
+from app.config.authorization import permissions_for_role_codes
 from app.controllers.auth_dependencies import (get_auth_settings, get_client_ip, get_user_agent,
                                                require_permission)
 from app.interfaces.usecases.authorization_usecase_interface import AuthorizationUsecaseInterface
@@ -127,7 +128,7 @@ def _user_role_replace_response(result: UserRoleReplacementResult) -> UserRoleRe
     return UserRoleReplaceResponse(
         user_id=result.user_id,
         roles=list(result.current_role_codes),
-        permissions=list(result.current_permission_codes),
+        permissions=sorted(permissions_for_role_codes(result.current_role_codes)),
         granted_roles=list(result.granted_role_codes),
         revoked_roles=list(result.revoked_role_codes),
     )

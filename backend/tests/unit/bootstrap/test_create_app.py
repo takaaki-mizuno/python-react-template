@@ -151,6 +151,21 @@ def test_create_app_fails_fast_when_auth_settings_are_invalid(monkeypatch):
         create_app_module.create_app()
 
 
+def test_create_app_fails_fast_when_authorization_config_is_invalid(monkeypatch):
+    monkeypatch.setattr(
+        create_app_module,
+        "authorization_config_errors",
+        lambda: ["Role admin references unknown permissions: missing"],
+    )
+
+    with pytest.raises(
+            RuntimeError,
+            match=
+            "Authorization config is invalid: Role admin references unknown permissions: missing",
+    ):
+        create_app_module.create_app()
+
+
 def test_create_app_falls_back_for_invalid_log_level(monkeypatch, caplog):
     logging.getLogger().setLevel(logging.WARNING)
     logging.getLogger("app").setLevel(logging.NOTSET)

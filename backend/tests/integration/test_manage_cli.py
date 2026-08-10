@@ -43,25 +43,17 @@ def test_db_prune_auth_runs_with_application_container_and_unit_of_work(
     assert "Deleted OIDC authorization states:" in result.stdout
 
 
-def test_authz_sync_creates_default_authorization_definitions(monkeypatch, ):
-    monkeypatch.setenv("DATABASE_URL", require_test_database_url())
+def test_authz_check_config_runs_without_database(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
-    result = CliRunner().invoke(manage.app, ["authz-sync"])
+    result = CliRunner().invoke(manage.app, ["authz-check-config"])
 
     assert result.exit_code == 0
-    assert "Authorization definitions synced." in result.stdout
-    role_codes = _fetch_scalars("SELECT code FROM roles ORDER BY code")
-    permission_codes = _fetch_scalars("SELECT code FROM permissions ORDER BY code")
-    role_permission_count = _fetch_scalar("SELECT count(*) FROM role_permissions")
-    assert role_codes == ["admin"]
-    assert permission_codes == ["admin:access"]
-    assert role_permission_count == 1
+    assert "Authorization config is valid." in result.stdout
 
 
 def test_authz_grant_role_grants_inactive_user_and_records_audit(monkeypatch, ):
     monkeypatch.setenv("DATABASE_URL", require_test_database_url())
-    sync_result = CliRunner().invoke(manage.app, ["authz-sync"])
-    assert sync_result.exit_code == 0
     user = _create_inactive_user("inactive-cli@example.com")
 
     result = CliRunner().invoke(
@@ -71,8 +63,7 @@ def test_authz_grant_role_grants_inactive_user_and_records_audit(monkeypatch, ):
 
     assert result.exit_code == 0
     assigned_roles = _fetch_scalars(
-        "SELECT roles.code FROM user_roles "
-        "JOIN roles ON roles.id = user_roles.role_id "
+        "SELECT role_code FROM user_roles "
         "WHERE user_roles.user_id = :user_id",
         {"user_id": user.id},
     )
@@ -84,6 +75,64 @@ def test_authz_grant_role_grants_inactive_user_and_records_audit(monkeypatch, ):
     assert audit_detail["source"] == "cli"
     assert audit_detail["targetUserId"] == str(user.id)
     assert audit_detail["roleCode"] == "admin"
+
+
+def test_authz_check_assignments_reports_unknown_roles(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", require_test_database_url())
+    user = _create_inactive_user("unknown-assignment@example.com")
+    _insert_role_assignment(user.id, "deleted-role")
+
+    result = CliRunner().invoke(manage.app, ["authz-check-assignments"])
+
+    assert result.exit_code == 1
+    assert "Unknown role assignments found." in result.stderr
+    assert "deleted-role" in result.stderr
+
+
+def test_authz_prune_unknown_role_assignments_requires_yes_and_preserves_rows(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", require_test_database_url())
+    user = _create_inactive_user("prune-requires-yes@example.com")
+    _insert_role_assignment(user.id, "deleted-role")
+
+    result = CliRunner().invoke(manage.app, ["authz-prune-unknown-role-assignments"])
+    assigned_roles = _fetch_scalars(
+        "SELECT role_code FROM user_roles WHERE user_id = :user_id",
+        {"user_id": user.id},
+    )
+
+    assert result.exit_code == 1
+    assert "Pass --yes" in result.stderr
+    assert assigned_roles == ["deleted-role"]
+
+
+def test_authz_prune_unknown_role_assignments_deletes_unknown_and_audits(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", require_test_database_url())
+    known_user = _create_inactive_user("known-prune@example.com")
+    unknown_user = _create_inactive_user("unknown-prune@example.com")
+    _insert_role_assignment(known_user.id, "admin")
+    _insert_role_assignment(unknown_user.id, "deleted-role")
+
+    result = CliRunner().invoke(manage.app, ["authz-prune-unknown-role-assignments", "--yes"])
+
+    known_roles = _fetch_scalars(
+        "SELECT role_code FROM user_roles WHERE user_id = :user_id",
+        {"user_id": known_user.id},
+    )
+    unknown_roles = _fetch_scalars(
+        "SELECT role_code FROM user_roles WHERE user_id = :user_id",
+        {"user_id": unknown_user.id},
+    )
+    audit_detail = _fetch_scalar(
+        "SELECT detail_json FROM auth_audit_logs WHERE event_type = :event_type",
+        {"event_type": AuthEventType.ROLE_REVOKED},
+    )
+    assert result.exit_code == 0
+    assert "Deleted 1 unknown role assignment(s)." in result.stdout
+    assert known_roles == ["admin"]
+    assert unknown_roles == []
+    assert audit_detail["source"] == "cli-prune"
+    assert audit_detail["targetUserId"] == str(unknown_user.id)
+    assert audit_detail["roleCode"] == "deleted-role"
 
 
 def _fetch_scalars(statement: str, params: dict | None = None):
@@ -116,6 +165,24 @@ def _create_inactive_user(email: str) -> User:
         return user
 
     return asyncio.run(_run_db(operation))
+
+
+def _insert_role_assignment(user_id, role_code: str) -> None:
+
+    async def operation(session: AsyncSession):
+        await session.execute(
+            text("""
+                INSERT INTO user_roles (user_id, role_code, assigned_at, assigned_by_user_id)
+                VALUES (:user_id, :role_code, now(), NULL)
+            """),
+            {
+                "user_id": user_id,
+                "role_code": role_code,
+            },
+        )
+        await session.commit()
+
+    asyncio.run(_run_db(operation))
 
 
 async def _run_db(operation: Callable[[AsyncSession], Awaitable]):

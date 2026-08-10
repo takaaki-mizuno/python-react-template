@@ -6,6 +6,7 @@ from uuid import UUID
 from injector import inject
 
 from app.config.auth import AuthSettings
+from app.config.authorization import resolve_user_authorization
 from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.authorization_repository_interface import \
@@ -23,6 +24,7 @@ from app.models.auth_errors import (EmailAlreadyRegisteredError, InvalidCredenti
                                     RateLimitExceededError, WeakPasswordError)
 from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
+from app.models.authorization import UserAuthorization
 
 DUMMY_PASSWORD_HASH = ("$argon2id$v=19$m=65536,t=3,p=4$TO8J42R39QBv7pem26bDUQ"
                        "$TsSlSgdcZ3mv06Gl9wQ7WaBhED0WIbQhcLhG35aHQd4")
@@ -248,8 +250,7 @@ class AuthUsecase(AuthUsecaseInterface):
                     user_agent=user_agent,
                 ))
         self._auth_rate_limiter.record_success(rate_limit_ip, normalized_email)
-        authorization = await self._authorization_repository.get_existing_user_authorization(user.id
-                                                                                             )
+        authorization = await self._authorization_for_existing_user(user.id)
         return IssuedAuthSession(
             user=user,
             session=session,
@@ -329,14 +330,17 @@ class AuthUsecase(AuthUsecaseInterface):
                     expires_at=calculate_session_expiry(self._auth_settings, auth_session.issued_at,
                                                         now),
                 )
-            authorization = await self._authorization_repository.get_existing_user_authorization(
-                user.id)
+            authorization = await self._authorization_for_existing_user(user.id)
             return AuthenticatedSessionContext(
                 user=user,
                 session=refreshed_session,
                 roles=authorization.roles,
                 permissions=authorization.permissions,
             )
+
+    async def _authorization_for_existing_user(self, user_id: UUID) -> UserAuthorization:
+        role_codes = await self._authorization_repository.get_user_role_codes(user_id)
+        return resolve_user_authorization(user_id, role_codes, self._logger)
 
     async def _reject_session(
         self,

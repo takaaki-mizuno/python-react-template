@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from logging import getLogger
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,7 +12,7 @@ from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
 from app.models.authorization import UserAuthorization, UserRoleReplacementResult
-from app.models.authorization_errors import AuthorizationUserNotFoundError
+from app.models.authorization_errors import AuthorizationUserNotFoundError, RoleNotFoundError
 from app.models.user import User
 from app.usecases.authorization_usecase import AuthorizationUsecase
 
@@ -50,22 +51,10 @@ class AuthorizationRepositoryStub:
     def __init__(self, result: UserRoleReplacementResult | None = None) -> None:
         self.result = result
         self.replace_calls: list[tuple[UUID, tuple[str, ...], UUID | None]] = []
-        self.authorization: UserAuthorization | None = None
+        self.role_codes: tuple[str, ...] = ()
 
-    async def list_roles_with_permissions(self):
-        return []
-
-    async def list_permissions(self):
-        return []
-
-    async def get_user_authorization(self, user_id: UUID):
-        if self.authorization is None:
-            return None
-        return UserAuthorization(
-            user_id=user_id,
-            roles=self.authorization.roles,
-            permissions=self.authorization.permissions,
-        )
+    async def get_user_role_codes(self, _user_id: UUID) -> tuple[str, ...]:
+        return self.role_codes
 
     async def replace_user_roles(
         self,
@@ -79,7 +68,6 @@ class AuthorizationRepositoryStub:
             granted_role_codes=(),
             revoked_role_codes=(),
             current_role_codes=role_codes,
-            current_permission_codes=(),
         )
 
 
@@ -95,12 +83,16 @@ async def test_replace_user_roles_allows_inactive_user_and_records_audit() -> No
         granted_role_codes=("admin", ),
         revoked_role_codes=("viewer", ),
         current_role_codes=("admin", ),
-        current_permission_codes=("admin:access", ),
     )
     auth_repository = AuthRepositoryStub(target_user)
     authorization_repository = AuthorizationRepositoryStub(result)
     unit_of_work = UnitOfWorkStub()
-    usecase = AuthorizationUsecase(auth_repository, authorization_repository, unit_of_work)
+    usecase = AuthorizationUsecase(
+        auth_repository,
+        authorization_repository,
+        unit_of_work,
+        getLogger(__name__),
+    )
 
     actual = await usecase.replace_user_roles(
         actor_context,
@@ -123,6 +115,23 @@ async def test_replace_user_roles_allows_inactive_user_and_records_audit() -> No
 
 
 @pytest.mark.asyncio
+async def test_list_roles_and_permissions_return_code_catalog() -> None:
+    usecase = AuthorizationUsecase(
+        AuthRepositoryStub(User(email="target@example.com", password_hash="hash")),
+        AuthorizationRepositoryStub(),
+        UnitOfWorkStub(),
+        getLogger(__name__),
+    )
+
+    roles = await usecase.list_roles()
+    permissions = await usecase.list_permissions()
+
+    assert [role.code for role in roles] == ["admin"]
+    assert roles[0].permissions == ("admin:access", )
+    assert [permission.code for permission in permissions] == ["admin:access"]
+
+
+@pytest.mark.asyncio
 async def test_replace_user_roles_rejects_deleted_user() -> None:
     target_user = User(id=uuid4(), email="target@example.com", password_hash="hash")
     target_user.deleted_at = utcnow()
@@ -130,6 +139,7 @@ async def test_replace_user_roles_rejects_deleted_user() -> None:
         AuthRepositoryStub(target_user),
         AuthorizationRepositoryStub(),
         UnitOfWorkStub(),
+        getLogger(__name__),
     )
 
     with pytest.raises(AuthorizationUserNotFoundError):
@@ -140,6 +150,53 @@ async def test_replace_user_roles_rejects_deleted_user() -> None:
             ip_address=None,
             user_agent=None,
         )
+
+
+@pytest.mark.asyncio
+async def test_replace_user_roles_rejects_unknown_role_before_transaction() -> None:
+    auth_repository = AuthRepositoryStub(User(email="target@example.com", password_hash="hash"))
+    authorization_repository = AuthorizationRepositoryStub()
+    unit_of_work = UnitOfWorkStub()
+    usecase = AuthorizationUsecase(
+        auth_repository,
+        authorization_repository,
+        unit_of_work,
+        getLogger(__name__),
+    )
+
+    with pytest.raises(RoleNotFoundError) as exc_info:
+        await usecase.replace_user_roles(
+            _context("admin@example.com"),
+            uuid4(),
+            ("missing", ),
+            ip_address=None,
+            user_agent=None,
+        )
+
+    assert exc_info.value.role_codes == frozenset({"missing"})
+    assert unit_of_work.transaction_entries == 0
+
+
+@pytest.mark.asyncio
+async def test_get_user_authorization_filters_unknown_roles(caplog) -> None:
+    target_user = User(id=uuid4(), email="target@example.com", password_hash="hash")
+    authorization_repository = AuthorizationRepositoryStub()
+    authorization_repository.role_codes = ("admin", "missing")
+    usecase = AuthorizationUsecase(
+        AuthRepositoryStub(target_user),
+        authorization_repository,
+        UnitOfWorkStub(),
+        getLogger(__name__),
+    )
+
+    authorization = await usecase.get_user_authorization(target_user.id)
+
+    assert authorization == UserAuthorization(
+        user_id=target_user.id,
+        roles=frozenset({"admin"}),
+        permissions=frozenset({"admin:access"}),
+    )
+    assert "Unknown authorization role codes ignored" in caplog.text
 
 
 def _context(email: str) -> AuthenticatedSessionContext:

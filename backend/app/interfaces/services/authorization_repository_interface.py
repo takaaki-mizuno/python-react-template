@@ -1,42 +1,24 @@
 from abc import ABCMeta, abstractmethod
 from uuid import UUID
 
-from app.models.authorization import (PermissionDefinition, RoleDefinition, RoleWithPermissions,
-                                      UserAuthorization, UserRoleReplacementResult)
+from app.models.authorization import UnknownRoleAssignment, UserRoleReplacementResult
 
 
 class AuthorizationRepositoryInterface(metaclass=ABCMeta):
 
     @abstractmethod
-    async def upsert_permission_definition(self, definition: PermissionDefinition) -> None:
+    async def get_user_role_codes(self, user_id: UUID) -> tuple[str, ...]:
         raise NotImplementedError
 
     @abstractmethod
-    async def upsert_role_definition(self, definition: RoleDefinition) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def replace_role_permissions(
+    async def list_unknown_role_assignments(
         self,
-        role_code: str,
-        permission_codes: tuple[str, ...],
-    ) -> None:
+        known_role_codes: frozenset[str],
+    ) -> tuple[UnknownRoleAssignment, ...]:
         raise NotImplementedError
 
     @abstractmethod
-    async def list_roles_with_permissions(self) -> list[RoleWithPermissions]:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def list_permissions(self) -> list[PermissionDefinition]:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def get_user_authorization(self, user_id: UUID) -> UserAuthorization | None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def get_existing_user_authorization(self, user_id: UUID) -> UserAuthorization:
+    async def delete_unknown_role_assignments(self, known_role_codes: frozenset[str]) -> int:
         raise NotImplementedError
 
     @abstractmethod

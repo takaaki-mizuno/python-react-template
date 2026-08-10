@@ -160,7 +160,7 @@ Frontend は Vite dev server で起動しています。画面から `/api/...` 
 
 ## 7. 停止する
 
-コンテナを停止します。DB データは Docker volume に残ります。
+コンテナを停止します。DB データは `docker/postgres/data/` に残ります。
 
 ```bash
 docker compose down
@@ -176,12 +176,15 @@ docker compose up -d postgres backend frontend
 
 登録ユーザーや DB データも消して初期状態からやり直したい場合だけ実行します。
 
+PostgreSQL データは bind mount された `docker/postgres/data/` にあります。DB も初期化する場合は、停止後にこのディレクトリを削除してください。
+
 ```bash
-docker compose down -v
+docker compose down
+rm -rf docker/postgres/data
 docker compose up -d --build postgres backend frontend
 ```
 
-`docker compose down -v` は PostgreSQL の volume も削除します。ローカルで必要なデータがある場合は実行しないでください。
+ローカルで必要なデータがある場合は `docker/postgres/data/` を削除しないでください。
 
 ## Port がすでに使われている場合
 
@@ -270,10 +273,11 @@ docker compose build backend frontend
 docker compose up -d postgres backend frontend
 ```
 
-それでも解決しない場合は、DB データを消してよいか確認してから volume を削除します。
+それでも解決しない場合は、DB データを消してよいか確認してから `docker/postgres/data/` を削除します。
 
 ```bash
-docker compose down -v
+docker compose down
+rm -rf docker/postgres/data
 docker compose up -d --build postgres backend frontend
 ```
 

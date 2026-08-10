@@ -68,7 +68,6 @@ class AuthorizationUsecaseStub:
             granted_role_codes=("admin", ),
             revoked_role_codes=("viewer", ),
             current_role_codes=("admin", ),
-            current_permission_codes=("admin:access", ),
         )
 
 

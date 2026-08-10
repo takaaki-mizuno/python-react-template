@@ -156,16 +156,11 @@ class AuthRepositoryStub:
 
 class AuthorizationRepositoryStub:
 
-    async def get_existing_user_authorization(self, user_id):
-        return type(
-            "Authorization",
-            (),
-            {
-                "user_id": user_id,
-                "roles": frozenset({"admin"}),
-                "permissions": frozenset({"admin:access"}),
-            },
-        )()
+    def __init__(self) -> None:
+        self.role_codes = ("admin", )
+
+    async def get_user_role_codes(self, _user_id):
+        return self.role_codes
 
 
 class CsrfSessionRepository(AuthRepositoryStub):

@@ -73,10 +73,12 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 
 権限管理は RBAC を正とする。`users.is_active` は凍結・停止であり、管理者権限ではない。
 
-- DB table は `roles`、`permissions`、`user_roles`、`role_permissions`。
+詳細な設計意図と運用手順は `documents/references/rbac-authorization-operations.md` を参照する。
+
+- DB table は `user_roles` のみ。`roles`、`permissions`、`role_permissions` table は持たない。
 - role は permission の集合で、endpoint 保護は role ではなく permission code で行う。
-- 初期定義は `app/config/authorization.py` の `DEFAULT_AUTHORIZATION_PERMISSIONS` と `DEFAULT_AUTHORIZATION_DEFINITIONS` に置く。
-- 定義同期は `python manage.py authz-sync` で行う。operation 全体を `UnitOfWorkInterface.transaction()` に閉じ、途中失敗で部分適用しない。
+- role / permission catalog は `app/config/authorization.py` の `DEFAULT_AUTHORIZATION_PERMISSIONS` と `DEFAULT_AUTHORIZATION_DEFINITIONS` を正とする。
+- catalog 検査は `python manage.py authz-check-config` で行う。DB 上の orphan role assignment は `authz-check-assignments` で検出し、retired role の削除だけ `authz-prune-unknown-role-assignments --yes` を使う。
 - 復旧用 role 付与は `python manage.py authz-grant-role --email <email> --role <roleCode>` を使う。inactive user も対象に含め、deleted user は通常 user lookup で対象外にする。
 - `GET /api/auth/me` と login/register response は `roles: list[str]` と `permissions: list[str]` を返す。public response は安定順にする。
 - 認可の正は Backend の FastAPI dependency である。`require_permission("admin:access")` / `require_any_permission([...])` を使い、Frontend の表示制御だけを信頼しない。
@@ -98,7 +100,7 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 - Phase 6 の account deletion は既存 schema を使うため、新しい DB migration を作らない。
 - physical delete 時は sessions が CASCADE、audit logs の user/session 参照が SET NULL。
 - `AuthSession.issued_at` は absolute TTL 起点で、`created_at` は監査用の作成時刻。session touch 時の expiry 再計算に `created_at` を使わない。
-- Phase 5 migration `20260803_0003` の downgrade は destructive です。削除済み email を同じ DB で再登録済みの場合、旧 schema の global `lower(email)` unique index を復元できないため `Cannot downgrade 20260803_0003 after deleted email reuse` で停止します。重複 email がない場合でも、`users.deleted_at`、`auth_sessions.issued_at`、`auth_sessions.updated_at`、PostgreSQL `INET` 型への変更は rollback 時に失われます。
+- 初期 schema migration の downgrade は全 application table を削除します。共有環境や本番 DB では downgrade より forward fix を基本方針にしてください。
 - `ip_address` columns は PostgreSQL `INET`、Python model boundary は `str | None`。
 - auth repository は domain error を投げる。HTTP error envelope への変換は controller の責務。
 - `db-prune-auth` は古い audit log と `expires_at` が threshold より前の session を削除する CLI。CLI bootstrap は FastAPI app を作らず DI container を使い、最後に `AsyncEngine.dispose()` を呼ぶ。両 threshold 指定時は audit log、expired session の順に実行するが、repository 操作ごとに commit されるため、途中失敗時は部分成功になり得る。
@@ -106,7 +108,7 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 
 ### Large Auth Migration Playbook
 
-`20260803_0003` は fresh DB / template 初期導入 / small DB 向けには現 migration のまま維持する。既存派生プロジェクトで適用済みの Alembic revision を書き換える場合は、適用済み DB と未適用 DB の互換性を別計画で扱う。大規模 production DB へそのまま適用する前には、large auth migration として次を確認する。
+この template は未適用 migration chain を squash した単一の初期 schema revision を正とする。既存派生プロジェクトで適用済みの Alembic revision を書き換える場合は、適用済み DB と未適用 DB の互換性を別計画で扱う。大規模 production DB へ auth schema 変更を適用する前には、large auth migration として次を確認する。
 
 - 対象 row count: `auth_audit_logs`、`auth_sessions`、`users` の件数と、`ip_address IS NOT NULL` の件数を確認する。
 - Lock / rewrite risk: `ALTER COLUMN ... TYPE INET`、全行 `UPDATE`、`ALTER COLUMN ... SET NOT NULL`、index / FK 変更が maintenance window 内に収まるかを staging の production 相当データで測る。
@@ -138,7 +140,7 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 - `interfaces/usecases/sample_item_usecase_interface.py`
 - `usecases/sample_item_usecase.py`
 - `controllers/sample_controller.py`
-- `alembic/versions/20260802_0002_create_sample_items.py`
+- `alembic/versions/<revision>_create_<resource>.py`
 - `tests/unit/models/test_sample_item.py`
 - `tests/unit/services/test_sample_item_repository.py`
 - `tests/unit/usecases/test_sample_item_usecase.py`

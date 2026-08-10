@@ -1,5 +1,7 @@
 # RBAC 権限管理実装計画
 
+> Superseded: 2026-08-10 の `documents/plans/20260810-code-managed-authorization.md` により、DB catalog と `authz-sync` は廃止された。この計画は履歴として残す。
+
 > **Agentic worker 向け:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. タスクごとにチェックボックスを更新する。ユーザーから別途許可があるまで `git add` / `git commit` は行わない。
 
 **Goal:** ユーザーに `admin` などの role を付与でき、アプリごとに permission code を柔軟に増やせる認可基盤を追加する。

@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from logging import getLogger
 
 import pytest
 
@@ -199,16 +200,11 @@ class AuthRepositoryStub:
 
 class AuthorizationRepositoryStub:
 
-    async def get_existing_user_authorization(self, user_id):
-        return type(
-            "Authorization",
-            (),
-            {
-                "user_id": user_id,
-                "roles": frozenset({"admin"}),
-                "permissions": frozenset({"admin:access"}),
-            },
-        )()
+    def __init__(self) -> None:
+        self.role_codes = ("admin", )
+
+    async def get_user_role_codes(self, _user_id):
+        return self.role_codes
 
 
 class RateLimiterStub:
@@ -411,6 +407,7 @@ def _usecase(
         auth_settings=AuthSettings(_env_file=None),
         oidc_settings=oidc_settings or _oidc_settings(),
         oidc_provider_client=provider_client,
+        logger=getLogger(__name__),
     )
     return usecase, repository, rate_limiter, provider_client
 

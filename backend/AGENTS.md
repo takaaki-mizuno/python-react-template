@@ -86,7 +86,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - Alembic revision 生成は `DATABASE_URL=postgresql+asyncpg://... python manage.py db-revision --message "... " --autogenerate --rev-id YYYYMMDD_NNNN` を使い、`DATABASE_URL` を明示する
 - `db-revision --autogenerate` は DB が head であることを前提にする。生成後に timezone-aware column / expression index / JSONB / FK `ON DELETE` / server default を必ず手で確認する
 - 初期 revision を書き換える場合、既存 DB に残る旧 PK/FK 名は Alembic autogenerate / `db-check` だけでは検出できない。正典確認は fresh test DB を作り直して初期 migration から適用し、`pg_constraint` または targeted test で制約名を確認する
-- Phase 5 auth operational migration `20260803_0003` を大規模 production DB に適用する場合は、`documents/references/backend-app-structure.md` の large auth migration playbook を先に確認する。fresh DB / small DB では現 migration を維持し、大規模 DB では nullable shadow column、batch backfill、短時間 swap を別計画で扱う
+- この template は未適用 migration chain を squash した単一の初期 schema revision を正とする。既存派生プロジェクトで適用済み revision を書き換える場合は、適用済み DB と未適用 DB の互換性を別計画で扱う
 
 ## API 設計
 
@@ -116,12 +116,12 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 
 - `DATABASE_URL` が DB 接続設定の正であり、Alembic もここから async URL を導出する。`ALEMBIC_DATABASE_URL` は使わない
 - `users.is_active` は凍結・停止を表し、`users.deleted_at` は退会または論理削除を表す
-- アプリケーション認可は `roles` / `permissions` / `user_roles` / `role_permissions` による RBAC を使う。endpoint は role ではなく permission code で守り、`admin` role は `admin:access` permission を含む初期 role として扱う
+- アプリケーション認可は code-managed RBAC を使う。role / permission catalog は `app/config/authorization.py` を正とし、DB には `user_roles(user_id, role_code)` だけを保存する。endpoint は role ではなく permission code で守り、`admin` role は `admin:access` permission を含む初期 role として扱う
 - `GET /api/auth/me`、password login、register、OIDC login は `roles` / `permissions` を返す。public response は安定順に sort する
 - `require_permission()` / `require_any_permission()` は Backend の認可境界である。Frontend の roles / permissions は表示制御と route guard 用であり、Backend の permission dependency を省略してはいけない
 - `PUT /api/admin/users/{user_id}/roles` は unsafe `/api` request として CSRF middleware の対象にする。個別 CSRF dependency や CSRF exempt path は追加しない
 - inactive user は role 管理 API / `authz-grant-role` CLI の対象に含める。deleted user は `USER_NOT_FOUND` として扱う
-- `authz-sync` は default authorization definitions を 1 transaction で同期し、既存 user へ role を自動付与しない。初期 admin 付与や復旧は `authz-grant-role --email <email> --role admin` を使う
+- `authz-sync` は存在しない。catalog 整合性は `authz-check-config`、DB 上の orphan role assignment は `authz-check-assignments` で確認する。retired role の orphan assignment 削除は `authz-prune-unknown-role-assignments --yes` を使い、rename では明示 remap migration/script を使う。初期 admin 付与や復旧は `authz-grant-role --email <email> --role admin` を使う
 - 通常の active user query は必ず `deleted_at IS NULL` を含める。削除済み user を観測してよい lookup は `find_user_by_id_for_authentication()` のように用途名で明示する
 - 削除済み user は login、`/api/auth/me`、session authentication で認証不可。session authentication で deleted / inactive user を観測した場合は、その user の全 active sessions を `revoke_sessions_for_user()` で revoke し、観測 request / session に対して専用 audit event を 1 件だけ残す。missing user は user id の正当性を保証できないため、従来どおり観測 session だけを revoke する
 - `uq_users_email_lower_active` は `deleted_at IS NULL` の partial unique index であり、削除済み user の email は再登録可能。active user 同士の重複は DB が拒否する
@@ -177,7 +177,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - DB を使う integration test は実 PostgreSQL を使用し、DB の挙動をモックしない
 - integration test は `TEST_DATABASE_URL` が指す PostgreSQL を使う。未設定なら skip ではなく fail する
 - test 間 cleanup は存在する対象 table の `TRUNCATE ... CASCADE` で保証する
-- Docker Compose backend は `backend-dev` target と anonymous `/app/backend/.venv` volume を使う。lock 更新後に container 依存が古い場合は `docker compose down -v` で volume を作り直す
+- Docker Compose backend は `backend-dev` target と anonymous `/app/backend/.venv` volume を使う。lock 更新後に container 依存が古い場合は `docker compose down -v` で dependency volume を作り直す。PostgreSQL の実データは `docker/postgres/data/` の bind mount を正とし、Docker named volume には置かない
 
 ## Phase 2 認証セキュリティ規約
 

@@ -122,11 +122,8 @@ hostから実行する場合:
 
 `db-downgrade`はtableやデータを削除し得る破壊的操作です。実行前に接続先DB、対象revision、保持対象データの有無を確認してください。共有環境や本番DBで安易に実行しないでください。
 
-Phase 5 migration `20260803_0003` の downgrade は destructive です。
-削除済み email を同じ DB で再登録済みの場合、旧 schema の global
-`lower(email)` unique index を復元できないため `Cannot downgrade 20260803_0003 after deleted email reuse` で停止します。重複 email がない
-場合でも、`users.deleted_at`、`auth_sessions.issued_at`、
-`auth_sessions.updated_at`、PostgreSQL `INET` 型への変更は rollback 時に失われます。
+初期 schema migration の downgrade は全 application table を削除します。
+共有環境や本番 DB では downgrade より forward fix を基本方針にしてください。
 
 ### Auth audit/session pruning
 
@@ -281,7 +278,7 @@ schemaとcontrollerだけを個別に確認する場合:
 
 ## 停止・再build・初期化
 
-通常停止ではDB volumeを保持します。
+通常停止では `docker/postgres/data/` の DB データを保持します。
 
 ```bash
 docker compose down
@@ -293,13 +290,15 @@ docker compose down
 docker compose build
 ```
 
-全volumeを削除して初期化する場合:
+DB も含めて初期化する場合:
 
 ```bash
-docker compose down -v
+docker compose down
+rm -rf docker/postgres/data
+docker compose up -d --build postgres backend frontend
 ```
 
-`down -v`は`frontend_node_modules`だけでなく`postgres_data`も削除し、runtime DBの全データを失います。次回の通常起動時にfrontend依存は再インストールされ、`app_test`は初期化スクリプトから自動作成されます。runtime DBのmigrationは改めて明示的に適用してください。
+`docker/postgres/data/` は PostgreSQL の実データです。削除すると runtime DB の全データを失います。次回の通常起動時に `app_test` は初期化スクリプトから自動作成され、backend 起動時に runtime DB の migration が適用されます。
 
 ## 環境変数
 

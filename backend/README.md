@@ -72,7 +72,7 @@ docker compose up -d postgres backend frontend
 
 backend service は `backend-dev` target を使い、`./backend:/app/backend` を mount する。container 内で `pytest`、`alembic`、`db-check` を実行できる。
 
-`docker-compose.yaml` の backend service は `/app/backend/.venv` に anonymous volume を使う。`backend/uv.lock` を変更した後に container 内の依存が古い場合は、次で volume を作り直す。
+`docker-compose.yaml` の backend service は `/app/backend/.venv` に anonymous volume を使う。`backend/uv.lock` を変更した後に container 内の依存が古い場合は、次で backend dependency volume を作り直す。PostgreSQL の実データは `docker/postgres/data/` にあるため、この操作では DB データは削除されない。
 
 ```bash
 docker compose down -v

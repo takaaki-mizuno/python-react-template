@@ -1,7 +1,10 @@
+from logging import Logger
 from uuid import UUID
 
 from injector import inject
 
+from app.config.authorization import (permission_catalog_by_code, resolve_user_authorization,
+                                      role_catalog_by_code, roles_with_permissions)
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.authorization_repository_interface import \
     AuthorizationRepositoryInterface
@@ -12,7 +15,7 @@ from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_event_type import AuthEventType
 from app.models.authorization import (PermissionDefinition, RoleWithPermissions, UserAuthorization,
                                       UserRoleReplacementResult)
-from app.models.authorization_errors import AuthorizationUserNotFoundError
+from app.models.authorization_errors import AuthorizationUserNotFoundError, RoleNotFoundError
 
 
 class AuthorizationUsecase(AuthorizationUsecaseInterface):
@@ -23,22 +26,25 @@ class AuthorizationUsecase(AuthorizationUsecaseInterface):
         auth_repository: AuthRepositoryInterface,
         authorization_repository: AuthorizationRepositoryInterface,
         unit_of_work: UnitOfWorkInterface,
+        logger: Logger,
     ) -> None:
         self._auth_repository = auth_repository
         self._authorization_repository = authorization_repository
         self._unit_of_work = unit_of_work
+        self._logger = logger
 
     async def list_roles(self) -> list[RoleWithPermissions]:
-        return await self._authorization_repository.list_roles_with_permissions()
+        return roles_with_permissions()
 
     async def list_permissions(self) -> list[PermissionDefinition]:
-        return await self._authorization_repository.list_permissions()
+        return [permission for _, permission in sorted(permission_catalog_by_code().items())]
 
     async def get_user_authorization(self, user_id: UUID) -> UserAuthorization:
-        authorization = await self._authorization_repository.get_user_authorization(user_id)
-        if authorization is None:
+        user = await self._auth_repository.find_user_by_id_for_authentication(user_id)
+        if user is None or user.deleted_at is not None:
             raise AuthorizationUserNotFoundError(user_id)
-        return authorization
+        role_codes = await self._authorization_repository.get_user_role_codes(user_id)
+        return resolve_user_authorization(user_id, role_codes, self._logger)
 
     async def replace_user_roles(
         self,
@@ -49,6 +55,9 @@ class AuthorizationUsecase(AuthorizationUsecaseInterface):
         user_agent: str | None,
     ) -> UserRoleReplacementResult:
         normalized_role_codes = tuple(dict.fromkeys(role_codes))
+        missing_role_codes = frozenset(normalized_role_codes) - frozenset(role_catalog_by_code())
+        if missing_role_codes:
+            raise RoleNotFoundError(missing_role_codes)
         async with self._unit_of_work.transaction():
             user = await self._auth_repository.find_user_by_id_for_authentication(target_user_id)
             if user is None or user.deleted_at is not None:

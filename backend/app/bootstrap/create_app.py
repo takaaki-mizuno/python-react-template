@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import Config
 from app.config.auth import AuthSettings
+from app.config.authorization import authorization_config_errors
 from app.libraries.password_hasher import PasswordHashExecutor
 
 from .container import build_container
@@ -40,6 +41,9 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    authorization_errors = authorization_config_errors()
+    if authorization_errors:
+        raise RuntimeError(f"Authorization config is invalid: {'; '.join(authorization_errors)}")
     injector = build_container()
     config = injector.get(Config)
     injector.get(AuthSettings)

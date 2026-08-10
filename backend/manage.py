@@ -12,8 +12,7 @@ from sqlalchemy.engine import make_url
 
 from app.bootstrap.cli import run_with_container
 from app.config import get_config
-from app.config.authorization import (DEFAULT_AUTHORIZATION_DEFINITIONS,
-                                      DEFAULT_AUTHORIZATION_PERMISSIONS)
+from app.config.authorization import authorization_config_errors, role_catalog_by_code
 from app.config.database import DatabaseSettings, get_alembic_database_url, get_database_settings
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.authorization_repository_interface import \
@@ -21,7 +20,7 @@ from app.interfaces.services.authorization_repository_interface import \
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.models.auth_audit_log import AuthAuditLog
 from app.models.auth_event_type import AuthEventType
-from app.models.authorization_errors import RoleNotFoundError
+from app.models.authorization import UnknownRoleAssignment
 
 app = typer.Typer()
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -160,18 +159,101 @@ def db_prune_auth(
     asyncio.run(run_with_container(operation))
 
 
-@app.command("authz-sync")
-def authz_sync() -> None:
-    _get_explicit_database_settings("authz-sync")
+@app.command("authz-check-config")
+def authz_check_config() -> None:
+    errors = authorization_config_errors()
+    if not errors:
+        typer.echo("Authorization config is valid.")
+        return
+    typer.secho("Authorization config is invalid.", err=True, fg=typer.colors.RED)
+    for error in errors:
+        typer.secho(error, err=True, fg=typer.colors.RED)
+    raise typer.Exit(code=1)
 
-    async def operation(container: Injector) -> None:
+
+@app.command("authz-check-assignments")
+def authz_check_assignments() -> None:
+    config_errors = authorization_config_errors()
+    if config_errors:
+        typer.secho("Authorization config is invalid.", err=True, fg=typer.colors.RED)
+        for error in config_errors:
+            typer.secho(error, err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    _get_explicit_database_settings("authz-check-assignments")
+    known_role_codes = frozenset(role_catalog_by_code())
+
+    async def operation(container: Injector) -> tuple[UnknownRoleAssignment, ...]:
         repository = container.get(AuthorizationRepositoryInterface)
+        return await repository.list_unknown_role_assignments(known_role_codes)
+
+    assignments = asyncio.run(run_with_container(operation))
+    if not assignments:
+        typer.echo("Authorization assignments are valid.")
+        return
+    typer.secho("Unknown role assignments found.", err=True, fg=typer.colors.RED)
+    for assignment in assignments:
+        typer.secho(
+            f"user_id={assignment.user_id} role_code={assignment.role_code}",
+            err=True,
+            fg=typer.colors.RED,
+        )
+    raise typer.Exit(code=1)
+
+
+@app.command("authz-prune-unknown-role-assignments")
+def authz_prune_unknown_role_assignments(
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            help="Delete unknown role assignments. Use only for role retirement, not rename.",
+        ),
+    ] = False,
+) -> None:
+    if not yes:
+        typer.secho(
+            "Pass --yes to delete unknown role assignments.",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+    config_errors = authorization_config_errors()
+    if config_errors:
+        typer.secho("Authorization config is invalid.", err=True, fg=typer.colors.RED)
+        for error in config_errors:
+            typer.secho(error, err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    _get_explicit_database_settings("authz-prune-unknown-role-assignments")
+    known_role_codes = frozenset(role_catalog_by_code())
+
+    async def operation(container: Injector) -> int:
+        auth_repository = container.get(AuthRepositoryInterface)
+        authorization_repository = container.get(AuthorizationRepositoryInterface)
         unit_of_work = container.get(UnitOfWorkInterface)
         async with unit_of_work.transaction():
-            await _sync_default_authorization(repository)
-        typer.echo("Authorization definitions synced.")
+            assignments = await authorization_repository.list_unknown_role_assignments(
+                known_role_codes)
+            deleted_count = await authorization_repository.delete_unknown_role_assignments(
+                known_role_codes)
+            for assignment in assignments:
+                await auth_repository.create_audit_log(
+                    AuthAuditLog(
+                        user_id=None,
+                        session_id=None,
+                        event_type=AuthEventType.ROLE_REVOKED,
+                        ip_address=None,
+                        user_agent=None,
+                        detail_json={
+                            "source": "cli-prune",
+                            "actorUserId": None,
+                            "targetUserId": str(assignment.user_id),
+                            "roleCode": assignment.role_code,
+                        },
+                    ))
+        return deleted_count
 
-    asyncio.run(run_with_container(operation))
+    deleted_count = asyncio.run(run_with_container(operation))
+    typer.echo(f"Deleted {deleted_count} unknown role assignment(s).")
 
 
 @app.command("authz-grant-role")
@@ -179,6 +261,9 @@ def authz_grant_role(
     email: Annotated[str, typer.Option("--email", help="Target user email.")],
     role: Annotated[str, typer.Option("--role", help="Role code to grant.")],
 ) -> None:
+    if role not in role_catalog_by_code():
+        typer.secho(f"Role not found: {role}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
     _get_explicit_database_settings("authz-grant-role")
 
     async def operation(container: Injector) -> None:
@@ -191,21 +276,12 @@ def authz_grant_role(
             if user is None:
                 typer.secho("User not found.", err=True, fg=typer.colors.RED)
                 raise typer.Exit(code=1)
-            authorization = await authorization_repository.get_user_authorization(user.id)
-            existing_roles = authorization.roles if authorization is not None else frozenset()
-            try:
-                result = await authorization_repository.replace_user_roles(
-                    user.id,
-                    tuple(sorted(existing_roles | frozenset({role}))),
-                    assigned_by_user_id=None,
-                )
-            except RoleNotFoundError as exc:
-                typer.secho(
-                    f"Role not found: {', '.join(sorted(exc.role_codes))}",
-                    err=True,
-                    fg=typer.colors.RED,
-                )
-                raise typer.Exit(code=1) from exc
+            existing_roles = frozenset(await authorization_repository.get_user_role_codes(user.id))
+            result = await authorization_repository.replace_user_roles(
+                user.id,
+                tuple(sorted(existing_roles | frozenset({role}))),
+                assigned_by_user_id=None,
+            )
             for granted_role_code in result.granted_role_codes:
                 await auth_repository.create_audit_log(
                     AuthAuditLog(
@@ -225,15 +301,6 @@ def authz_grant_role(
         typer.echo(f"Granted role {role} to {normalized_email}.")
 
     asyncio.run(run_with_container(operation))
-
-
-async def _sync_default_authorization(repository: AuthorizationRepositoryInterface, ) -> None:
-    for permission in DEFAULT_AUTHORIZATION_PERMISSIONS:
-        await repository.upsert_permission_definition(permission)
-    for role in DEFAULT_AUTHORIZATION_DEFINITIONS:
-        await repository.upsert_role_definition(role)
-    for role in DEFAULT_AUTHORIZATION_DEFINITIONS:
-        await repository.replace_role_permissions(role.code, role.permission_codes)
 
 
 def _parse_cli_datetime(value: str | None, option_name: str) -> datetime | None:

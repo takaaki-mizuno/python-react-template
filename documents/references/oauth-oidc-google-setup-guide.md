@@ -350,12 +350,12 @@ docker compose up -d --force-recreate backend
 }
 ```
 
-RBAC を有効にして admin 権限を付けたい場合は、別途 `authz-sync` と `authz-grant-role` を使います。OAuth/OIDC の Google 設定だけでは admin 権限は付与されません。
+RBAC の admin 権限を付けたい場合は、catalog を `authz-check-config` で確認してから `authz-grant-role` を使います。OAuth/OIDC の Google 設定だけでは admin 権限は付与されません。
 
 ```bash
 cd backend
 DATABASE_URL='postgresql+asyncpg://app:app@localhost:5432/app' \
-  uv run python manage.py authz-sync
+  uv run python manage.py authz-check-config
 
 DATABASE_URL='postgresql+asyncpg://app:app@localhost:5432/app' \
   uv run python manage.py authz-grant-role --email user@example.com --role admin

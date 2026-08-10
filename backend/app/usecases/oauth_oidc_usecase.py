@@ -1,6 +1,7 @@
 import base64
 import hashlib
 from datetime import timedelta
+from logging import Logger
 from typing import NoReturn
 from urllib.parse import urlparse
 from uuid import UUID
@@ -8,6 +9,7 @@ from uuid import UUID
 from injector import inject
 
 from app.config.auth import AuthSettings
+from app.config.authorization import resolve_user_authorization
 from app.config.oidc import OidcProviderSettings, OidcSettings
 from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
@@ -25,6 +27,7 @@ from app.models.auth_errors import EmailAlreadyRegisteredError
 from app.models.auth_event_type import AuthEventType
 from app.models.auth_identity import AuthIdentity
 from app.models.auth_oidc_state import AuthOidcState
+from app.models.authorization import UserAuthorization
 from app.models.oidc import (OidcAuthorizationPurpose, OidcAuthorizationStartResult,
                              OidcCallbackResult, OidcVerifiedClaims)
 # yapf: disable
@@ -55,6 +58,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
         auth_settings: AuthSettings,
         oidc_settings: OidcSettings,
         oidc_provider_client: OidcProviderClientInterface,
+        logger: Logger,
     ) -> None:
         self._auth_repository = auth_repository
         self._authorization_repository = authorization_repository
@@ -63,6 +67,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
         self._auth_settings = auth_settings
         self._oidc_settings = oidc_settings
         self._oidc_provider_client = oidc_provider_client
+        self._logger = logger
 
     async def start_authorization(
         self,
@@ -341,8 +346,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
                     ip_address,
                     user_agent,
                 ))
-        authorization = await self._authorization_repository.get_existing_user_authorization(user.id
-                                                                                             )
+        authorization = await self._authorization_for_existing_user(user.id)
         return OidcCallbackResult(
             redirect_path=oidc_state.redirect_path,
             issued_session=IssuedAuthSession(
@@ -354,6 +358,10 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
                 permissions=authorization.permissions,
             ),
         )
+
+    async def _authorization_for_existing_user(self, user_id: UUID) -> UserAuthorization:
+        role_codes = await self._authorization_repository.get_user_role_codes(user_id)
+        return resolve_user_authorization(user_id, role_codes, self._logger)
 
     async def _resolve_login_user_and_identity(
         self,
