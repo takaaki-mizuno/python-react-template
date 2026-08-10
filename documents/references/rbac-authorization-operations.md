@@ -23,6 +23,25 @@ Authorization 用に残す table は `user_roles` だけである。
 
 Primary key は `(user_id, role_code)`。`role_code` には `ix_user_roles_role_code` を張る。
 
+## Migration
+
+この repository の Alembic migration は、未適用の開発用 chain を squash した単一の初期 schema revision を正とする。
+
+- Current head: `20260810_0001`
+- File: `backend/alembic/versions/20260810_0001_initial_schema.py`
+- `roles`、`permissions`、`role_permissions` は初期 migration でも作らない。
+- `user_roles` は最初から `role_code` を持つ。
+
+古い local DB が `alembic_version = 20260808_0005` などを持っている場合、squash 後の migration file からはその revision を解決できない。保持対象データがない local DB は作り直す。
+
+```bash
+docker compose down
+rm -rf docker/postgres/data
+docker compose up -d --build postgres backend frontend
+```
+
+`docker/postgres/data/` は PostgreSQL の実データであり、`.gitignore` 対象である。`docker/postgres/init/` は初期化 SQL だけを置くディレクトリで、既存 DB の永続データではない。
+
 ## Catalog
 
 現在の catalog は `backend/app/config/authorization.py` にある。
@@ -95,6 +114,16 @@ DATABASE_URL=postgresql+asyncpg://... uv run python manage.py authz-grant-role \
 
 指定 role は DB 接続前に code catalog で検証する。inactive user は対象に含め、deleted user は通常 user lookup で対象外にする。
 
+Docker Compose の runtime DB に admin role を付与する場合:
+
+```bash
+docker compose exec -T backend uv run python manage.py authz-grant-role \
+  --email user@example.com \
+  --role admin
+```
+
+新規登録ユーザーには role は自動付与されない。admin API や admin 画面を使うには、対象ユーザーへ `admin` role を明示付与する。
+
 ## 権限を追加する手順
 
 1. `DEFAULT_AUTHORIZATION_PERMISSIONS` に permission を追加する。
@@ -128,6 +157,8 @@ CLI 経由の `authz-grant-role` は `source: "cli"`、`authz-prune-unknown-role
 
 ## Troubleshooting
 
+- Docker を作り直したのに旧 DB が残る: PostgreSQL の実データは `docker/postgres/data/` にある。`docker/postgres/init/` を削除しても既存 DB は消えない。DB 初期化は `docker compose down` 後に `rm -rf docker/postgres/data` を実行する。
+- `Can't locate revision identified by '20260808_0005'`: squash 前の local DB が残っている。保持対象データがない local DB は `docker/postgres/data/` を削除して作り直す。
 - `ROLE_NOT_FOUND`: 指定 role code が `backend/app/config/authorization.py` にない。
 - `PERMISSION_DENIED`: `/api/auth/me` の `permissions`、対象 role の `permission_codes`、endpoint の要求 permission を確認する。
 - unknown role warning が出る: `authz-check-assignments` で対象 row を確認し、rename なら remap、retire なら prune を行う。
