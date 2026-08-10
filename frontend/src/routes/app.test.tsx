@@ -129,6 +129,18 @@ test('Header は guard 直後の auth.me cache があれば /me を二重取得�
   expect(fetchMock).toHaveBeenCalledTimes(1)
 })
 
+test('/app はダッシュボードの導入ラベルを表示する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => Promise.resolve(authUserResponse())),
+  )
+
+  renderWithRouter({ initialEntries: ['/app'] })
+
+  expect(await screen.findByRole('heading', { name: 'アプリ' })).toBeTruthy()
+  expect(screen.getByText('ダッシュボード')).toBeTruthy()
+})
+
 test('/app 表示後に query が 401 になると /login へ遷移し auth cache を null にする', async () => {
   let sessionExpired = false
   vi.stubGlobal(

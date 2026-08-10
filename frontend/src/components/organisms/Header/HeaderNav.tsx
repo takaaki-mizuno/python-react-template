@@ -1,4 +1,11 @@
 import type { NavigationItem } from './types'
+import { Button } from '@/components/atoms/button'
+import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+} from '@/components/atoms/navigation-menu'
 
 type HeaderNavProps = {
   items: ReadonlyArray<NavigationItem>
@@ -15,35 +22,36 @@ export default function HeaderNav({
     return (
       <nav aria-label="モバイルページ内ナビゲーション" className="grid gap-2">
         {items.map((item) => (
-          <a
-            className="site-mobile-link"
-            href={item.href}
+          <Button
+            asChild
+            className="justify-start"
             key={item.href}
-            onClick={onNavigate}
+            variant="ghost"
           >
-            <span className="flex items-center gap-3">
-              <span
-                aria-hidden="true"
-                className="size-2 shrink-0 rounded-full bg-landing-accent"
-              />
-              <span>{item.label}</span>
-            </span>
-          </a>
+            <a href={item.href} onClick={onNavigate}>
+              {item.label}
+            </a>
+          </Button>
         ))}
       </nav>
     )
   }
 
   return (
-    <nav
+    <NavigationMenu
       aria-label="ページ内ナビゲーション"
-      className="hidden items-center gap-2 lg:flex"
+      className="hidden lg:flex"
+      viewport={false}
     >
-      {items.map((item) => (
-        <a className="site-nav-link" href={item.href} key={item.href}>
-          {item.label}
-        </a>
-      ))}
-    </nav>
+      <NavigationMenuList>
+        {items.map((item) => (
+          <NavigationMenuItem key={item.href}>
+            <NavigationMenuLink href={item.href}>
+              {item.label}
+            </NavigationMenuLink>
+          </NavigationMenuItem>
+        ))}
+      </NavigationMenuList>
+    </NavigationMenu>
   )
 }

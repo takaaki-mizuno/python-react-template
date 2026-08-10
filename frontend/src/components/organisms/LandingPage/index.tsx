@@ -1,8 +1,8 @@
-import AnchorButton from './AnchorButton'
+import { ArrowRight, CheckCircle2 } from 'lucide-react'
+
 import ArchitectureDiagram from './ArchitectureDiagram'
 import InfoCard from './InfoCard'
 import SectionIntro from './SectionIntro'
-
 import {
   architectureSection,
   finalSection,
@@ -13,56 +13,130 @@ import {
   sectionHeadingIds,
   workflowSection,
 } from './data'
+import { Badge } from '@/components/atoms/badge'
+import { Button } from '@/components/atoms/button'
+import { Card, CardContent, CardHeader } from '@/components/atoms/card'
+import { Separator } from '@/components/atoms/separator'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/atoms/tabs'
+
+const pageShell = 'mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8'
+const sectionClass =
+  'scroll-mt-[calc(var(--app-header-height)+1rem)] border-b py-12 md:py-16 lg:py-20'
+const heroFeatureHeadingId = 'hero-feature-heading'
+const tabSummaries = {
+  overview: '初期構成で何が揃うかを確認する。',
+  architecture: 'frontend / backend / static 配信の接続点を見る。',
+  workflow: 'Plan から Act までの作業順を確認する。',
+  quality: '変更前後に通す確認ゲートを把握する。',
+} as const
 
 const LandingPage = () => {
   return (
-    <main className="landing-page" id="top">
-      <section className="landing-hero">
-        <div className="landing-shell">
-          <div className="landing-hero-grid">
+    <main id="top">
+      <section className="border-b py-12 md:py-16 lg:py-20">
+        <div className={pageShell}>
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] lg:items-end">
             <div className="space-y-8">
-              <div className="space-y-4">
-                <p className="landing-eyebrow">{heroContent.eyebrow}</p>
-                <h1 className="landing-hero-title">{heroContent.title}</h1>
-                <p className="landing-hero-copy">{heroContent.description}</p>
+              <div className="space-y-5">
+                <Badge variant="outline">{heroContent.eyebrow}</Badge>
+                <h1 className="max-w-4xl text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+                  {heroContent.title}
+                </h1>
+                <p className="max-w-2xl text-lg leading-8 text-muted-foreground">
+                  {heroContent.description}
+                </p>
               </div>
 
               <div className="flex flex-wrap gap-3">
                 {heroContent.actions.map((action) => (
-                  <AnchorButton
-                    href={action.href}
+                  <Button
+                    asChild
                     key={action.href}
-                    label={action.label}
-                    variant={action.variant}
-                  />
+                    variant={
+                      action.variant === 'secondary' ? 'outline' : 'default'
+                    }
+                  >
+                    <a href={action.href}>
+                      {action.label}
+                      <ArrowRight className="size-4" aria-hidden="true" />
+                    </a>
+                  </Button>
                 ))}
               </div>
             </div>
 
-            <aside
-              className="landing-signal-panel"
-              aria-label="テンプレートの特徴"
-            >
-              <p className="landing-panel-label">このテンプレートの要点</p>
-              <ul className="space-y-4">
-                {heroContent.signalLines.map((line) => (
-                  <li className="landing-panel-line" key={line}>
-                    <span aria-hidden="true" className="landing-panel-dot" />
-                    <span>{line}</span>
-                  </li>
-                ))}
-              </ul>
+            <aside aria-labelledby={heroFeatureHeadingId}>
+              <Card>
+                <CardHeader>
+                  <h2
+                    className="text-base font-semibold"
+                    id={heroFeatureHeadingId}
+                  >
+                    このテンプレートの要点
+                  </h2>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-4">
+                    {heroContent.signalLines.map((line) => (
+                      <li
+                        className="flex items-start gap-3 text-sm leading-6"
+                        key={line}
+                      >
+                        <CheckCircle2
+                          aria-hidden="true"
+                          className="mt-0.5 size-4 shrink-0 text-primary"
+                        />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
             </aside>
           </div>
+
+          <Tabs className="mt-10" defaultValue="overview">
+            <TabsList aria-label="ページ概要">
+              <TabsTrigger value="overview">概要</TabsTrigger>
+              <TabsTrigger value="architecture">構成</TabsTrigger>
+              <TabsTrigger value="workflow">進め方</TabsTrigger>
+              <TabsTrigger value="quality">品質</TabsTrigger>
+            </TabsList>
+            <TabsContent value="overview">
+              <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+                {tabSummaries.overview}
+              </p>
+            </TabsContent>
+            <TabsContent value="architecture">
+              <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+                {tabSummaries.architecture}
+              </p>
+            </TabsContent>
+            <TabsContent value="workflow">
+              <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+                {tabSummaries.workflow}
+              </p>
+            </TabsContent>
+            <TabsContent value="quality">
+              <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+                {tabSummaries.quality}
+              </p>
+            </TabsContent>
+          </Tabs>
         </div>
       </section>
 
       <section
         aria-labelledby={sectionHeadingIds.overview}
-        className="landing-section"
+        className={sectionClass}
         id="overview"
       >
-        <div className="landing-shell space-y-8">
+        <div className={`${pageShell} space-y-8`}>
           <SectionIntro
             description={overviewSection.description}
             headingId={sectionHeadingIds.overview}
@@ -84,10 +158,12 @@ const LandingPage = () => {
 
       <section
         aria-labelledby={sectionHeadingIds.architecture}
-        className="landing-section"
+        className={sectionClass}
         id="architecture"
       >
-        <div className="landing-shell grid gap-8 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] xl:items-start">
+        <div
+          className={`${pageShell} grid gap-8 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] xl:items-start`}
+        >
           <div className="space-y-8">
             <SectionIntro
               description={architectureSection.description}
@@ -96,10 +172,16 @@ const LandingPage = () => {
               title={architectureSection.title}
             />
 
-            <ul className="space-y-3">
+            <ul className="grid gap-3">
               {architectureSection.highlights.map((highlight) => (
-                <li className="landing-detail-item" key={highlight}>
-                  <span aria-hidden="true" className="landing-panel-dot" />
+                <li
+                  className="flex items-start gap-3 rounded-lg border bg-card p-4 text-sm leading-6"
+                  key={highlight}
+                >
+                  <CheckCircle2
+                    aria-hidden="true"
+                    className="mt-0.5 size-4 shrink-0 text-primary"
+                  />
                   <span>{highlight}</span>
                 </li>
               ))}
@@ -112,10 +194,12 @@ const LandingPage = () => {
 
       <section
         aria-labelledby={sectionHeadingIds.workflow}
-        className="landing-section"
+        className={sectionClass}
         id="workflow"
       >
-        <div className="landing-shell grid gap-8 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        <div
+          className={`${pageShell} grid gap-8 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]`}
+        >
           <SectionIntro
             description={workflowSection.description}
             headingId={sectionHeadingIds.workflow}
@@ -123,14 +207,22 @@ const LandingPage = () => {
             title={workflowSection.title}
           />
 
-          <ol className="space-y-4">
+          <ol className="grid gap-4">
             {workflowSection.steps.map((step, index) => (
-              <li className="landing-step" key={step.key}>
-                <div className="landing-step-index">{index + 1}</div>
-                <div className="space-y-2">
-                  <h3 className="landing-card-title">{step.key}</h3>
-                  <p className="landing-card-copy">{step.description}</p>
-                </div>
+              <li key={step.key}>
+                <Card>
+                  <CardContent className="flex gap-4">
+                    <Badge className="mt-1 size-8 shrink-0 rounded-full">
+                      {index + 1}
+                    </Badge>
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-semibold">{step.key}</h3>
+                      <p className="text-sm leading-7 text-muted-foreground">
+                        {step.description}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
               </li>
             ))}
           </ol>
@@ -139,10 +231,10 @@ const LandingPage = () => {
 
       <section
         aria-labelledby={sectionHeadingIds.quality}
-        className="landing-section"
+        className={sectionClass}
         id="quality"
       >
-        <div className="landing-shell space-y-8">
+        <div className={`${pageShell} space-y-8`}>
           <SectionIntro
             description={qualitySection.description}
             headingId={sectionHeadingIds.quality}
@@ -163,26 +255,40 @@ const LandingPage = () => {
         </div>
       </section>
 
-      <section className="landing-section border-b-0">
-        <div className="landing-shell">
-          <div className="landing-final-panel">
-            <div className="space-y-3">
-              <p className="landing-eyebrow">{finalSection.eyebrow}</p>
-              <h2 className="landing-section-title">{finalSection.title}</h2>
-              <p className="landing-copy">{finalSection.description}</p>
-            </div>
+      <section className="py-12 md:py-16 lg:py-20">
+        <div className={pageShell}>
+          <Card>
+            <CardContent className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+              <div className="space-y-3">
+                <Badge variant="outline">{finalSection.eyebrow}</Badge>
+                <h2 className="text-3xl font-semibold tracking-tight">
+                  {finalSection.title}
+                </h2>
+                <p className="max-w-2xl text-base leading-7 text-muted-foreground">
+                  {finalSection.description}
+                </p>
+              </div>
 
-            <div className="flex flex-wrap gap-3">
-              {finalSection.actions.map((action) => (
-                <AnchorButton
-                  href={action.href}
-                  key={action.href}
-                  label={action.label}
-                  variant={action.variant}
-                />
-              ))}
-            </div>
-          </div>
+              <Separator className="lg:hidden" />
+
+              <div className="flex flex-wrap gap-3">
+                {finalSection.actions.map((action) => (
+                  <Button
+                    asChild
+                    key={action.href}
+                    variant={
+                      action.variant === 'secondary' ? 'outline' : 'default'
+                    }
+                  >
+                    <a href={action.href}>
+                      {action.label}
+                      <ArrowRight className="size-4" aria-hidden="true" />
+                    </a>
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </section>
     </main>

@@ -51,11 +51,7 @@ export default function LoginForm({
         value={password}
       />
       <AuthFormFeedback id={errorId} message={errorMessage} />
-      <Button
-        className="bg-landing-ink text-white hover:bg-landing-ink/90"
-        disabled={isPending}
-        type="submit"
-      >
+      <Button disabled={isPending} type="submit">
         ログイン
       </Button>
     </form>

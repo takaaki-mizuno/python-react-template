@@ -84,11 +84,7 @@ export default function RegisterForm({
         value={passwordConfirmation}
       />
       <AuthFormFeedback id={errorId} message={displayError} />
-      <Button
-        className="bg-landing-ink text-white hover:bg-landing-ink/90"
-        disabled={isPending}
-        type="submit"
-      >
+      <Button disabled={isPending} type="submit">
         アカウントを作成
       </Button>
     </form>

@@ -73,8 +73,9 @@ test('/app/settings で account deletion に成功すると cache を消して /
     await screen.findByRole('heading', { name: 'アカウント削除' }),
   ).toBeTruthy()
   expect(screen.getByRole('heading', { name: 'アカウント設定' })).toBeTruthy()
+  expect(screen.getByRole('navigation', { name: 'パンくず' })).toBeTruthy()
   expect(
-    screen.getByRole('link', { name: 'アプリに戻る' }).getAttribute('href'),
+    screen.getByRole('link', { name: 'アプリ' }).getAttribute('href'),
   ).toBe('/app')
   fireEvent.change(
     screen.getByLabelText('メールアドレスを入力して削除を確認'),

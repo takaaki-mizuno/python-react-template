@@ -1,13 +1,21 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { Card, CardContent, CardHeader } from '@/components/atoms/card'
 import { requirePermission } from '@/lib/authGuard'
 
 const AdminPage = () => {
   return (
-    <main className="landing-shell py-16">
-      <div className="grid gap-6">
-        <h1 className="text-3xl font-semibold text-landing-ink">管理</h1>
-      </div>
+    <main className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
+      <Card>
+        <CardHeader>
+          <h1 className="text-3xl font-semibold tracking-tight">管理</h1>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            管理者向け機能のプレースホルダーです。
+          </p>
+        </CardContent>
+      </Card>
     </main>
   )
 }

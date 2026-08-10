@@ -55,7 +55,10 @@ services:
     command:
       - sh
       - -c
-      - if [ ! -x node_modules/.bin/vite ]; then npm ci; fi && npm run dev -- --host 0.0.0.0
+      # Keep the named node_modules volume in sync with package-lock.json.
+      # Rebuilt images do not refresh this volume, so skipping npm ci can leave
+      # newly added dependencies missing at Vite import-analysis time.
+      - npm ci && npm run dev -- --host 0.0.0.0
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:

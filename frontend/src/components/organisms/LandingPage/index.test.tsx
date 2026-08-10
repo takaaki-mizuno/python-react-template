@@ -34,6 +34,9 @@ describe('LandingPage route', () => {
     const { container } = renderWithRouter()
 
     await screen.findByText('FastAPI と React を、すぐ動かせる実用的なモノレポ')
+    expect(
+      screen.getByRole('complementary', { name: 'このテンプレートの要点' }),
+    ).toBeTruthy()
 
     for (const sectionId of landingSectionIds) {
       const section = container.querySelector<HTMLElement>(

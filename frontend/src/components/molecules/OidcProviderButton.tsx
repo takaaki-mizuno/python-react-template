@@ -1,4 +1,5 @@
 import type { OidcProvider } from '@/lib/authApi'
+import { Button } from '@/components/atoms/button'
 
 type OidcProviderButtonProps = {
   isDisabled?: boolean
@@ -12,13 +13,14 @@ export function OidcProviderButton({
   provider,
 }: OidcProviderButtonProps) {
   return (
-    <button
-      className="inline-flex h-11 w-full items-center justify-center rounded-md border border-landing-line bg-white px-4 text-sm font-medium text-landing-ink transition hover:bg-landing-soft disabled:cursor-not-allowed disabled:opacity-60"
+    <Button
+      className="h-11 w-full justify-center"
       disabled={isDisabled}
       onClick={onClick}
       type="button"
+      variant="outline"
     >
       {provider.displayName}で続行
-    </button>
+    </Button>
   )
 }

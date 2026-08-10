@@ -7,6 +7,8 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 
+import { Button } from '@/components/atoms/button'
+import { Separator } from '@/components/atoms/separator'
 import { OidcProviderButton } from '@/components/molecules/OidcProviderButton'
 import { AuthFormShell } from '@/components/organisms/Auth/AuthFormShell'
 import LoginForm from '@/components/organisms/Auth/LoginForm'
@@ -67,6 +69,11 @@ function LoginPage() {
       />
       {providers.data && providers.data.length > 0 ? (
         <div className="grid gap-3">
+          <div className="flex items-center gap-3">
+            <Separator className="flex-1" />
+            <span className="text-xs text-muted-foreground">または</span>
+            <Separator className="flex-1" />
+          </div>
           {providers.data.map((provider) => (
             <OidcProviderButton
               key={provider.providerId}
@@ -77,15 +84,13 @@ function LoginPage() {
           ))}
         </div>
       ) : null}
-      <p className="text-sm text-landing-muted">
+      <p className="text-sm text-muted-foreground">
         アカウントをお持ちでない方は{' '}
-        <Link
-          className="font-medium text-landing-accent underline-offset-4 hover:underline"
-          search={{ redirect: redirectHref }}
-          to="/register"
-        >
-          アカウントを作成
-        </Link>
+        <Button asChild className="h-auto p-0" variant="link">
+          <Link search={{ redirect: redirectHref }} to="/register">
+            アカウントを作成
+          </Link>
+        </Button>
       </p>
     </AuthFormShell>
   )

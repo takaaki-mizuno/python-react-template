@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
@@ -60,6 +61,10 @@ afterEach(() => {
   logoutMutateAsyncMock.mockReset()
 })
 
+function openAccountMenu(trigger: HTMLElement) {
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+}
+
 describe('AuthMenu', () => {
   test('未ログイン時はログインと新規登録の導線を表示する', () => {
     render(<AuthMenu />)
@@ -77,8 +82,13 @@ describe('AuthMenu', () => {
 
     render(<AuthMenu />)
 
-    expect(screen.getByText('user@example.com')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'ログアウト' })).toBeTruthy()
+    const accountTrigger = screen.getByRole('button', {
+      name: 'user@example.com アカウントメニュー',
+    })
+
+    expect(within(accountTrigger).getByText('user@example.com')).toBeTruthy()
+    openAccountMenu(accountTrigger)
+    expect(screen.getByRole('menuitem', { name: 'ログアウト' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'ログイン' })).toBeNull()
   })
 
@@ -88,7 +98,11 @@ describe('AuthMenu', () => {
 
     render(<AuthMenu />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }))
+    const accountTrigger = screen.getByRole('button', {
+      name: 'user@example.com アカウントメニュー',
+    })
+    openAccountMenu(accountTrigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'ログアウト' }))
 
     await waitFor(() => {
       expect(logoutMutateAsyncMock).toHaveBeenCalledOnce()
@@ -105,11 +119,19 @@ describe('AuthMenu', () => {
 
     render(<AuthMenu />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }))
+    const accountTrigger = screen.getByRole('button', {
+      name: 'user@example.com アカウントメニュー',
+    })
+    openAccountMenu(accountTrigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'ログアウト' }))
 
     expect((await screen.findByRole('alert')).textContent).toBe(
       'ログアウトに失敗しました。時間をおいて再度お試しください。',
     )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'ログアウトエラーを閉じる' }),
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(navigateMock).not.toHaveBeenCalled()
   })
 })

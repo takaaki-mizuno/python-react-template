@@ -2,7 +2,14 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import Header from './index'
@@ -48,17 +55,21 @@ describe('Header structure', () => {
   })
 
   test('mobile navigation のリンク押下で panel を閉じる', () => {
-    const { container } = render(<Header navigationItems={navigationItems} />)
+    render(<Header navigationItems={navigationItems} />)
     const menuButton = screen.getByRole('button', { name: 'メニューを開く' })
 
     fireEvent.click(menuButton)
 
-    const controlsId = menuButton.getAttribute('aria-controls') as string
-    const panel = container.querySelector(`#${controlsId}`) as HTMLElement
+    const dialog = screen.getByRole('dialog', { name: 'セクション' })
+    const mobileNav = within(dialog).getByRole('navigation', {
+      name: 'モバイルページ内ナビゲーション',
+    })
 
-    fireEvent.click(screen.getAllByRole('link', { name: '品質' })[1])
+    fireEvent.click(within(mobileNav).getByRole('link', { name: '品質' }))
 
-    expect(panel.hidden).toBe(true)
+    return waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'セクション' })).toBeNull(),
+    )
   })
 
   test('Header は route-specific data を import しない', () => {

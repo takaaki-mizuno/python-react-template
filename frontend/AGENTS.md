@@ -24,10 +24,9 @@ frontend/
 ├── tsconfig.json
 ├── src/
 │   ├── components/
-│   │   ├── atoms/           # 最小単位 UI (atomic design): shadcn/ui のコンポーネントのみ
+│   │   ├── atoms/           # shadcn/ui 生成コンポーネントのみ
 │   │   ├── molecules/       # atoms の組み合わせ
-│   │   ├── organisms/       # Header / LandingPage / Auth などページ単位に近い複合 UI
-│   │   └── ui/              # shadcn/ui 生成コンポーネント
+│   │   └── organisms/       # Header / LandingPage / Auth などページ単位に近い複合 UI
 │   ├── routes/              # TanStack Router file-based ルート
 │   ├── hooks/               # カスタムフック
 │   ├── lib/                 # ユーティリティ
@@ -71,7 +70,9 @@ npm install -D <pkg>   # devDependencies
 - コンポーネント命名: `PascalCase`
 - フック命名: `useXxx`
 - ファイル名: コンポーネントは `PascalCase.tsx`、その他は `camelCase.ts`
-- shadcn/ui 由来の atom は `src/components/atoms/` に配置する。`components/ui` はこの repo では採用しない
+- shadcn/ui 由来の atom は `src/components/atoms/` に配置する。`src/components/atoms/` には shadcn/ui 生成コンポーネント以外を置かない
+- shadcn/ui コンポーネント追加は `frontend` の pinned local CLI (`npm exec -- shadcn add <name> --yes`) を第一候補にし、`npx` で latest 指定した CLI は使わない。CLI が registry / component library の対話プロンプトやネットワーク制約で完走しない場合は、同じ pinned CLI の `npm exec -- shadcn view <name>` で公式 registry content を確認し、この repo の alias (`@/lib/css`, `@/components/atoms`) に合わせて `src/components/atoms/` へ追加する。生成・追加後は `npm run check` で repo style に整形する
+- shadcn atom のローカル差分は最小限にする。日本語 accessible label など呼び出し側で指定できるものは atoms を直接書き換えず、呼び出し側で `aria-label` / `showCloseButton={false}` / `SheetClose` などを使って上書きする。現時点の local patch は `field.tsx` の型 import 整理のみで、再生成時はこの差分を確認して維持または意図的に破棄する
 - shared utility は `src/lib/` に置く。クラス結合は `src/lib/css.ts` の `cn()` を使う
 - `components/` から `routes/` を import しない。Header のような共通 UI は route-specific data を props で受け取る
 

@@ -3,6 +3,14 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 
 import type { AccountDeletionInvalidField } from '@/components/organisms/Auth/AccountDeletionPanel'
 import type { AccountDeletionOidcReauthProvider } from '@/lib/apiError'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/atoms/breadcrumb'
 import { AccountDeletionPanel } from '@/components/organisms/Auth/AccountDeletionPanel'
 import {
   ApiError,
@@ -42,13 +50,23 @@ const SettingsPage = () => {
   }
 
   return (
-    <main className="landing-shell py-12">
-      <div className="grid max-w-xl gap-8">
+    <main className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
+      <div className="grid gap-8">
         <div className="grid gap-2">
-          <Link className="site-nav-link w-fit px-0" to="/app">
-            アプリに戻る
-          </Link>
-          <h1 className="text-2xl font-semibold text-landing-ink">
+          <Breadcrumb aria-label="パンくず">
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link to="/app">アプリ</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>アカウント設定</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <h1 className="text-2xl font-semibold tracking-tight">
             アカウント設定
           </h1>
         </div>

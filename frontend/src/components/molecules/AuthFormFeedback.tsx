@@ -1,3 +1,5 @@
+import { Alert, AlertDescription } from '@/components/atoms/alert'
+
 export type AuthFormFeedbackProps = {
   id: string
   message: string | null
@@ -9,8 +11,10 @@ export function AuthFormFeedback({ id, message }: AuthFormFeedbackProps) {
   }
 
   return (
-    <p className="text-sm text-red-600" id={id} role="alert">
-      {message}
-    </p>
+    <Alert id={id} variant="destructive">
+      <AlertDescription className="text-destructive!">
+        {message}
+      </AlertDescription>
+    </Alert>
   )
 }

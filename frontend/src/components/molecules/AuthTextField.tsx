@@ -1,3 +1,4 @@
+import { Field, FieldLabel } from '@/components/atoms/field'
 import { Input } from '@/components/atoms/input'
 
 type AuthTextFieldProps = {
@@ -26,10 +27,8 @@ export function AuthTextField({
   value,
 }: AuthTextFieldProps) {
   return (
-    <div className="grid gap-2">
-      <label className="text-sm font-medium text-landing-ink" htmlFor={id}>
-        {label}
-      </label>
+    <Field data-invalid={invalid ? true : undefined}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Input
         aria-describedby={describedBy}
         aria-invalid={invalid ? true : undefined}
@@ -41,6 +40,6 @@ export function AuthTextField({
         type={type}
         value={value}
       />
-    </div>
+    </Field>
   )
 }

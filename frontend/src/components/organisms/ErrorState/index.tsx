@@ -1,5 +1,9 @@
 import { Link } from '@tanstack/react-router'
 
+import { Badge } from '@/components/atoms/badge'
+import { Button } from '@/components/atoms/button'
+import { Card, CardContent, CardHeader } from '@/components/atoms/card'
+
 type ErrorStateProps = {
   message: string
   primaryAction?: {
@@ -17,22 +21,23 @@ export function ErrorState({
   title,
 }: ErrorStateProps) {
   return (
-    <main className="landing-shell py-16">
-      <div className="grid max-w-xl gap-4">
-        <p className="text-sm font-semibold text-landing-accent">
-          {statusCode}
-        </p>
-        <h1 className="text-3xl font-semibold text-landing-ink">{title}</h1>
-        <p className="text-landing-muted">{message}</p>
-        {primaryAction ? (
-          <Link
-            className="inline-flex h-10 w-fit items-center rounded-md bg-landing-ink px-4 text-sm font-medium text-white hover:bg-landing-ink/90"
-            to={primaryAction.to}
-          >
-            {primaryAction.label}
-          </Link>
-        ) : null}
-      </div>
+    <main className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6 lg:px-8">
+      <Card>
+        <CardHeader>
+          <Badge className="w-fit" variant="outline">
+            {statusCode}
+          </Badge>
+          <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
+        </CardHeader>
+        <CardContent className="grid gap-5">
+          <p className="text-muted-foreground">{message}</p>
+          {primaryAction ? (
+            <Button asChild className="w-fit">
+              <Link to={primaryAction.to}>{primaryAction.label}</Link>
+            </Button>
+          ) : null}
+        </CardContent>
+      </Card>
     </main>
   )
 }

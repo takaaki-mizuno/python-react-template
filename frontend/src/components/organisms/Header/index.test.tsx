@@ -46,9 +46,13 @@ function renderHeaderRoute(initialEntries: Array<string> = ['/']) {
   return renderWithRouter({ initialEntries })
 }
 
+function openAccountMenu(trigger: HTMLElement) {
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+}
+
 describe('Header', () => {
   test('メニューの開閉とリンク押下での close を制御する', async () => {
-    const { container } = renderHeaderRoute()
+    renderHeaderRoute()
     const desktopNav = await screen.findByRole('navigation', {
       name: 'ページ内ナビゲーション',
     })
@@ -65,24 +69,23 @@ describe('Header', () => {
       name: 'メニューを開く',
     })
 
-    expect(menuButton.getAttribute('aria-expanded')).toBe('false')
-
-    const controlsId = menuButton.getAttribute('aria-controls')
-
-    expect(controlsId).toBeTruthy()
-
     fireEvent.click(menuButton)
-    expect(menuButton.getAttribute('aria-expanded')).toBe('true')
 
-    const mobileNav = within(
-      container.querySelector(`#${controlsId}`) as HTMLElement,
-    ).getByRole('navigation', { name: 'モバイルページ内ナビゲーション' })
+    const dialog = await screen.findByRole('dialog', { name: 'セクション' })
+    expect(
+      within(dialog).getByRole('button', { name: 'メニューを閉じる' }),
+    ).toBeTruthy()
+    const mobileNav = within(dialog).getByRole('navigation', {
+      name: 'モバイルページ内ナビゲーション',
+    })
     const qualityLink = within(mobileNav).getByRole('link', { name: '品質' })
 
     expect(qualityLink.getAttribute('href')).toBe('#quality')
 
     fireEvent.click(qualityLink)
-    expect(menuButton.getAttribute('aria-expanded')).toBe('false')
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'セクション' })).toBeNull(),
+    )
   })
 
   test('Escape キー押下でメニューを閉じる', async () => {
@@ -93,10 +96,14 @@ describe('Header', () => {
     })
 
     fireEvent.click(menuButton)
-    expect(menuButton.getAttribute('aria-expanded')).toBe('true')
+    expect(
+      await screen.findByRole('dialog', { name: 'セクション' }),
+    ).toBeTruthy()
 
-    fireEvent.keyDown(window, { key: 'Escape' })
-    expect(menuButton.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'セクション' })).toBeNull(),
+    )
   })
 
   test('未ログイン時はログイン導線を表示する', async () => {
@@ -119,8 +126,12 @@ describe('Header', () => {
 
     renderWithRouter()
 
-    expect(await screen.findByText('user@example.com')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'ログアウト' })).toBeTruthy()
+    const accountTrigger = await screen.findByRole('button', {
+      name: 'user@example.com アカウントメニュー',
+    })
+    expect(within(accountTrigger).getByText('user@example.com')).toBeTruthy()
+    openAccountMenu(accountTrigger)
+    expect(screen.getByRole('menuitem', { name: 'ログアウト' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'ログイン' })).toBeNull()
     expect(screen.queryByRole('link', { name: '新規登録' })).toBeNull()
   })
@@ -143,7 +154,11 @@ describe('Header', () => {
 
     const { router } = renderWithRouter({ initialEntries: ['/app'] })
 
-    fireEvent.click(await screen.findByRole('button', { name: 'ログアウト' }))
+    const accountTrigger = await screen.findByRole('button', {
+      name: 'user@example.com アカウントメニュー',
+    })
+    openAccountMenu(accountTrigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'ログアウト' }))
 
     expect((await screen.findByRole('alert')).textContent).toBe(
       'ログアウトに失敗しました。時間をおいて再度お試しください。',
@@ -151,7 +166,7 @@ describe('Header', () => {
     expect(router.state.location.pathname).toBe('/app')
   })
 
-  test('ログアウト処理中はボタンを disabled にする', async () => {
+  test('ログアウト処理中はアカウントトリガーに pending 状態を表示する', async () => {
     document.cookie = 'csrf_token=csrf-123; path=/'
     let resolveLogout: (response: Response) => void = () => {}
     const logoutResponse = new Promise<Response>((resolve) => {
@@ -169,14 +184,19 @@ describe('Header', () => {
     )
 
     const { router } = renderWithRouter({ initialEntries: ['/app'] })
-    const logoutButton = await screen.findByRole('button', {
-      name: 'ログアウト',
+    const accountTrigger = await screen.findByRole('button', {
+      name: 'user@example.com アカウントメニュー',
     })
 
-    fireEvent.click(logoutButton)
+    openAccountMenu(accountTrigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'ログアウト' }))
 
     await waitFor(() =>
-      expect(logoutButton.hasAttribute('disabled')).toBe(true),
+      expect(
+        screen
+          .getByRole('button', { name: /ログアウト処理中/ })
+          .getAttribute('aria-busy'),
+      ).toBe('true'),
     )
 
     resolveLogout(new Response(null, { status: 204 }))
@@ -232,7 +252,11 @@ describe('Header', () => {
     const { router } = renderWithRouter({ initialEntries: ['/app'] })
 
     expect(await screen.findByText(firstUser.email)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }))
+    const accountTrigger = screen.getByRole('button', {
+      name: `${firstUser.email} アカウントメニュー`,
+    })
+    openAccountMenu(accountTrigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'ログアウト' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
 
     fireEvent.change(await screen.findByLabelText('メールアドレス'), {
