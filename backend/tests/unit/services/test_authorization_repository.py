@@ -57,6 +57,7 @@ async def test_replace_user_roles_stores_role_codes_without_catalog_lookup() -> 
     session = SessionStub([
         ResultStub(["viewer"]),
         ResultStub(rowcount=1),
+        ResultStub(rowcount=1),
     ])
     repository = AuthorizationRepository(unit_of_work=UnitOfWorkStub(session))
 
@@ -72,6 +73,7 @@ async def test_replace_user_roles_stores_role_codes_without_catalog_lookup() -> 
     assert session.added[0].user_id == user_id
     assert session.added[0].role_code == "admin"
     assert session.added[0].assigned_by_user_id == actor_id
+    assert "UPDATE users SET modified_at=" in str(session.exec_calls[2])
     assert session.commit_calls == 1
 
 

@@ -9,6 +9,7 @@ from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
 from app.models.authorization import UserRole
 from app.models.user import User
+from tests.integration.timestamp_helpers import unix_timestamp_millis
 
 pytestmark = pytest.mark.integration
 
@@ -140,9 +141,13 @@ async def test_admin_users_list_paginates_case_insensitive_search_and_excludes_d
         await _create_user(async_session, f"page-filter-{index}@example.com") for index in range(3)
     ]
     deleted_user = await _create_user(async_session, "page-filter-deleted@example.com")
+    deleted_at = unix_timestamp_millis(datetime.now(UTC))
     await async_session.execute(
-        text("UPDATE users SET deleted_at = now() WHERE id = :user_id"),
-        {"user_id": deleted_user.id},
+        text("UPDATE users SET deleted_at = :deleted_at WHERE id = :user_id"),
+        {
+            "deleted_at": deleted_at,
+            "user_id": deleted_user.id,
+        },
     )
     await async_session.commit()
 

@@ -68,7 +68,7 @@ PR をマージする前に **必ず** 以下を通す:
 - `.env` / 認証情報 / API キーをコミットしない (`.gitignore` 設定済み)
 - シークレットは環境変数経由のみ
 - 依存追加時はライセンスと既知脆弱性を確認
-- アプリケーション権限は code-managed RBAC を使う。role / permission catalog は `backend/app/config/authorization.py` を正とし、DB には `user_roles(user_id, role_code)` だけを保存する。Frontend の roles / permissions は表示制御用であり、Backend endpoint は permission dependency で必ず再検証する。
+- アプリケーション権限は code-managed RBAC を使う。role / permission catalog は `backend/app/config/authorization.py` を正とし、DB には assignment table として `user_roles(id, user_id, role_code, assigned_at, assigned_by_user_id, created_at, updated_at)` だけを保存する。`user_roles` は `id UUID PK` と unique `(user_id, role_code)` を持つ。Frontend の roles / permissions は表示制御用であり、Backend endpoint は permission dependency で必ず再検証する。
 - `users.is_active` は凍結・停止であり、管理者権限ではない。inactive user は session authentication では拒否するが、role 管理 API / CLI の対象には含める。deleted user は role 管理対象外にする。
 
 ## 安全な操作 / 確認が必要な操作

@@ -377,7 +377,7 @@ class AuthUsecase(AuthUsecaseInterface):
                 event_type=event_type,
                 ip_address=ip_address,
                 user_agent=user_agent,
-                created_at=revoked_at,
+                occurred_at=revoked_at,
             ))
 
     async def logout(

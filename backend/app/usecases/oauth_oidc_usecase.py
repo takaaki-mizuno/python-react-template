@@ -124,7 +124,6 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
                                 purpose == "account_deletion_reauth" and current_session else None),
                     expires_at=now +
                     timedelta(seconds=self._oidc_settings.AUTH_OIDC_STATE_TTL_SECONDS),
-                    created_at=now,
                 ))
             self._auth_rate_limiter.record_oidc_authorization(rate_limit_ip)
 
@@ -559,6 +558,6 @@ def _identity_for_claims(
         provider_id=provider.provider_id,
         provider_subject=claims.subject,
         email=email,
-        email_verified=claims.email_verified,
+        is_email_verified=claims.email_verified,
         claims_json=claims.claims_json,
     )

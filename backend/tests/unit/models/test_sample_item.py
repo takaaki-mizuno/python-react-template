@@ -7,6 +7,7 @@ from sqlmodel import SQLModel
 
 import app.models  # noqa: F401
 from app.libraries.clock import utcnow
+from app.libraries.sqlalchemy_types import UnixTimestampMillis
 from app.models.sample_item import SampleItem
 from app.models.sample_item_schemas import (SampleItemCreateRequest, SampleItemResponse,
                                             SampleItemUpdateRequest)
@@ -22,6 +23,8 @@ def test_sample_item_table_metadata() -> None:
         "title",
         "description",
         "is_completed",
+        "registered_at",
+        "modified_at",
         "created_at",
         "updated_at",
     }
@@ -31,6 +34,7 @@ def test_sample_item_table_metadata() -> None:
     assert table.c.updated_at.onupdate is not None
     assert table.c.updated_at.onupdate.arg.__name__ == utcnow.__name__
     assert table.c.updated_at.onupdate.arg.__module__ == utcnow.__module__
+    assert isinstance(table.c.registered_at.type, UnixTimestampMillis)
 
 
 def test_sample_item_request_validation_and_aliases() -> None:
@@ -70,14 +74,18 @@ def test_sample_item_requests_reject_unknown_fields() -> None:
 def test_sample_item_response_serializes_camel_case() -> None:
     item_id = uuid4()
     owner_user_id = uuid4()
-    created_at = datetime(2026, 8, 2, 1, 2, 3, tzinfo=UTC)
-    updated_at = datetime(2026, 8, 2, 4, 5, 6, tzinfo=UTC)
+    registered_at = datetime(2026, 8, 2, 1, 2, 3, tzinfo=UTC)
+    modified_at = datetime(2026, 8, 2, 4, 5, 6, tzinfo=UTC)
+    created_at = datetime(2026, 8, 3, 1, 2, 3, tzinfo=UTC)
+    updated_at = datetime(2026, 8, 3, 4, 5, 6, tzinfo=UTC)
     item = SampleItem(
         id=item_id,
         owner_user_id=owner_user_id,
         title="Write docs",
         description="Use this sample as the template.",
         is_completed=True,
+        registered_at=registered_at,
+        modified_at=modified_at,
         created_at=created_at,
         updated_at=updated_at,
     )

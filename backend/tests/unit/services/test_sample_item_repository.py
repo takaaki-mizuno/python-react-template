@@ -85,7 +85,7 @@ async def test_list_by_owner_filters_orders_and_limits() -> None:
 
     sql = _compiled(session.statements[0])
     assert "WHERE sample_items.owner_user_id = " in sql
-    assert "ORDER BY sample_items.created_at DESC, sample_items.id DESC" in sql
+    assert "ORDER BY sample_items.registered_at DESC, sample_items.id DESC" in sql
     assert "LIMIT " in sql
 
 
@@ -93,7 +93,7 @@ async def test_list_by_owner_filters_orders_and_limits() -> None:
 async def test_list_by_owner_applies_desc_keyset_cursor() -> None:
     owner_user_id = uuid4()
     cursor = SampleItemCursor(
-        created_at=datetime(2026, 8, 2, 1, 2, 3, tzinfo=UTC),
+        registered_at=datetime(2026, 8, 2, 1, 2, 3, tzinfo=UTC),
         id=uuid4(),
     )
     session = SessionStub()
@@ -102,8 +102,8 @@ async def test_list_by_owner_applies_desc_keyset_cursor() -> None:
     await repository.list_by_owner(owner_user_id, fetch_limit=10, cursor=cursor)
 
     sql = _compiled(session.statements[0])
-    assert "sample_items.created_at < " in sql
-    assert "sample_items.created_at = " in sql
+    assert "sample_items.registered_at < " in sql
+    assert "sample_items.registered_at = " in sql
     assert "sample_items.id < " in sql
 
 
@@ -137,7 +137,9 @@ async def test_create_uses_flush_inside_transaction_without_refresh() -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_uses_commit_outside_transaction() -> None:
+async def test_update_sets_modified_at_and_uses_commit_outside_transaction(monkeypatch) -> None:
+    modified_at = datetime(2026, 8, 3, 1, 2, 3, tzinfo=UTC)
+    monkeypatch.setattr("app.services.sample_item_repository.utcnow", lambda: modified_at)
     item = SampleItem(owner_user_id=uuid4(), title="Updated")
     session = SessionStub()
     repository = SampleItemRepository(unit_of_work=UnitOfWorkStub(session, in_transaction=False))
@@ -145,6 +147,7 @@ async def test_update_uses_commit_outside_transaction() -> None:
     result = await repository.update(item)
 
     assert result is item
+    assert item.modified_at == modified_at
     assert session.added == [item]
     assert session.flush_called is False
     assert session.commit_called is True

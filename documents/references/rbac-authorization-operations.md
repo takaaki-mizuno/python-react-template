@@ -6,7 +6,7 @@
 
 - Role / permission catalog はコードだけで管理する。
 - Catalog の正は `backend/app/config/authorization.py` である。
-- DB には user ごとの assignment として `user_roles(user_id, role_code, assigned_at, assigned_by_user_id)` だけを保存する。
+- DB には user ごとの assignment として `user_roles(id, user_id, role_code, assigned_at, assigned_by_user_id, created_at, updated_at)` だけを保存する。
 - Backend endpoint の認可は role ではなく permission code で行う。
 - Frontend の role / permission は表示制御と route guard 用であり、セキュリティ境界ではない。
 
@@ -16,12 +16,14 @@
 
 Authorization 用に残す table は `user_roles` だけである。
 
+- `id`: UUID primary key。assignment identity は project 全体の PK ルールに合わせる。
 - `user_id`: `users.id` への FK。user 削除時は cascade。
 - `role_code`: code-defined role の文字列。FK は張らない。
-- `assigned_at`: 付与時刻。
+- `assigned_at`: 付与時刻。DB では Unix timestamp milliseconds の `BIGINT`、Python では `datetime`。
 - `assigned_by_user_id`: API 経由で付与した actor user。CLI 付与では `NULL`。
+- `created_at` / `updated_at`: ログ・切り分け用の `TIMESTAMPTZ`。role assignment の一意性や業務判断には使わない。
 
-Primary key は `(user_id, role_code)`。`role_code` には `ix_user_roles_role_code` を張る。
+Primary key は `id`。assignment の重複は unique index `uq_user_roles_user_id_role_code` で防ぐ。`role_code` には `ix_user_roles_role_code`、`assigned_by_user_id` には FK 用の `ix_user_roles_assigned_by_user_id` を張る。
 
 ## Migration
 

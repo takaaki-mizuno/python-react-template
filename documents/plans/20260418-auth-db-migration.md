@@ -684,3 +684,7 @@ Expected: `manage.py`, `alembic/env.py`, `backend/AGENTS.md`, `documents/plans/2
 git add backend/AGENTS.md documents/plans/20260418-auth-delivery-notes.md
 git commit -m "docs(backend/auth): align backend guide with postgres auth migration"
 ```
+
+## 2026-08-11 現行 schema 注記
+
+この計画は historical plan である。現行 schema は `documents/plans/20260811-db-schema-guideline-alignment.md` の DB schema alignment 方針を優先する。

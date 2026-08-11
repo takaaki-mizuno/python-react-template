@@ -75,13 +75,16 @@ class RepositoryStub:
         return self.unit_of_work.active if self.unit_of_work is not None else False
 
 
-def _item(owner_user_id, title="Item", created_at=None):
+def _item(owner_user_id, title="Item", registered_at=None):
+    timestamp = registered_at or datetime(2026, 8, 2, 1, 2, 3, tzinfo=UTC)
     return SampleItem(
         id=uuid4(),
         owner_user_id=owner_user_id,
         title=title,
         description="description",
-        created_at=created_at or datetime(2026, 8, 2, 1, 2, 3, tzinfo=UTC),
+        registered_at=timestamp,
+        modified_at=timestamp,
+        created_at=timestamp,
         updated_at=datetime(2026, 8, 2, 1, 2, 3, tzinfo=UTC),
     )
 
@@ -110,8 +113,8 @@ async def test_create_item_sets_owner_user_id() -> None:
 @pytest.mark.asyncio
 async def test_list_items_fetches_limit_plus_one_and_returns_next_cursor() -> None:
     owner_user_id = uuid4()
-    first = _item(owner_user_id, title="First", created_at=datetime(2026, 8, 2, 3, tzinfo=UTC))
-    second = _item(owner_user_id, title="Second", created_at=datetime(2026, 8, 2, 2, tzinfo=UTC))
+    first = _item(owner_user_id, title="First", registered_at=datetime(2026, 8, 2, 3, tzinfo=UTC))
+    second = _item(owner_user_id, title="Second", registered_at=datetime(2026, 8, 2, 2, tzinfo=UTC))
     repository = RepositoryStub(items=[first, second])
     usecase = _usecase(repository)
 
@@ -129,14 +132,14 @@ async def test_list_items_decodes_valid_cursor() -> None:
     usecase = _usecase(repository)
     cursor_item = _item(
         owner_user_id,
-        created_at=datetime(2026, 8, 2, 3, 4, 5, tzinfo=UTC),
+        registered_at=datetime(2026, 8, 2, 3, 4, 5, tzinfo=UTC),
     )
     cursor = usecase.encode_cursor(cursor_item)
 
     await usecase.list_items(owner_user_id, limit=20, cursor=cursor)
 
     decoded_cursor = repository.list_calls[0][2]
-    assert decoded_cursor.created_at == cursor_item.created_at
+    assert decoded_cursor.registered_at == cursor_item.registered_at
     assert decoded_cursor.id == cursor_item.id
 
 
@@ -261,8 +264,8 @@ async def test_update_item_empty_changes_is_noop() -> None:
 
 def test_next_cursor_uses_last_visible_item_only_when_has_more() -> None:
     owner_user_id = uuid4()
-    first = _item(owner_user_id, created_at=datetime(2026, 8, 2, 3, tzinfo=UTC))
-    second = _item(owner_user_id, created_at=first.created_at - timedelta(hours=1))
+    first = _item(owner_user_id, registered_at=datetime(2026, 8, 2, 3, tzinfo=UTC))
+    second = _item(owner_user_id, registered_at=first.registered_at - timedelta(hours=1))
     usecase = _usecase(RepositoryStub(items=[first, second]))
 
     cursor = usecase.next_cursor_for_items([first, second], limit=1)

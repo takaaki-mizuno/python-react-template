@@ -24,6 +24,10 @@ from app.services.unit_of_work import UnitOfWork
 pytestmark = pytest.mark.integration
 
 
+def _millisecond_precision(value):
+    return value.replace(microsecond=(value.microsecond // 1000) * 1000)
+
+
 @pytest.fixture
 def async_session_factory(async_engine):
     return async_sessionmaker(bind=async_engine, class_=AsyncSession, expire_on_commit=False)
@@ -146,8 +150,8 @@ async def test_mark_user_deleted_sequential_calls_keep_first_deleted_at_and_audi
             AuthAuditLog.event_type == AuthEventType.USER_MARKED_DELETED,
         ))).scalars().all()
 
-    assert first_result.deleted_at == first_deleted_at
-    assert second_result.deleted_at == first_deleted_at
+    assert first_result.deleted_at == _millisecond_precision(first_deleted_at)
+    assert second_result.deleted_at == _millisecond_precision(first_deleted_at)
     assert len(audit_logs) == 1
 
 
@@ -186,7 +190,7 @@ async def test_create_and_find_auth_identity_by_provider_subject(auth_repository
         provider_id="google",
         provider_subject="google-subject-1",
         email="oidc-identity@example.com",
-        email_verified=True,
+        is_email_verified=True,
         claims_json={
             "email": "oidc-identity@example.com",
             "email_verified": True
@@ -286,7 +290,6 @@ async def test_record_oidc_login_updates_user_identity_and_session_auth_time(aut
         user_id=user.id,
         session_token_hash="oidc-login-session",
         csrf_token_hash="oidc-login-csrf",
-        created_at=now,
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
@@ -299,7 +302,7 @@ async def test_record_oidc_login_updates_user_identity_and_session_auth_time(aut
             provider_id="google",
             provider_subject="google-login-subject",
             email="oidc-login@example.com",
-            email_verified=True,
+            is_email_verified=True,
         ))
     login_at = now + timedelta(seconds=10)
     provider_auth_time = now - timedelta(minutes=1)
@@ -318,9 +321,9 @@ async def test_record_oidc_login_updates_user_identity_and_session_auth_time(aut
         "google-login-subject",
     )
     updated_session = await auth_repository.find_session_by_token_hash("oidc-login-session")
-    assert updated_user.last_login_at == login_at
-    assert updated_identity.last_login_at == login_at
-    assert updated_session.last_oidc_auth_time_at == provider_auth_time
+    assert updated_user.last_logged_in_at == _millisecond_precision(login_at)
+    assert updated_identity.last_logged_in_at == _millisecond_precision(login_at)
+    assert updated_session.last_oidc_authenticated_at == _millisecond_precision(provider_auth_time)
 
 
 async def test_record_oidc_login_without_auth_time_does_not_mark_session_fresh(auth_repository, ):
@@ -330,7 +333,6 @@ async def test_record_oidc_login_without_auth_time_does_not_mark_session_fresh(a
         user_id=user.id,
         session_token_hash="oidc-login-no-auth-time-session",
         csrf_token_hash="oidc-login-no-auth-time-csrf",
-        created_at=now,
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
@@ -343,7 +345,7 @@ async def test_record_oidc_login_without_auth_time_does_not_mark_session_fresh(a
             provider_id="google",
             provider_subject="google-login-no-auth-time-subject",
             email="oidc-login-no-auth-time@example.com",
-            email_verified=True,
+            is_email_verified=True,
         ))
 
     await auth_repository.record_oidc_login(
@@ -356,7 +358,7 @@ async def test_record_oidc_login_without_auth_time_does_not_mark_session_fresh(a
 
     updated_session = await auth_repository.find_session_by_token_hash(
         "oidc-login-no-auth-time-session")
-    assert updated_session.last_oidc_auth_time_at is None
+    assert updated_session.last_oidc_authenticated_at is None
 
 
 async def test_record_oidc_reauth_updates_session_only(auth_repository):
@@ -366,7 +368,6 @@ async def test_record_oidc_reauth_updates_session_only(auth_repository):
         user_id=user.id,
         session_token_hash="oidc-reauth-session",
         csrf_token_hash="oidc-reauth-csrf",
-        created_at=now,
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
@@ -379,7 +380,7 @@ async def test_record_oidc_reauth_updates_session_only(auth_repository):
             provider_id="google",
             provider_subject="google-reauth-subject",
             email="oidc-reauth@example.com",
-            email_verified=True,
+            is_email_verified=True,
         ))
     login_at = now - timedelta(hours=1)
     await auth_repository.record_oidc_login(
@@ -403,9 +404,9 @@ async def test_record_oidc_reauth_updates_session_only(auth_repository):
         "google-reauth-subject",
     )
     updated_session = await auth_repository.find_session_by_token_hash("oidc-reauth-session")
-    assert updated_user.last_login_at == login_at
-    assert updated_identity.last_login_at == login_at
-    assert updated_session.last_oidc_auth_time_at == provider_auth_time
+    assert updated_user.last_logged_in_at == _millisecond_precision(login_at)
+    assert updated_identity.last_logged_in_at == _millisecond_precision(login_at)
+    assert updated_session.last_oidc_authenticated_at == _millisecond_precision(provider_auth_time)
 
 
 async def test_delete_auth_identities_for_user_only_deletes_target_user(auth_repository):
@@ -599,7 +600,6 @@ async def test_revoke_sessions_for_user_only_revokes_active_sessions_for_target_
         user_id=user.id,
         session_token_hash="target-session",
         csrf_token_hash="target-csrf",
-        created_at=now,
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
@@ -610,7 +610,6 @@ async def test_revoke_sessions_for_user_only_revokes_active_sessions_for_target_
         user_id=user.id,
         session_token_hash="already-revoked-session",
         csrf_token_hash="already-revoked-csrf",
-        created_at=now,
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
@@ -622,7 +621,6 @@ async def test_revoke_sessions_for_user_only_revokes_active_sessions_for_target_
         user_id=other_user.id,
         session_token_hash="other-session",
         csrf_token_hash="other-csrf",
-        created_at=now,
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
@@ -633,8 +631,9 @@ async def test_revoke_sessions_for_user_only_revokes_active_sessions_for_target_
     revoked_count = await auth_repository.revoke_sessions_for_user(user.id, now)
 
     assert revoked_count == 1
-    assert (await auth_repository.find_session_by_token_hash(target_session.session_token_hash
-                                                             )).revoked_at == now
+    assert (await
+            auth_repository.find_session_by_token_hash(target_session.session_token_hash
+                                                       )).revoked_at == _millisecond_precision(now)
     assert (await
             auth_repository.find_session_by_token_hash(already_revoked_session.session_token_hash
                                                        )).revoked_at is not None
@@ -652,7 +651,6 @@ async def test_delete_sessions_expired_before_only_deletes_rows_before_threshold
         user_id=user.id,
         session_token_hash="old-session",
         csrf_token_hash="old-csrf",
-        created_at=now - timedelta(days=3),
         issued_at=now - timedelta(days=3),
         last_seen_at=now - timedelta(days=3),
         expires_at=now - timedelta(days=2),
@@ -663,7 +661,6 @@ async def test_delete_sessions_expired_before_only_deletes_rows_before_threshold
         user_id=user.id,
         session_token_hash="fresh-session",
         csrf_token_hash="fresh-csrf",
-        created_at=now,
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(days=1),
@@ -689,7 +686,6 @@ async def test_delete_sessions_expired_before_keeps_audit_log_with_null_session_
         user_id=user.id,
         session_token_hash="linked-old-session",
         csrf_token_hash="linked-old-csrf",
-        created_at=now - timedelta(days=3),
         issued_at=now - timedelta(days=3),
         last_seen_at=now - timedelta(days=3),
         expires_at=now - timedelta(days=2),
@@ -700,7 +696,7 @@ async def test_delete_sessions_expired_before_keeps_audit_log_with_null_session_
         user_id=user.id,
         session_id=old_session.id,
         event_type=AuthEventType.LOGIN_SUCCESS,
-        created_at=now - timedelta(days=2),
+        occurred_at=now - timedelta(days=2),
     )
     async_session.add(audit_log)
     await async_session.commit()
@@ -713,7 +709,7 @@ async def test_delete_sessions_expired_before_keeps_audit_log_with_null_session_
     assert linked_session_id is None
 
 
-async def test_delete_audit_logs_created_before_only_deletes_old_rows(
+async def test_delete_audit_logs_occurred_before_only_deletes_old_rows(
     auth_repository,
     async_session,
 ):
@@ -723,19 +719,19 @@ async def test_delete_audit_logs_created_before_only_deletes_old_rows(
         user_id=user.id,
         session_id=None,
         event_type="login_failed",
-        created_at=now - timedelta(days=3),
+        occurred_at=now - timedelta(days=3),
     )
     fresh_log = AuthAuditLog(
         user_id=user.id,
         session_id=None,
         event_type="login_success",
-        created_at=now,
+        occurred_at=now,
     )
     async_session.add(old_log)
     async_session.add(fresh_log)
     await async_session.commit()
 
-    deleted_count = await auth_repository.delete_audit_logs_created_before(now - timedelta(days=1))
+    deleted_count = await auth_repository.delete_audit_logs_occurred_before(now - timedelta(days=1))
 
     assert deleted_count == 1
     remaining_ids = (await async_session.execute(select(AuthAuditLog.id))).scalars().all()
@@ -753,7 +749,6 @@ async def test_record_rejected_session_replay_aggregates_within_window(
         user_id=user.id,
         session_token_hash="bounded-replay-session",
         csrf_token_hash="bounded-replay-csrf",
-        created_at=now - timedelta(minutes=20),
         issued_at=now - timedelta(minutes=20),
         last_seen_at=now - timedelta(minutes=20),
         expires_at=now - timedelta(minutes=10),
@@ -806,7 +801,6 @@ async def test_record_rejected_session_replay_skips_when_session_lock_is_busy(
         user_id=user.id,
         session_token_hash="bounded-replay-busy-lock-session",
         csrf_token_hash="bounded-replay-busy-lock-csrf",
-        created_at=now - timedelta(minutes=20),
         issued_at=now - timedelta(minutes=20),
         last_seen_at=now - timedelta(minutes=20),
         expires_at=now - timedelta(minutes=10),
@@ -846,7 +840,6 @@ async def test_record_rejected_session_replay_does_not_reuse_raw_rejection_ancho
         user_id=user.id,
         session_token_hash="bounded-replay-raw-anchor-session",
         csrf_token_hash="bounded-replay-raw-anchor-csrf",
-        created_at=now - timedelta(minutes=20),
         issued_at=now - timedelta(minutes=20),
         last_seen_at=now - timedelta(minutes=20),
         expires_at=now - timedelta(minutes=10),
@@ -860,7 +853,7 @@ async def test_record_rejected_session_replay_does_not_reuse_raw_rejection_ancho
             event_type=AuthEventType.SESSION_REJECTED,
             ip_address="127.0.0.1",
             user_agent="initial-rejection",
-            created_at=now - timedelta(seconds=30),
+            occurred_at=now - timedelta(seconds=30),
         ))
     await async_session.commit()
 
@@ -876,7 +869,7 @@ async def test_record_rejected_session_replay_does_not_reuse_raw_rejection_ancho
         select(AuthAuditLog).where(
             AuthAuditLog.session_id == auth_session.id,
             AuthAuditLog.event_type == AuthEventType.SESSION_REJECTED,
-        ).order_by(AuthAuditLog.created_at))).scalars().all()
+        ).order_by(AuthAuditLog.occurred_at))).scalars().all()
     assert len(audit_logs) == 2
     assert audit_logs[0].detail_json is None
     assert audit_logs[1].detail_json["replay_count"] == 1
@@ -893,7 +886,6 @@ async def test_record_rejected_session_replay_creates_new_row_after_window(
         user_id=user.id,
         session_token_hash="bounded-replay-window-session",
         csrf_token_hash="bounded-replay-window-csrf",
-        created_at=first_replay_at - timedelta(minutes=20),
         issued_at=first_replay_at - timedelta(minutes=20),
         last_seen_at=first_replay_at - timedelta(minutes=20),
         expires_at=first_replay_at - timedelta(minutes=10),
@@ -920,11 +912,11 @@ async def test_record_rejected_session_replay_creates_new_row_after_window(
         select(AuthAuditLog).where(
             AuthAuditLog.session_id == auth_session.id,
             AuthAuditLog.event_type == AuthEventType.SESSION_REJECTED,
-        ).order_by(AuthAuditLog.created_at))).scalars().all()
+        ).order_by(AuthAuditLog.occurred_at))).scalars().all()
     assert [audit_log.detail_json["replay_count"] for audit_log in audit_logs] == [1, 1]
-    assert [audit_log.created_at for audit_log in audit_logs] == [
-        first_replay_at,
-        second_replay_at,
+    assert [audit_log.occurred_at for audit_log in audit_logs] == [
+        _millisecond_precision(first_replay_at),
+        _millisecond_precision(second_replay_at),
     ]
 
 
@@ -938,7 +930,6 @@ async def test_record_rejected_session_replay_keeps_single_row_under_concurrency
         user_id=user.id,
         session_token_hash="bounded-replay-concurrent-session",
         csrf_token_hash="bounded-replay-concurrent-csrf",
-        created_at=now - timedelta(minutes=20),
         issued_at=now - timedelta(minutes=20),
         last_seen_at=now - timedelta(minutes=20),
         expires_at=now - timedelta(minutes=10),

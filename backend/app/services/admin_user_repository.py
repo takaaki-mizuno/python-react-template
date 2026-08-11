@@ -8,6 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.interfaces.services.admin_user_repository_interface import AdminUserRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
+from app.libraries.clock import utcnow
 from app.models.admin_pagination import AdminOffsetPageRequest, AdminOffsetPageResult
 from app.models.admin_query import escape_like_search
 from app.models.admin_user import AdminUserListQuery, AdminUserRecord, AdminUserUpdateChanges
@@ -36,7 +37,7 @@ class AdminUserRepository(AdminUserRepositoryInterface):
         async with self._unit_of_work.session_scope() as session:
             base_filters = self._filters(query)
             list_statement = (select(User).where(*base_filters).order_by(
-                col(User.created_at).desc(),
+                col(User.registered_at).desc(),
                 col(User.id).desc(),
             ).offset(page.offset).limit(page.limit))
             users = list((await session.exec(list_statement)).all())
@@ -106,6 +107,7 @@ class AdminUserRepository(AdminUserRepositoryInterface):
                 if changes.is_active is None:
                     raise ValueError("is_active cannot be None when included in fields_set")
                 user.is_active = changes.is_active
+            user.modified_at = utcnow()
 
             session.add(user)
             try:

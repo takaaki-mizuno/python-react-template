@@ -2,15 +2,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Text, text
 from sqlmodel import Field, SQLModel
 
 from app.libraries.clock import utcnow
+from app.libraries.sqlalchemy_types import UnixTimestampMillis
 
 
 @dataclass(frozen=True, slots=True)
 class SampleItemCursor:
-    created_at: datetime
+    registered_at: datetime
     id: UUID
 
 
@@ -30,8 +31,8 @@ class SampleItemUpdateChanges:
 
 class SampleItem(SQLModel, table=True):
     __tablename__ = "sample_items"
-    __table_args__ = (Index("ix_sample_items_owner_user_id_created_at_id", "owner_user_id",
-                            "created_at", "id"), )
+    __table_args__ = (Index("ix_sample_items_owner_user_id_registered_at_id", "owner_user_id",
+                            "registered_at", "id"), )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     owner_user_id: UUID = Field(sa_column=Column(
@@ -39,10 +40,14 @@ class SampleItem(SQLModel, table=True):
         nullable=False,
         index=True,
     ), )
-    title: str = Field(sa_column=Column(String(length=120), nullable=False), )
+    title: str = Field(sa_column=Column(Text, nullable=False), )
     description: str | None = Field(
         default=None,
-        sa_column=Column(String(length=1000), nullable=True),
+        sa_column=Column(
+            Text,
+            nullable=True,
+            comment="NULL means the item has no description.",
+        ),
     )
     is_completed: bool = Field(
         default=False,
@@ -52,6 +57,19 @@ class SampleItem(SQLModel, table=True):
             server_default=text("false"),
         ),
     )
+    registered_at: datetime = Field(sa_column=Column(
+        UnixTimestampMillis(),
+        nullable=False,
+        default=utcnow,
+        comment=
+        "Unix timestamp in milliseconds. Business registration time used for cursor ordering.",
+    ), )
+    modified_at: datetime = Field(sa_column=Column(
+        UnixTimestampMillis(),
+        nullable=False,
+        default=utcnow,
+        comment="Unix timestamp in milliseconds. Business time when the item was last modified.",
+    ), )
     created_at: datetime = Field(sa_column=Column(DateTime(timezone=True),
                                                   nullable=False,
                                                   default=utcnow), )

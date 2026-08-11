@@ -153,7 +153,7 @@ class PasswordHashExecutorStub:
 def _auth_context(
     email: str = "user@example.com",
     password_hash: str | None = "hashed-password",
-    last_oidc_auth_time_at=None,
+    last_oidc_authenticated_at=None,
 ) -> AuthenticatedSessionContext:
     now = utcnow()
     user = User(email=email, password_hash=password_hash, is_active=True)
@@ -165,7 +165,7 @@ def _auth_context(
         issued_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(minutes=10),
-        last_oidc_auth_time_at=last_oidc_auth_time_at,
+        last_oidc_authenticated_at=last_oidc_authenticated_at,
     )
     return AuthenticatedSessionContext(
         user=user,
@@ -320,14 +320,14 @@ async def test_wrong_password_records_failure_and_raises_dedicated_error() -> No
 @pytest.mark.asyncio
 async def test_oauth_only_user_requires_oidc_reauth_when_auth_time_missing() -> None:
     usecase, unit_of_work, auth_repository, sample_repository, _, _ = _usecase()
-    auth_context = _auth_context(password_hash=None, last_oidc_auth_time_at=None)
+    auth_context = _auth_context(password_hash=None, last_oidc_authenticated_at=None)
     auth_repository.identities.append(
         AuthIdentity(
             user_id=auth_context.user.id,
             provider_id="google",
             provider_subject="subject-1",
             email=auth_context.user.email,
-            email_verified=True,
+            is_email_verified=True,
             claims_json={"sub": "subject-1"},
         ))
 
@@ -354,7 +354,7 @@ async def test_oauth_only_user_requires_oidc_reauth_when_auth_time_is_stale() ->
     usecase, unit_of_work, auth_repository, sample_repository, _, _ = _usecase()
     auth_context = _auth_context(
         password_hash=None,
-        last_oidc_auth_time_at=utcnow() - timedelta(minutes=10),
+        last_oidc_authenticated_at=utcnow() - timedelta(minutes=10),
     )
 
     with pytest.raises(AccountDeletionOidcReauthRequiredError) as excinfo:
@@ -377,7 +377,7 @@ async def test_oauth_only_user_can_delete_with_fresh_oidc_reauth_without_passwor
 ) -> None:
     usecase, _, auth_repository, sample_repository, rate_limiter, password_hash_executor = (
         _usecase())
-    auth_context = _auth_context(password_hash=None, last_oidc_auth_time_at=utcnow())
+    auth_context = _auth_context(password_hash=None, last_oidc_authenticated_at=utcnow())
 
     await usecase.delete_account(
         auth_context=auth_context,

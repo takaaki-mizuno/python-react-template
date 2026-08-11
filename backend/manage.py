@@ -122,7 +122,7 @@ def db_prune_auth(
     ] = None,
     audit_logs_before: Annotated[
         str | None,
-        typer.Option(help="Delete auth audit logs with created_at before this timestamp."),
+        typer.Option(help="Delete auth audit logs with occurred_at before this timestamp."),
     ] = None,
     oidc_states_before: Annotated[
         str | None,
@@ -149,7 +149,7 @@ def db_prune_auth(
     async def operation(container: Injector) -> None:
         repository = container.get(AuthRepositoryInterface)
         if audit_logs_before_at is not None:
-            deleted_logs = await repository.delete_audit_logs_created_before(audit_logs_before_at)
+            deleted_logs = await repository.delete_audit_logs_occurred_before(audit_logs_before_at)
             typer.echo(f"Deleted audit logs: {deleted_logs}")
         if expired_sessions_before_at is not None:
             deleted_sessions = await repository.delete_sessions_expired_before(

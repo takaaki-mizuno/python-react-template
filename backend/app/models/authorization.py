@@ -1,32 +1,50 @@
 from dataclasses import dataclass
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Uuid
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Text, Uuid
 from sqlmodel import Field, SQLModel
 
 from app.libraries.clock import utcnow
+from app.libraries.sqlalchemy_types import UnixTimestampMillis
 
 
 class UserRole(SQLModel, table=True):
     __tablename__ = "user_roles"
-    __table_args__ = (Index("ix_user_roles_role_code", "role_code"), )
+    __table_args__ = (
+        Index("uq_user_roles_user_id_role_code", "user_id", "role_code", unique=True),
+        Index("ix_user_roles_role_code", "role_code"),
+        Index("ix_user_roles_assigned_by_user_id", "assigned_by_user_id"),
+    )
 
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(sa_column=Column(
         Uuid,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        primary_key=True,
     ))
-    role_code: str = Field(sa_column=Column(String(length=64), nullable=False, primary_key=True))
-    assigned_at: datetime = Field(
-        sa_column=Column(DateTime(timezone=True), nullable=False, default=utcnow))
+    role_code: str = Field(sa_column=Column(Text, nullable=False))
+    assigned_at: datetime = Field(sa_column=Column(
+        UnixTimestampMillis(),
+        nullable=False,
+        default=utcnow,
+        comment="Unix timestamp in milliseconds. Business time when the role was assigned.",
+    ))
     assigned_by_user_id: UUID | None = Field(default=None,
                                              sa_column=Column(
                                                  Uuid,
                                                  ForeignKey("users.id", ondelete="SET NULL"),
                                                  nullable=True,
+                                                 comment=("NULL means the role was assigned by a "
+                                                          "system process or bootstrap operation."),
                                              ))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True),
+                                                  nullable=False,
+                                                  default=utcnow), )
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True),
+                                                  nullable=False,
+                                                  default=utcnow,
+                                                  onupdate=utcnow), )
 
 
 @dataclass(frozen=True, slots=True)

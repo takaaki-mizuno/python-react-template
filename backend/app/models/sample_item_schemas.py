@@ -46,8 +46,8 @@ class SampleItemResponse(SampleItemSchema):
             title=item.title,
             description=item.description,
             is_completed=item.is_completed,
-            created_at=item.created_at,
-            updated_at=item.updated_at,
+            created_at=item.registered_at,
+            updated_at=item.modified_at,
         )
 
 

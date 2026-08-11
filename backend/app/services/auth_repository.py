@@ -105,7 +105,10 @@ class AuthRepository(AuthRepositoryInterface):
                                           col(AuthIdentity.user_id) == col(User.id)).where(
                                               AuthIdentity.user_id == user_id,
                                               col(User.deleted_at).is_(None),
-                                          ).order_by(col(AuthIdentity.created_at)))
+                                          ).order_by(
+                                              col(AuthIdentity.linked_at),
+                                              col(AuthIdentity.id),
+                                          ))
             return list(result.all())
 
     async def create_auth_identity(self, identity: AuthIdentity) -> AuthIdentity:
@@ -127,7 +130,6 @@ class AuthRepository(AuthRepositoryInterface):
         user_id: UUID,
         session_token_hash: str,
         csrf_token_hash: str,
-        created_at: datetime,
         issued_at: datetime,
         last_seen_at: datetime,
         expires_at: datetime,
@@ -139,7 +141,6 @@ class AuthRepository(AuthRepositoryInterface):
                 user_id=user_id,
                 session_token_hash=session_token_hash,
                 csrf_token_hash=csrf_token_hash,
-                created_at=created_at,
                 issued_at=issued_at,
                 last_seen_at=last_seen_at,
                 expires_at=expires_at,
@@ -213,8 +214,7 @@ class AuthRepository(AuthRepositoryInterface):
             user = await session.get(User, user_id)
             if user is None or user.deleted_at is not None:
                 raise UserNotFoundError(user_id)
-            user.last_login_at = login_at
-            user.updated_at = login_at
+            user.last_logged_in_at = login_at
             session.add(user)
             await self._persist(session)
             await session.refresh(user)
@@ -236,15 +236,14 @@ class AuthRepository(AuthRepositoryInterface):
             if auth_session is None:
                 raise AuthSessionNotFoundError(session_id)
 
-            user.last_login_at = login_at
-            user.updated_at = login_at
+            user.last_logged_in_at = login_at
             await session.exec(
                 update(AuthIdentity).where(
                     col(AuthIdentity.id) == identity_id,
                     col(AuthIdentity.user_id) == user_id,
-                ).values(last_login_at=login_at, updated_at=login_at))
+                ).values(last_logged_in_at=login_at))
             if provider_auth_time is not None:
-                auth_session.last_oidc_auth_time_at = provider_auth_time
+                auth_session.last_oidc_authenticated_at = provider_auth_time
                 session.add(auth_session)
             session.add(user)
             await self._persist(session)
@@ -260,7 +259,7 @@ class AuthRepository(AuthRepositoryInterface):
             auth_session = await session.get(AuthSession, session_id)
             if auth_session is None:
                 raise AuthSessionNotFoundError(session_id)
-            auth_session.last_oidc_auth_time_at = auth_time
+            auth_session.last_oidc_authenticated_at = auth_time
             session.add(auth_session)
             await self._persist(session)
 
@@ -278,7 +277,7 @@ class AuthRepository(AuthRepositoryInterface):
                 update(User).where(
                     col(User.id) == user_id,
                     col(User.deleted_at).is_(None),
-                ).values(deleted_at=deleted_at, updated_at=deleted_at))
+                ).values(deleted_at=deleted_at, modified_at=deleted_at))
             if int(result.rowcount or 0) == 0:
                 existing_user = await session.get(User, user_id)
                 if existing_user is None:
@@ -291,7 +290,7 @@ class AuthRepository(AuthRepositoryInterface):
                     session_id=session_id,
                     event_type=AuthEventType.USER_MARKED_DELETED,
                     ip_address=ip_address,
-                    created_at=deleted_at,
+                    occurred_at=deleted_at,
                 ))
             await self._persist(session)
             deleted_user = await session.get(User, user_id)
@@ -318,10 +317,10 @@ class AuthRepository(AuthRepositoryInterface):
             await self._persist(session)
             return int(result.rowcount or 0)
 
-    async def delete_audit_logs_created_before(self, created_before: datetime) -> int:
+    async def delete_audit_logs_occurred_before(self, occurred_before: datetime) -> int:
         async with self._unit_of_work.session_scope() as session:
             result = await session.exec(
-                delete(AuthAuditLog).where(col(AuthAuditLog.created_at) < created_before))
+                delete(AuthAuditLog).where(col(AuthAuditLog.occurred_at) < occurred_before))
             await self._persist(session)
             return int(result.rowcount or 0)
 
@@ -397,9 +396,12 @@ class AuthRepository(AuthRepositoryInterface):
                 select(AuthAuditLog).where(
                     AuthAuditLog.session_id == auth_session.id,
                     AuthAuditLog.event_type == AuthEventType.SESSION_REJECTED,
-                    AuthAuditLog.created_at >= window_started_at,
+                    AuthAuditLog.occurred_at >= window_started_at,
                     type_coerce(AuthAuditLog.detail_json, JSONB).has_key("replay_count"),
-                ).order_by(col(AuthAuditLog.created_at).desc()).limit(1))
+                ).order_by(
+                    col(AuthAuditLog.occurred_at).desc(),
+                    col(AuthAuditLog.id).desc(),
+                ).limit(1))
             audit_log = result.one_or_none()
             if audit_log is None:
                 session.add(
@@ -416,7 +418,7 @@ class AuthRepository(AuthRepositoryInterface):
                             replayed_at,
                             window_seconds,
                         ),
-                        created_at=replayed_at,
+                        occurred_at=replayed_at,
                     ))
             else:
                 audit_log.detail_json = _replay_detail_json(

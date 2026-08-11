@@ -403,7 +403,7 @@ def test_db_prune_auth_prunes_expired_sessions_only(monkeypatch):
             calls.append(("sessions", expired_before))
             return 3
 
-        async def delete_audit_logs_created_before(self, created_before):
+        async def delete_audit_logs_occurred_before(self, created_before):
             calls.append(("audit", created_before))
             return 5
 
@@ -441,7 +441,7 @@ def test_db_prune_auth_prunes_audit_logs_only(monkeypatch):
             calls.append(("sessions", expired_before))
             return 3
 
-        async def delete_audit_logs_created_before(self, created_before):
+        async def delete_audit_logs_occurred_before(self, created_before):
             calls.append(("audit", created_before))
             return 5
 
@@ -479,7 +479,7 @@ def test_db_prune_auth_prunes_audit_logs_before_sessions(monkeypatch):
             calls.append(("sessions", expired_before))
             return 3
 
-        async def delete_audit_logs_created_before(self, created_before):
+        async def delete_audit_logs_occurred_before(self, created_before):
             calls.append(("audit", created_before))
             return 5
 
@@ -522,7 +522,7 @@ def test_db_prune_auth_prunes_oidc_states(monkeypatch):
             calls.append(("sessions", expired_before))
             return 3
 
-        async def delete_audit_logs_created_before(self, created_before):
+        async def delete_audit_logs_occurred_before(self, created_before):
             calls.append(("audit", created_before))
             return 5
 

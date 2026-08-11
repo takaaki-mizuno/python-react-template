@@ -76,6 +76,7 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 詳細な設計意図と運用手順は `documents/references/rbac-authorization-operations.md` を参照する。
 
 - DB table は `user_roles` のみ。`roles`、`permissions`、`role_permissions` table は持たない。
+- `user_roles` は `id UUID PK` と unique `(user_id, role_code)` を持つ。role catalog は DB に置かない。
 - role は permission の集合で、endpoint 保護は role ではなく permission code で行う。
 - role / permission catalog は `app/config/authorization.py` の `DEFAULT_AUTHORIZATION_PERMISSIONS` と `DEFAULT_AUTHORIZATION_DEFINITIONS` を正とする。
 - catalog 検査は `python manage.py authz-check-config` で行う。DB 上の orphan role assignment は `authz-check-assignments` で検出し、retired role の削除だけ `authz-prune-unknown-role-assignments --yes` を使う。
@@ -99,11 +100,13 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 - `tests/unit/usecases/test_account_deletion_coverage.py` は SQLModel metadata に読み込まれた `users` への直接 FK table から user-owned cleanup policy coverage を検出する。間接所有、FK なしの `user_id` column、metadata に import されていない model は検出しない。実際の cleanup 呼び出しは `test_account_deletion_usecase.py` と repository integration tests で検証する。
 - Phase 6 の account deletion は既存 schema を使うため、新しい DB migration を作らない。
 - physical delete 時は sessions が CASCADE、audit logs の user/session 参照が SET NULL。
-- `AuthSession.issued_at` は absolute TTL 起点で、`created_at` は監査用の作成時刻。session touch 時の expiry 再計算に `created_at` を使わない。
+- `created_at` / `updated_at` は全 table で `TIMESTAMPTZ` のログ・切り分け用 column とし、business logic の sort / retention / expiry / deletion 判定には使わない。business timestamp は DB では Unix timestamp milliseconds の `BIGINT`、Python model / public API 境界では `datetime` として扱う。
+- timestamp の source はアプリケーション clock に統一する。timestamp column に DB server default や `updated_at` trigger は置かない。
+- `AuthSession.issued_at` は absolute TTL 起点、`expires_at` は expiry 判定、`created_at` は作成監査時刻。session touch 時の expiry 再計算に `created_at` を使わない。
 - 初期 schema migration の downgrade は全 application table を削除します。共有環境や本番 DB では downgrade より forward fix を基本方針にしてください。
-- `ip_address` columns は PostgreSQL `INET`、Python model boundary は `str | None`。
+- `ip_address` columns は設計指針からの意図的逸脱として PostgreSQL `INET`、Python model boundary は `str | None`。
 - auth repository は domain error を投げる。HTTP error envelope への変換は controller の責務。
-- `db-prune-auth` は古い audit log と `expires_at` が threshold より前の session を削除する CLI。CLI bootstrap は FastAPI app を作らず DI container を使い、最後に `AsyncEngine.dispose()` を呼ぶ。両 threshold 指定時は audit log、expired session の順に実行するが、repository 操作ごとに commit されるため、途中失敗時は部分成功になり得る。
+- `db-prune-auth` は `occurred_at` が threshold より前の audit log と、`expires_at` が threshold より前の session を削除する CLI。CLI bootstrap は FastAPI app を作らず DI container を使い、最後に `AsyncEngine.dispose()` を呼ぶ。両 threshold 指定時は audit log、expired session の順に実行するが、repository 操作ごとに commit されるため、途中失敗時は部分成功になり得る。
 - audit log session retention: `auth_audit_logs.session_id` は `ON DELETE SET NULL`。session を物理削除しても audit log row は残り、session 参照だけが `NULL` になる。audit 保持期間中に session id が必要な場合は session retention を audit log retention 以上にし、`NULL` を許容する場合は削除済み session token の後続 replay を既知 session として監査できないことを受け入れる。
 
 ### Large Auth Migration Playbook
@@ -117,9 +120,9 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 
 大規模 DB で downtime を短くしたい場合は、現 revision を直接適用せず、派生プロジェクト用の分割 migration を作る。
 
-1. Nullable shadow columns を追加する。例: `auth_audit_logs.ip_address_inet INET NULL`、`auth_sessions.ip_address_inet INET NULL`、`auth_sessions.issued_at_new TIMESTAMPTZ NULL`、`auth_sessions.updated_at_new TIMESTAMPTZ NULL`。
+1. Nullable shadow columns を追加する。例: `auth_audit_logs.ip_address_inet INET NULL`、`auth_sessions.ip_address_inet INET NULL`、`auth_sessions.issued_at_new BIGINT NULL`、`auth_sessions.updated_at_new TIMESTAMPTZ NULL`。
 2. Application dual-write または DB trigger を入れ、新規 / 更新行が旧 column と shadow column の両方へ書かれる期間を作る。dual-write を入れない場合は、backfill 中の新規行を拾う再実行手順を用意する。
-3. batch backfill を小さな chunk で実行する。`id` range または `created_at` range で区切り、各 batch を短い transaction にして `lock_timeout` / `statement_timeout` を設定する。`INET` 変換では不正 IP を `NULL` に寄せるか、事前 quarantine table に退避する。
+3. batch backfill を小さな chunk で実行する。`id` range または business timestamp range で区切り、各 batch を短い transaction にして `lock_timeout` / `statement_timeout` を設定する。`INET` 変換では不正 IP を `NULL` に寄せるか、事前 quarantine table に退避する。
 4. Backfill 完了後に validation query を実行する。例: shadow column の `NULL` 件数、旧 `ip_address` と `INET` 変換結果の不一致、`issued_at_new` / `updated_at_new` の未設定件数を確認する。
 5. 短い maintenance window で write を止め、最終差分 backfill、NOT NULL 制約、column rename / drop、FK / index swap を行う。大きな index は可能なら `CREATE INDEX CONCURRENTLY` を別 migration に分ける。
 6. Swap 後に `db-check` と auth smoke test を実行し、replica lag と error rate を確認してから write を戻す。
@@ -150,6 +153,8 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 
 新しい resource を作る場合は、この構成をコピーして、schema 変更前に `documents/plans/` とユーザー確認を必ず通す。
 
+Sample item の cursor ordering は `sample_items.registered_at, id` を基準にする。public API の `createdAt` / `updatedAt` は互換維持のため残すが、それぞれ `sample_items.registered_at` / `sample_items.modified_at` から組み立てる。DB の `created_at` / `updated_at` はログ・切り分け用で cursor や public contract には使わない。
+
 ## Admin CRUD
 
 Admin CRUD は `admin:access` で保護する管理者向け workflow であり、認可境界は Backend の FastAPI dependency に置く。Frontend の route guard は表示・導線制御であり、API 側の permission check を省略しない。
@@ -164,6 +169,8 @@ User CRUD は `/api/admin/users` にあり、`controllers/admin_user_controller.
 
 Admin 一覧は検索・filter・総件数表示に合わせて offset pagination を標準にする。user-facing feed や infinite scroll は既存 sample CRUD のように cursor pagination を選ぶ。public query parameter は camelCase を使い、Python 名と異なる場合は `Query(alias="...")` を controller で明示する。
 
+Admin user list の登録順 sort は `users.registered_at, id` を基準にする。public response の `createdAt` / `updatedAt` / `lastLoginAt` は互換維持のため残すが、それぞれ `users.registered_at` / `users.modified_at` / `users.last_logged_in_at` から組み立てる。`updatedAt` は profile / role / logical deletion の変更時刻であり、login activity では更新しない。login activity は `lastLoginAt` で表現する。
+
 User 削除は logical deletion である。`AdminUserUsecase.delete_user()` は `AccountDeletionUsecase` と cleanup 対象を揃える必要がある。user-owned resource を追加した場合は、公開 account deletion と admin deletion の両方の cleanup と coverage test を更新する。
 
 ## OAuth/OIDC Client
@@ -171,7 +178,9 @@ User 削除は logical deletion である。`AdminUserUsecase.delete_user()` は
 Phase 8 の OAuth/OIDC client は password auth と session auth の既存契約を保ったまま、外部 provider identity だけを追加する。
 
 - `auth_identities` は `users.id` に従属する provider identity table である。unique key は `(provider_id, provider_subject)` を正とし、email は補助情報として扱う。provider subject は login/link の primary identifier で、email 変更や再割当より安定している。
+- `auth_identities.linked_at` は linked provider 表示順の基準であり、`auth_identities.created_at` は使わない。verified email flag の DB column は `is_email_verified` とし、provider claim / DTO の `email_verified` とは分ける。
 - `auth_oidc_authorization_states` は authorization code flow の DB-backed state を保持する。state hash、browser binding hash、nonce hash、PKCE verifier、provider id、purpose、expected user/session、redirect path、expiry、consumed time を持つ。
+- `auth_oidc_authorization_states.expected_user_id` / `expected_session_id` は authorization start 時点の security context snapshot であり、FK も index も持たない soft reference とする。
 - browser binding cookie は authorization start ごとに `oidc_binding_<state_lookup_id>` として発行する。値は random lookup key で、DB には hash だけを保存する。Cookie は `HttpOnly`、`SameSite=Lax`、state TTL と同じ max-age、auth cookie と同じ Secure 判定を使い、callback consume 後または terminal failure 後に削除する。
 - Callback は URL の `state` だけでは完了しない。state row、browser binding cookie、PKCE、nonce、issuer、audience、expiry、signature、safe alg、`email_verified`、purpose 別 expected user/session を検証してから user / identity / session を確定する。
 - Redirect URI は `AUTH_OIDC_REDIRECT_BASE_URL` と provider callback path からだけ作る。request host 由来値を使わないため、Host header injection で authorization code を別 origin に流さない。
@@ -180,7 +189,7 @@ Phase 8 の OAuth/OIDC client は password auth と session auth の既存契約
 - OIDC redirect query code は `backend/AGENTS.md` の対応表を正とする。新規 code を追加する場合は backend mapping、frontend message、audit event 有無、docs を同時に更新する。
 - token 非保存を正とする。Backend は provider `access_token` / `refresh_token` を保存せず、URL、audit、frontend state にも出さない。保存するのは provider subject と allowlist 済み ID token claims だけである。
 - Trusted verified email は provider 設定で明示された場合だけ自動作成・自動 link に使う。`AUTO_PROVISION=link-only` は新規 user 作成を拒否し、`LINK_MODE=manual | disabled` は自動 link を拒否する。
-- OAuth-only account deletion は `auth_sessions.last_oidc_auth_time_at` と `AUTH_OIDC_REAUTH_FRESHNESS_SECONDS` で freshness を判定する。削除 reauth では provider に `prompt=login` / `max_age=0` を送り、`auth_time` が missing、`OIDC_REAUTH_STALE`、`OIDC_REAUTH_AUTH_TIME_REQUIRED`、future leeway 超過の場合は削除を拒否し続ける。
+- OAuth-only account deletion は `auth_sessions.last_oidc_authenticated_at` と `AUTH_OIDC_REAUTH_FRESHNESS_SECONDS` で freshness を判定する。削除 reauth では provider に `prompt=login` / `max_age=0` を送り、`auth_time` が missing、`OIDC_REAUTH_STALE`、`OIDC_REAUTH_AUTH_TIME_REQUIRED`、future leeway 超過の場合は削除を拒否し続ける。
 - Same-user reauth は current session user/session と state の expected user/session、さらに provider subject が指す `auth_identities.user_id` の一致で検証する。別 provider account / 別 user の callback では session を置換せず、`OIDC_REAUTH_SUBJECT_MISMATCH` を settings redirect に載せる。
 - Account deletion 成功時は `auth_identities` を同一 transaction で物理削除する。logical deleted user が provider subject unique index を占有し、同じ provider subject で再登録できない状態を避けるためである。
 - OIDC state pruning は `db-prune-auth --oidc-states-before <ISO8601>` で expired / consumed state を削除する。未消費 active state は削除しない。

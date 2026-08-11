@@ -42,7 +42,6 @@ async def replace_auth_session(
         user_id=user.id,
         session_token_hash=hash_token(session_token),
         csrf_token_hash=hash_token(csrf_token),
-        created_at=issued_at,
         issued_at=issued_at,
         last_seen_at=issued_at,
         expires_at=expires_at,

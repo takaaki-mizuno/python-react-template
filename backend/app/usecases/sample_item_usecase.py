@@ -96,7 +96,7 @@ class SampleItemUsecase(SampleItemUsecaseInterface):
 
     def encode_cursor(self, item: SampleItem) -> str:
         payload = {
-            "createdAt": item.created_at.isoformat(),
+            "createdAt": item.registered_at.isoformat(),
             "id": str(item.id),
         }
         return base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
@@ -104,9 +104,9 @@ class SampleItemUsecase(SampleItemUsecaseInterface):
     def decode_cursor(self, cursor: str) -> SampleItemCursor:
         try:
             payload = json.loads(base64.urlsafe_b64decode(cursor.encode("ascii")))
-            created_at = datetime.fromisoformat(payload["createdAt"])
-            if created_at.tzinfo is None:
+            registered_at = datetime.fromisoformat(payload["createdAt"])
+            if registered_at.tzinfo is None:
                 raise ValueError("createdAt must be timezone-aware")
-            return SampleItemCursor(created_at=created_at, id=UUID(payload["id"]))
+            return SampleItemCursor(registered_at=registered_at, id=UUID(payload["id"]))
         except (binascii.Error, KeyError, TypeError, UnicodeError, ValueError) as error:
             raise InvalidSampleItemCursorError from error

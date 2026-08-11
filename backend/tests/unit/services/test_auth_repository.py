@@ -16,6 +16,7 @@ from app.libraries.clock import utcnow
 from app.models.auth_errors import (AuthSessionNotFoundError, EmailAlreadyRegisteredError,
                                     UserNotFoundError)
 from app.models.auth_event_type import AuthEventType
+from app.models.auth_session import AuthSession
 from app.models.user import User
 from app.services.auth_repository import AuthRepository
 
@@ -67,6 +68,18 @@ class ResultStub:
     def one_or_none(self) -> object | None:
         return self._value
 
+    def all(self) -> list[object]:
+        return []
+
+    def scalar_one(self) -> object:
+        return self._value
+
+
+class ConnectionStub:
+
+    async def execute(self, _statement, _params):
+        return ResultStub(value=True)
+
 
 class CapturingSession:
 
@@ -84,6 +97,9 @@ class CapturingSession:
 
     async def get(self, _model, _identity):
         return self.get_result
+
+    async def connection(self):
+        return ConnectionStub()
 
     def add(self, instance: object) -> None:
         self.added.append(instance)
@@ -192,6 +208,17 @@ async def test_find_user_by_id_for_authentication_does_not_filter_deleted_users(
 
 
 @pytest.mark.asyncio
+async def test_find_identities_by_user_id_orders_stably_by_linked_at_and_id() -> None:
+    session = CapturingSession()
+    repository = AuthRepository(unit_of_work=CapturingUnitOfWork(session))
+
+    await repository.find_identities_by_user_id(uuid4())
+
+    compiled_sql = _compiled_sql(session.statements[0])
+    assert "ORDER BY auth_identities.linked_at, auth_identities.id" in compiled_sql
+
+
+@pytest.mark.asyncio
 async def test_record_user_login_raises_user_not_found_for_deleted_user() -> None:
     user_id = uuid4()
     user = User(id=user_id, email="deleted@example.com", deleted_at=utcnow())
@@ -254,12 +281,14 @@ async def test_mark_user_deleted_records_required_audit_log() -> None:
         ip_address="127.0.0.1",
     )
 
+    delete_sql = _compiled_sql(session.statements[0])
     audit_log = next(instance for instance in session.added if instance is not user)
+    assert "modified_at" in delete_sql
     assert audit_log.user_id == user_id
     assert audit_log.session_id == session_id
     assert audit_log.event_type == AuthEventType.USER_MARKED_DELETED
     assert audit_log.ip_address == "127.0.0.1"
-    assert audit_log.created_at == deleted_at
+    assert audit_log.occurred_at == deleted_at
 
 
 @pytest.mark.asyncio
@@ -295,15 +324,43 @@ async def test_delete_sessions_expired_before_uses_session_scope_and_expires_thr
 
 
 @pytest.mark.asyncio
-async def test_delete_audit_logs_created_before_uses_session_scope_and_created_threshold() -> None:
+async def test_delete_audit_logs_occurred_before_uses_session_scope_and_occurred_threshold(
+) -> None:
     session = CapturingSession()
     unit_of_work = CapturingUnitOfWork(session)
     repository = AuthRepository(unit_of_work=unit_of_work)
 
-    deleted_count = await repository.delete_audit_logs_created_before(utcnow())
+    deleted_count = await repository.delete_audit_logs_occurred_before(utcnow())
 
     compiled_sql = _compiled_sql(session.statements[0])
     assert deleted_count == 2
     assert "DELETE FROM auth_audit_logs" in compiled_sql
-    assert "auth_audit_logs.created_at <" in compiled_sql
+    assert "auth_audit_logs.occurred_at <" in compiled_sql
     assert unit_of_work.session_scope_entries == 1
+
+
+@pytest.mark.asyncio
+async def test_rejected_session_replay_uses_stable_latest_audit_order() -> None:
+    auth_session = AuthSession(
+        user_id=uuid4(),
+        session_token_hash="session-hash",
+        csrf_token_hash="csrf-hash",
+        ip_address=None,
+        user_agent=None,
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=5),
+    )
+    session = CapturingSession()
+    repository = AuthRepository(unit_of_work=CapturingUnitOfWork(session))
+
+    await repository.record_rejected_session_replay(
+        auth_session,
+        ip_address=None,
+        user_agent=None,
+        replayed_at=utcnow(),
+        window_seconds=60,
+    )
+
+    compiled_sql = _compiled_sql(session.statements[0])
+    assert "ORDER BY auth_audit_logs.occurred_at DESC, auth_audit_logs.id DESC" in compiled_sql

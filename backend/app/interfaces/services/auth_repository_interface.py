@@ -57,7 +57,6 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         user_id: UUID,
         session_token_hash: str,
         csrf_token_hash: str,
-        created_at: datetime,
         issued_at: datetime,
         last_seen_at: datetime,
         expires_at: datetime,
@@ -139,7 +138,7 @@ class AuthRepositoryInterface(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def delete_audit_logs_created_before(self, created_before: datetime) -> int:
+    async def delete_audit_logs_occurred_before(self, occurred_before: datetime) -> int:
         raise NotImplementedError
 
     @abstractmethod

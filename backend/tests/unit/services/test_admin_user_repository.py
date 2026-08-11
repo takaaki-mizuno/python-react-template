@@ -102,6 +102,8 @@ def _user(email: str = "admin@example.com") -> User:
         email=email,
         password_hash="hash",
         is_active=True,
+        registered_at=datetime(2026, 1, 1, tzinfo=UTC),
+        modified_at=datetime(2026, 1, 1, tzinfo=UTC),
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         updated_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
@@ -131,7 +133,7 @@ async def test_list_users_filters_deleted_search_status_role_and_paginates() -> 
     assert "users.is_active IS true" in list_sql
     assert "EXISTS" in list_sql
     assert "user_roles.role_code =" in list_sql
-    assert "ORDER BY users.created_at DESC, users.id DESC" in list_sql
+    assert "ORDER BY users.registered_at DESC, users.id DESC" in list_sql
     assert "LIMIT " in list_sql
     assert "OFFSET " in list_sql
     assert 10 in list_params.values()
@@ -207,7 +209,9 @@ async def test_create_user_converts_integrity_error_to_duplicate_email() -> None
 
 
 @pytest.mark.asyncio
-async def test_update_user_updates_only_requested_user_fields() -> None:
+async def test_update_user_updates_requested_fields_and_modified_at(monkeypatch) -> None:
+    modified_at = datetime(2026, 1, 2, tzinfo=UTC)
+    monkeypatch.setattr("app.services.admin_user_repository.utcnow", lambda: modified_at)
     user = _user()
     session = SessionStub([ResultStub([user])])
     repository = AdminUserRepository(unit_of_work=UnitOfWorkStub(session, in_transaction=True))
@@ -225,6 +229,7 @@ async def test_update_user_updates_only_requested_user_fields() -> None:
 
     assert result.email == "new@example.com"
     assert result.is_active is False
+    assert result.modified_at == modified_at
     assert result.password_hash == "hash"
     assert session.added == [user]
     assert session.flushed is True

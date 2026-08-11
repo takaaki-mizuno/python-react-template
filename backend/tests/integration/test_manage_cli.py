@@ -1,5 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -13,6 +15,7 @@ from app.libraries.password_hasher import hash_password
 from app.models.auth_event_type import AuthEventType
 from app.models.user import User
 from tests.integration.helpers import require_test_database_url
+from tests.integration.timestamp_helpers import unix_timestamp_millis
 
 pytestmark = pytest.mark.integration
 
@@ -195,14 +198,35 @@ def _create_inactive_user(email: str) -> User:
 def _insert_role_assignment(user_id, role_code: str) -> None:
 
     async def operation(session: AsyncSession):
+        now = datetime.now(UTC)
         await session.execute(
             text("""
-                INSERT INTO user_roles (user_id, role_code, assigned_at, assigned_by_user_id)
-                VALUES (:user_id, :role_code, now(), NULL)
+                INSERT INTO user_roles (
+                    id,
+                    user_id,
+                    role_code,
+                    assigned_at,
+                    assigned_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :id,
+                    :user_id,
+                    :role_code,
+                    :assigned_at,
+                    NULL,
+                    :created_at,
+                    :updated_at
+                )
             """),
             {
+                "id": uuid4(),
                 "user_id": user_id,
                 "role_code": role_code,
+                "assigned_at": unix_timestamp_millis(now),
+                "created_at": now,
+                "updated_at": now,
             },
         )
         await session.commit()

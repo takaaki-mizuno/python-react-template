@@ -601,3 +601,7 @@ Claude Code レビューで、実装済みの Admin user CRUD に対して、出
 
 - [x] `cd backend && uv run yapf -dr tests/integration/test_admin_user_controller.py`
 - [x] `cd backend && UV_CACHE_DIR=.cache/uv TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest tests/integration/test_admin_user_controller.py -q -ra`
+
+## 2026-08-11 現行 schema 注記
+
+この計画は historical plan である。現行 schema は `documents/plans/20260811-db-schema-guideline-alignment.md` の DB schema alignment 方針を優先する。

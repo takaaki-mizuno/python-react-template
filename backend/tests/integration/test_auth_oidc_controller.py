@@ -300,8 +300,7 @@ def test_oidc_callback_rejects_state_replay_without_new_session(oidc_client):
 async def test_oidc_callback_rejects_expired_state_without_session(oidc_client, async_session):
     client, _ = oidc_client
     state, _ = _start_oidc(client)
-    await async_session.execute(
-        text("UPDATE auth_oidc_authorization_states SET expires_at = now() - interval '1 minute'"))
+    await async_session.execute(text("UPDATE auth_oidc_authorization_states SET expires_at = 0"))
     await async_session.commit()
 
     callback_response = _complete_oidc(client, state)

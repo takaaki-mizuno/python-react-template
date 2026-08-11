@@ -49,9 +49,9 @@ class AdminUserListItemResponse(AdminUserSchema):
             id=record.user.id,
             email=record.user.email,
             is_active=record.user.is_active,
-            created_at=record.user.created_at,
-            updated_at=record.user.updated_at,
-            last_login_at=record.user.last_login_at,
+            created_at=record.user.registered_at,
+            updated_at=record.user.modified_at,
+            last_login_at=record.user.last_logged_in_at,
             roles=list(record.roles),
         )
 
@@ -65,9 +65,9 @@ class AdminUserResponse(AdminUserListItemResponse):
             id=detail.user.id,
             email=detail.user.email,
             is_active=detail.user.is_active,
-            created_at=detail.user.created_at,
-            updated_at=detail.user.updated_at,
-            last_login_at=detail.user.last_login_at,
+            created_at=detail.user.registered_at,
+            updated_at=detail.user.modified_at,
+            last_login_at=detail.user.last_logged_in_at,
             roles=list(detail.roles),
             permissions=list(detail.permissions),
         )

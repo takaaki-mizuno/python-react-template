@@ -3,10 +3,11 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, DateTime, Index, String, Uuid
+from sqlalchemy import Column, DateTime, Index, Text, Uuid
 from sqlmodel import Field, SQLModel
 
 from app.libraries.clock import utcnow
+from app.libraries.sqlalchemy_types import UnixTimestampMillis
 
 
 class AuthOidcState(SQLModel, table=True):
@@ -18,33 +19,59 @@ class AuthOidcState(SQLModel, table=True):
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    state_hash: str = Field(sa_column=Column(String(length=64), nullable=False), )
-    browser_binding_hash: str = Field(sa_column=Column(String(length=64), nullable=False), )
-    nonce_hash: str = Field(sa_column=Column(String(length=64), nullable=False), )
-    pkce_verifier: str = Field(sa_column=Column(String(length=128), nullable=False), )
-    provider_id: str = Field(sa_column=Column(String(length=64), nullable=False), )
-    purpose: str = Field(sa_column=Column(String(length=64), nullable=False), )
+    state_hash: str = Field(sa_column=Column(Text, nullable=False), )
+    browser_binding_hash: str = Field(sa_column=Column(Text, nullable=False), )
+    nonce_hash: str = Field(sa_column=Column(Text, nullable=False), )
+    pkce_verifier: str = Field(sa_column=Column(Text, nullable=False), )
+    provider_id: str = Field(sa_column=Column(Text, nullable=False), )
+    purpose: str = Field(sa_column=Column(Text, nullable=False), )
     expected_user_id: UUID | None = Field(
         default=None,
-        sa_column=Column(Uuid, nullable=True),
+        sa_column=Column(
+            Uuid,
+            nullable=True,
+            comment=
+            "NULL means no authenticated user context was expected for this authorization state.",
+        ),
     )
     expected_session_id: UUID | None = Field(
         default=None,
-        sa_column=Column(Uuid, nullable=True),
+        sa_column=Column(
+            Uuid,
+            nullable=True,
+            comment=("NULL means no authenticated session context was expected "
+                     "for this authorization state."),
+        ),
     )
-    redirect_path: str = Field(sa_column=Column(String(length=2048), nullable=False), )
+    redirect_path: str = Field(sa_column=Column(Text, nullable=False), )
     login_hint: str | None = Field(
         default=None,
-        sa_column=Column(String(length=320), nullable=True),
+        sa_column=Column(
+            Text,
+            nullable=True,
+            comment="NULL means no login hint was provided to the authorization request.",
+        ),
     )
-    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False), )
+    expires_at: datetime = Field(sa_column=Column(
+        UnixTimestampMillis(),
+        nullable=False,
+        comment="Unix timestamp in milliseconds. Business time when the state expires.",
+    ), )
     consumed_at: datetime | None = Field(
         default=None,
-        sa_column=Column(DateTime(timezone=True), nullable=True),
+        sa_column=Column(
+            UnixTimestampMillis(),
+            nullable=True,
+            comment="Unix timestamp in milliseconds. NULL means the state has not been consumed.",
+        ),
     )
     created_at: datetime = Field(sa_column=Column(DateTime(timezone=True),
                                                   nullable=False,
                                                   default=utcnow), )
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True),
+                                                  nullable=False,
+                                                  default=utcnow,
+                                                  onupdate=utcnow), )
 
 
 AuthOidcStateConsumeStatus = Literal[

@@ -8,6 +8,7 @@ from app.libraries.password_hasher import hash_password
 from app.models.auth_event_type import AuthEventType
 from app.models.authorization import UserRole
 from app.models.user import User
+from tests.integration.timestamp_helpers import unix_timestamp_millis
 
 pytestmark = pytest.mark.integration
 
@@ -76,6 +77,15 @@ async def test_admin_can_replace_user_roles_and_writes_audit(client, async_sessi
     admin_response = _register(client, "admin@example.com")
     await _grant_admin(async_session, admin_response.json()["id"])
     target_user = await _create_user(async_session, "target@example.com")
+    original_modified_at = unix_timestamp_millis(datetime(2026, 1, 1, tzinfo=UTC))
+    await async_session.execute(
+        text("UPDATE users SET modified_at = :modified_at WHERE id = :user_id"),
+        {
+            "modified_at": original_modified_at,
+            "user_id": target_user.id,
+        },
+    )
+    await async_session.commit()
 
     response = client.put(
         f"/api/admin/users/{target_user.id}/roles",
@@ -91,9 +101,14 @@ async def test_admin_can_replace_user_roles_and_writes_audit(client, async_sessi
              "WHERE event_type = :event_type"),
         {"event_type": AuthEventType.ROLE_GRANTED},
     )).one()
+    modified_at = await async_session.scalar(
+        text("SELECT modified_at FROM users WHERE id = :user_id"),
+        {"user_id": target_user.id},
+    )
     assert audit_row.event_type == AuthEventType.ROLE_GRANTED
     assert audit_row.detail_json["targetUserId"] == str(target_user.id)
     assert audit_row.detail_json["roleCode"] == "admin"
+    assert modified_at != original_modified_at
 
 
 async def test_admin_replace_user_roles_requires_roles_field(client, async_session):

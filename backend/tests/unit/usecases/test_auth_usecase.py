@@ -135,7 +135,7 @@ class AuthRepositoryStub:
 
     async def record_user_login(self, user_id, login_at):
         self.recorded_login_user_ids.append(user_id)
-        self.user.last_login_at = login_at
+        self.user.last_logged_in_at = login_at
         self.user.updated_at = login_at
         return self.user
 
@@ -427,8 +427,8 @@ async def test_login_records_last_login_before_creating_session(monkeypatch):
 
     assert repository.recorded_login_user_ids == [user.id]
     assert rate_limiter.success_records == [("127.0.0.1", "active@example.com")]
-    assert issued_session.user.last_login_at is not None
-    assert issued_session.user.updated_at == issued_session.user.last_login_at
+    assert issued_session.user.last_logged_in_at is not None
+    assert issued_session.user.updated_at == issued_session.user.last_logged_in_at
 
 
 @pytest.mark.asyncio
@@ -455,7 +455,7 @@ async def test_register_records_last_login_for_issued_session():
     assert rate_limiter.failure_records == []
     assert rate_limiter.registration_records == ["127.0.0.1"]
     assert repository.recorded_login_user_ids == [issued_session.user.id]
-    assert issued_session.user.last_login_at is not None
+    assert issued_session.user.last_logged_in_at is not None
 
 
 @pytest.mark.asyncio

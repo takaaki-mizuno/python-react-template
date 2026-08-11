@@ -106,7 +106,7 @@ class AccountDeletionUsecase(AccountDeletionUsecaseInterface):
         self,
         auth_context: AuthenticatedSessionContext,
     ) -> None:
-        auth_time = auth_context.session.last_oidc_auth_time_at
+        auth_time = auth_context.session.last_oidc_authenticated_at
         if auth_time is None:
             raise AccountDeletionOidcReauthRequiredError(await self._linked_provider_details(
                 auth_context.user.id))

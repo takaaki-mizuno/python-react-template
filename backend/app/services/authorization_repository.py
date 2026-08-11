@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -10,6 +10,7 @@ from app.interfaces.services.authorization_repository_interface import \
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.libraries.clock import utcnow
 from app.models.authorization import UnknownRoleAssignment, UserRole, UserRoleReplacementResult
+from app.models.user import User
 
 
 class AuthorizationRepository(AuthorizationRepositoryInterface):
@@ -65,6 +66,7 @@ class AuthorizationRepository(AuthorizationRepositoryInterface):
             target_set = frozenset(target_codes)
             revoked = tuple(sorted(existing_set - target_set))
             granted = tuple(sorted(target_set - existing_set))
+            changed_at = utcnow()
 
             if revoked:
                 await session.exec(
@@ -76,9 +78,12 @@ class AuthorizationRepository(AuthorizationRepositoryInterface):
                     UserRole(
                         user_id=user_id,
                         role_code=code,
-                        assigned_at=utcnow(),
+                        assigned_at=changed_at,
                         assigned_by_user_id=assigned_by_user_id,
                     ))
+            if granted or revoked:
+                await session.exec(
+                    update(User).where(col(User.id) == user_id).values(modified_at=changed_at))
 
             await self._persist(session)
             return UserRoleReplacementResult(

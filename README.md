@@ -153,7 +153,7 @@ hostから実行する場合:
 )
 ```
 
-`--audit-logs-before`は`auth_audit_logs.created_at`、`--expired-sessions-before`は`auth_sessions.expires_at`を基準にします。両方を指定した場合はaudit log、expired sessionの順に削除しますが、それぞれ独立してcommitされるため途中失敗時は部分成功になり得ます。
+`--audit-logs-before`は`auth_audit_logs.occurred_at`、`--expired-sessions-before`は`auth_sessions.expires_at`を基準にします。これらの business timestamp はDB上ではUnix timestamp millisecondsの`BIGINT`、Python/API境界では`datetime`として扱います。両方を指定した場合はaudit log、expired sessionの順に削除しますが、それぞれ独立してcommitされるため途中失敗時は部分成功になり得ます。
 
 `auth_audit_logs.session_id`は`ON DELETE SET NULL`です。sessionを物理削除してもaudit log rowは残りますが、削除されたsessionへの参照は`NULL`になります。audit保持期間中にsession idが必要な運用では、session retentionをaudit log retention以上にしてください。`NULL`を許容する運用では、削除済みsession tokenの後続replayを既知sessionとして監査できないことも受け入れる必要があります。
 
@@ -363,7 +363,7 @@ trusted verified email を信頼する provider だけ `AUTH_OIDC_PROVIDER_<ID>_
 
 token 非保存が前提です。Provider の `access_token` / `refresh_token` は DB、audit log、URL、frontend state に保存されません。Provider API 代理呼び出しが必要な場合は、refresh token 保存、暗号化、scope、revoke UX を別計画で設計してください。
 
-OAuth-only account deletion は provider `auth_time` を `auth_sessions.last_oidc_auth_time_at` に保存し、`AUTH_OIDC_REAUTH_FRESHNESS_SECONDS` 以内だけ fresh とみなします。`auth_time` がない provider では self-service deletion を通さず、`ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` と linked providers details から reauth / support 導線を出します。Callback redirect result は settings page で `oidcReauth=success`、`OIDC_REAUTH_SUBJECT_MISMATCH`、`OIDC_REAUTH_STALE`、`OIDC_REAUTH_AUTH_TIME_REQUIRED` として扱います。
+OAuth-only account deletion は provider `auth_time` を `auth_sessions.last_oidc_authenticated_at` に保存し、`AUTH_OIDC_REAUTH_FRESHNESS_SECONDS` 以内だけ fresh とみなします。`auth_time` がない provider では self-service deletion を通さず、`ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` と linked providers details から reauth / support 導線を出します。Callback redirect result は settings page で `oidcReauth=success`、`OIDC_REAUTH_SUBJECT_MISMATCH`、`OIDC_REAUTH_STALE`、`OIDC_REAUTH_AUTH_TIME_REQUIRED` として扱います。
 
 OIDC state は DB-backed で、state ごとの browser binding cookie と組み合わせて検証します。Expired / consumed state の pruning は次のように明示実行します。
 

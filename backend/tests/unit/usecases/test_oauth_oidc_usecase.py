@@ -148,7 +148,6 @@ class AuthRepositoryStub:
         user_id,
         session_token_hash: str,
         csrf_token_hash: str,
-        created_at: datetime,
         issued_at: datetime,
         last_seen_at: datetime,
         expires_at: datetime,
@@ -159,7 +158,6 @@ class AuthRepositoryStub:
             user_id=user_id,
             session_token_hash=session_token_hash,
             csrf_token_hash=csrf_token_hash,
-            created_at=created_at,
             issued_at=issued_at,
             last_seen_at=last_seen_at,
             expires_at=expires_at,
@@ -171,7 +169,7 @@ class AuthRepositoryStub:
 
     async def record_user_login(self, user_id, login_at: datetime) -> User:
         user = self.users_by_id[user_id]
-        user.last_login_at = login_at
+        user.last_logged_in_at = login_at
         return user
 
     async def record_oidc_login(
@@ -368,7 +366,7 @@ def _identity(user: User, *, subject: str = "subject-1") -> AuthIdentity:
         provider_id="google",
         provider_subject=subject,
         email=user.email.strip().lower(),
-        email_verified=True,
+        is_email_verified=True,
         claims_json={"sub": subject},
     )
 

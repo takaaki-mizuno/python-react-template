@@ -66,6 +66,8 @@ class AdminUserRepositoryStub:
             email=email,
             password_hash=password_hash,
             is_active=is_active,
+            registered_at=datetime(2026, 1, 1, tzinfo=UTC),
+            modified_at=datetime(2026, 1, 1, tzinfo=UTC),
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
             updated_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
@@ -170,6 +172,8 @@ def _user(user_id: UUID | None = None, *, is_active: bool = True) -> User:
         email="admin@example.com",
         password_hash="hash",
         is_active=is_active,
+        registered_at=datetime(2026, 1, 1, tzinfo=UTC),
+        modified_at=datetime(2026, 1, 1, tzinfo=UTC),
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         updated_at=datetime(2026, 1, 1, tzinfo=UTC),
     )

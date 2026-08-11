@@ -7,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.interfaces.services.sample_item_repository_interface import SampleItemRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
+from app.libraries.clock import utcnow
 from app.models.sample_item import SampleItem, SampleItemCursor
 
 
@@ -29,17 +30,17 @@ class SampleItemRepository(SampleItemRepositoryInterface):
         cursor: SampleItemCursor | None,
     ) -> list[SampleItem]:
         async with self._unit_of_work.session_scope() as session:
-            created_at_col = col(SampleItem.created_at)
+            registered_at_col = col(SampleItem.registered_at)
             id_col = col(SampleItem.id)
             statement = select(SampleItem).where(col(SampleItem.owner_user_id) == owner_user_id)
             if cursor is not None:
                 statement = statement.where(
                     or_(
-                        created_at_col < cursor.created_at,
-                        (created_at_col == cursor.created_at) & (id_col < cursor.id),
+                        registered_at_col < cursor.registered_at,
+                        (registered_at_col == cursor.registered_at) & (id_col < cursor.id),
                     ))
             statement = statement.order_by(
-                created_at_col.desc(),
+                registered_at_col.desc(),
                 id_col.desc(),
             ).limit(fetch_limit)
             result = await session.exec(statement)
@@ -66,6 +67,7 @@ class SampleItemRepository(SampleItemRepositoryInterface):
 
     async def update(self, item: SampleItem) -> SampleItem:
         async with self._unit_of_work.session_scope() as session:
+            item.modified_at = utcnow()
             session.add(item)
             await self._persist(session)
             return item

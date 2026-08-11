@@ -215,6 +215,8 @@ def _user(user_id: UUID | None = None) -> User:
         email="admin@example.com",
         password_hash="hash",
         is_active=True,
+        registered_at=datetime(2026, 1, 1, tzinfo=UTC),
+        modified_at=datetime(2026, 1, 1, tzinfo=UTC),
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         updated_at=datetime(2026, 1, 1, tzinfo=UTC),
     )

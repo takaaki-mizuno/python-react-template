@@ -635,6 +635,10 @@ Claude Code の追加レビューで、H1-H3 / M1-M5 の是正後に以下の残
 - Backend type: `./.venv/bin/mypy app manage.py` は pass。
 - Backend unit: `uv run pytest tests/unit -q --tb=short` は 395 passed。
 - Backend integration: `TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test ./.venv/bin/pytest tests/integration -q --tb=short` は 113 passed。
+
+## 2026-08-11 現行 schema 注記
+
+この計画は historical plan である。現行 schema は `documents/plans/20260811-db-schema-guideline-alignment.md` の DB schema alignment 方針を優先する。
 - Backend DB: `DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test ./.venv/bin/python manage.py db-check` は "No new upgrade operations detected."。
 - Frontend targeted: `npm test -- login.test.tsx app.settings.test.tsx` は 35 passed。
 - Frontend all: `npm test` は 142 passed。`npm run check:ci` は pass。`npm run build` は pass。

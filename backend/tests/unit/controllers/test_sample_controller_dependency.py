@@ -25,6 +25,8 @@ class StubSampleItemUsecase:
                     owner_user_id=owner_user_id,
                     title="Stubbed",
                     description=None,
+                    registered_at=datetime(2026, 8, 2, tzinfo=UTC),
+                    modified_at=datetime(2026, 8, 2, tzinfo=UTC),
                     created_at=datetime(2026, 8, 2, tzinfo=UTC),
                     updated_at=datetime(2026, 8, 2, tzinfo=UTC),
                 )

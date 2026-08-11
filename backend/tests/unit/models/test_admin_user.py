@@ -17,9 +17,11 @@ def _user() -> User:
         email="admin@example.com",
         password_hash="hash",
         is_active=True,
-        created_at=datetime(2026, 1, 1, tzinfo=UTC),
-        updated_at=datetime(2026, 1, 2, tzinfo=UTC),
-        last_login_at=datetime(2026, 1, 3, tzinfo=UTC),
+        registered_at=datetime(2026, 1, 1, tzinfo=UTC),
+        modified_at=datetime(2026, 1, 2, tzinfo=UTC),
+        created_at=datetime(2026, 1, 4, tzinfo=UTC),
+        updated_at=datetime(2026, 1, 5, tzinfo=UTC),
+        last_logged_in_at=datetime(2026, 1, 3, tzinfo=UTC),
     )
 
 

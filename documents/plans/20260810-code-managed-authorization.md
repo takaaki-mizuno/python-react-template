@@ -1889,3 +1889,7 @@ Expected:
 - DB no longer stores permission display names or role-permission mappings. Admin API must import code catalog to return them.
 - `UserRoleReplacementResult` intentionally carries only role changes. Controller and CLI currently compute response permissions from `result.current_role_codes`; if a third caller needs the same response shape, consider adding an application-layer response result type instead of duplicating boundary mapping again.
 - Existing uncommitted `authz-check` work, if present, should not be preserved. It solves drift for the old sync design and is obsolete in the new code-managed design.
+
+## 2026-08-11 現行 schema 注記
+
+この計画は historical plan である。現行 schema は `documents/plans/20260811-db-schema-guideline-alignment.md` の DB schema alignment 方針を優先する。

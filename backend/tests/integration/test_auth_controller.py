@@ -1,5 +1,6 @@
 import asyncio
 import os
+from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 
 import pytest
@@ -10,10 +11,12 @@ from app.bootstrap.create_app import create_app
 from app.config.auth import AuthSettings
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
+from app.libraries.clock import utcnow
 from app.libraries.password_hasher import hash_password
 from app.libraries.session_tokens import hash_token
 from app.models.auth_event_type import AuthEventType
 from app.models.user import User
+from tests.integration.timestamp_helpers import unix_timestamp_millis
 
 pytestmark = pytest.mark.integration
 
@@ -830,7 +833,7 @@ async def test_me_rejects_expired_session(client, async_session):
     await async_session.execute(
         text("""
             UPDATE auth_sessions
-            SET expires_at = now() - interval '1 second'
+            SET expires_at = 0
             WHERE session_token_hash = :session_token_hash
         """),
         {"session_token_hash": hash_token(client.cookies.get("session_token"))},
@@ -867,7 +870,7 @@ async def test_me_rejects_revoked_session(client, async_session):
     await async_session.execute(
         text("""
             UPDATE auth_sessions
-            SET revoked_at = now()
+            SET revoked_at = 1
             WHERE session_token_hash = :session_token_hash
         """),
         {"session_token_hash": hash_token(client.cookies.get("session_token"))},
@@ -895,7 +898,7 @@ async def test_me_rejects_revoked_session(client, async_session):
     ("user_update_sql", "event_type"),
     [
         (
-            "UPDATE users SET deleted_at = now() WHERE id = :user_id",
+            "UPDATE users SET deleted_at = :deleted_at WHERE id = :user_id",
             AuthEventType.SESSION_REVOKED_DELETED_USER,
         ),
         (
@@ -925,7 +928,13 @@ async def test_me_revokes_all_user_sessions_when_observing_deleted_or_inactive_u
     assert second_csrf_token
     assert second_session_token != first_session_token
 
-    await async_session.execute(text(user_update_sql), {"user_id": user_id})
+    await async_session.execute(
+        text(user_update_sql),
+        {
+            "deleted_at": unix_timestamp_millis(utcnow()),
+            "user_id": user_id,
+        },
+    )
     await async_session.commit()
     _restore_auth_cookies(client, first_session_token, first_csrf_token)
 
@@ -935,7 +944,7 @@ async def test_me_revokes_all_user_sessions_when_observing_deleted_or_inactive_u
             SELECT session_token_hash, revoked_at
             FROM auth_sessions
             WHERE user_id = :user_id
-            ORDER BY created_at
+            ORDER BY issued_at
         """),
         {"user_id": user_id},
     )).all()
@@ -978,7 +987,7 @@ async def test_me_rejected_session_replay_is_bounded_with_replay_count(client, a
     await async_session.execute(
         text("""
             UPDATE auth_sessions
-            SET revoked_at = now()
+            SET revoked_at = 1
             WHERE session_token_hash = :session_token_hash
         """),
         {"session_token_hash": hash_token(client.cookies.get("session_token"))},
@@ -1018,7 +1027,7 @@ async def test_csrf_unknown_path_rejected_session_replay_is_bounded(client, asyn
     await async_session.execute(
         text("""
             UPDATE auth_sessions
-            SET revoked_at = now()
+            SET revoked_at = 1
             WHERE session_token_hash = :session_token_hash
         """),
         {"session_token_hash": hash_token(session_token)},
@@ -1061,8 +1070,7 @@ async def test_login_recovers_from_inactive_session_cookie(
         headers={"X-CSRF-Token": csrf_token},
     )
     session_token = client.cookies.get("session_token")
-    assignment = ("expires_at = now() - interval '1 second'"
-                  if session_state == "expired" else "revoked_at = now()")
+    assignment = "expires_at = 0" if session_state == "expired" else "revoked_at = 1"
     await async_session.execute(
         text(f"""
             UPDATE auth_sessions
@@ -1102,8 +1110,7 @@ async def test_register_recovers_from_inactive_session_cookie(
         },
         headers={"X-CSRF-Token": csrf_token},
     )
-    assignment = ("expires_at = now() - interval '1 second'"
-                  if session_state == "expired" else "revoked_at = now()")
+    assignment = "expires_at = 0" if session_state == "expired" else "revoked_at = 1"
     await async_session.execute(
         text(f"""
             UPDATE auth_sessions
@@ -1210,7 +1217,7 @@ async def test_login_rolls_back_session_rotation_when_success_audit_fails(
     )
     original_session_token = client.cookies.get("session_token")
     original_login_at = await async_session.scalar(
-        text("SELECT last_login_at FROM users "
+        text("SELECT last_logged_in_at FROM users "
              "WHERE email = 'login-rollback@example.com'"))
     repository = client.app.state.injector.get(AuthRepositoryInterface)
     original_create_audit_log = repository.create_audit_log
@@ -1234,13 +1241,55 @@ async def test_login_rolls_back_session_rotation_when_success_audit_fails(
 
     session_rows = (await async_session.execute(
         text("SELECT session_token_hash, revoked_at FROM auth_sessions "
-             "ORDER BY created_at"))).all()
+             "ORDER BY issued_at"))).all()
     persisted_login_at = await async_session.scalar(
-        text("SELECT last_login_at FROM users "
+        text("SELECT last_logged_in_at FROM users "
              "WHERE email = 'login-rollback@example.com'"))
 
     assert session_rows == [(hash_token(original_session_token), None)]
     assert persisted_login_at == original_login_at
+
+
+@pytest.mark.asyncio
+async def test_login_updates_last_login_without_changing_public_updated_at_source(
+    client,
+    async_session,
+):
+    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    client.post(
+        "/api/auth/register",
+        json={
+            "email": "login-modified-at@example.com",
+            "password": "Password123!",
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    original_modified_at = unix_timestamp_millis(datetime(2026, 1, 1, tzinfo=UTC))
+    await async_session.execute(
+        text("UPDATE users SET modified_at = :modified_at WHERE email = :email"),
+        {
+            "modified_at": original_modified_at,
+            "email": "login-modified-at@example.com",
+        },
+    )
+    await async_session.commit()
+
+    login_response = client.post(
+        "/api/auth/login",
+        json={
+            "email": "login-modified-at@example.com",
+            "password": "Password123!",
+        },
+        headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
+    )
+
+    row = (await async_session.execute(
+        text("SELECT modified_at, last_logged_in_at FROM users WHERE email = :email"),
+        {"email": "login-modified-at@example.com"},
+    )).one()
+    assert login_response.status_code == 200
+    assert row.modified_at == original_modified_at
+    assert row.last_logged_in_at is not None
 
 
 @pytest.mark.asyncio
