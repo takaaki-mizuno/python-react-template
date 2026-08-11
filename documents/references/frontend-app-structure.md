@@ -103,6 +103,7 @@ components/
 - `routeTree.gen.ts` は自動生成のため編集禁止・フォーマット対象外。
 - account settings route は `/app/settings`。認証必須 route なので `_authenticated` 配下に置く。
 - 保護された route が `<Outlet />` を持たない page route と path prefix を共有する場合、TanStack Router の trailing underscore を使う。`/app/settings` は `routes/_authenticated.app_.settings.tsx` として定義し、`_authenticated.app.tsx` に nest させない。
+- `/admin/users` も同じ理由で `routes/_authenticated.admin_.users.tsx` として定義する。`_authenticated.admin.tsx` は管理トップ page であり `<Outlet />` を持たない。
 
 ---
 
@@ -123,6 +124,14 @@ components/
 - user がいない場合は `/login?redirect=<current href>` へ送る。user はいるが permission がない場合は `/forbidden` へ送る。`/api/auth/me` の 5xx は redirect に変換しない。
 - Header などの共通 UI で admin link を出す場合も `hasPermission(user, "admin:access")` で表示制御するだけに留め、Backend API は必ず permission dependency で守る。
 - 自分自身の role / permission を変更する UI を後続で作る場合は、成功後に `queryClient.invalidateQueries({ queryKey: queryKeys.auth.me })` を呼び、auth cache を更新する。
+
+## 5.2 Admin CRUD
+
+- Admin API client は `src/lib/<feature>Api.ts` に置き、HTTP query は `URLSearchParams` で組み立てる。
+- Admin 一覧の route search は `offset` を必須の内部状態とし、`search`、`isActive`、`role` は未指定時に省略する。
+- Reusable UI は `molecules` に置く。検索 toolbar、data table、offset pagination、confirm dialog は user 固有の副作用を持たせない。
+- Feature screen は `organisms/<Feature>/` に置く。React Query、mutation、error message、form state はこの層で扱う。
+- Admin 画面は表中心の業務 UI にし、landing page 的な hero や card の入れ子を避ける。
 
 ---
 

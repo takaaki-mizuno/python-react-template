@@ -150,6 +150,22 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 
 新しい resource を作る場合は、この構成をコピーして、schema 変更前に `documents/plans/` とユーザー確認を必ず通す。
 
+## Admin CRUD
+
+Admin CRUD は `admin:access` で保護する管理者向け workflow であり、認可境界は Backend の FastAPI dependency に置く。Frontend の route guard は表示・導線制御であり、API 側の permission check を省略しない。
+
+共通実装は次を再利用する。
+
+- `models/admin_pagination.py`: `AdminOffsetPageRequest` / `AdminOffsetPageResult`
+- `models/admin_query.py`: search 正規化 helper
+- `usecases/authorization_audit.py`: role audit detail helper
+
+User CRUD は `/api/admin/users` にあり、`controllers/admin_user_controller.py`、`services/admin_user_repository.py`、`usecases/admin_user_usecase.py` の3層で構成する。user fields と roles を同時に更新する `PATCH /api/admin/users/{user_id}` は同一 transaction で処理し、UI から user PATCH と role PUT を分けて呼んで部分成功を起こさない。
+
+Admin 一覧は検索・filter・総件数表示に合わせて offset pagination を標準にする。user-facing feed や infinite scroll は既存 sample CRUD のように cursor pagination を選ぶ。public query parameter は camelCase を使い、Python 名と異なる場合は `Query(alias="...")` を controller で明示する。
+
+User 削除は logical deletion である。`AdminUserUsecase.delete_user()` は `AccountDeletionUsecase` と cleanup 対象を揃える必要がある。user-owned resource を追加した場合は、公開 account deletion と admin deletion の両方の cleanup と coverage test を更新する。
+
 ## OAuth/OIDC Client
 
 Phase 8 の OAuth/OIDC client は password auth と session auth の既存契約を保ったまま、外部 provider identity だけを追加する。

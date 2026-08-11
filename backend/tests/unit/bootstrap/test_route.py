@@ -30,6 +30,15 @@ def test_healthz_documents_error_envelope_for_not_found(tmp_path):
         "$ref"] == "#/components/schemas/ErrorResponse"
 
 
+def test_admin_users_route_is_included_in_openapi(tmp_path):
+    client = _client_with_static(tmp_path / "missing-static")
+
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/api/admin/users" in paths
+    assert "/api/admin/users/{user_id}" in paths
+
+
 def test_setup_routes_skips_static_mount_when_index_html_is_missing(
     tmp_path,
     caplog,

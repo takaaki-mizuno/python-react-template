@@ -50,3 +50,18 @@ seedはmigrationを自動実行しない。利用者は先に`db-upgrade --revis
 ## ドキュメント
 
 ルート`README.md`の初回migration手順の後へ、手動seedコマンド、ログイン情報、再実行時の挙動、ローカル専用であることを追記する。
+
+---
+
+## 2026-08-10 追記: RBAC 導入後の現在仕様
+
+この計画作成時点では管理者権限を表す属性がなかったが、現在は code-managed RBAC が実装済みである。そのため `seed-admin` は通常ユーザー作成だけでなく、`admin` role 付与まで行う。
+
+- 対象 email は `admin@example.com`、password は `Password@123!`、`is_active` は `true`、role は `admin` 固定。
+- `local` / `development` 以外の environment では DB 接続前に失敗させる。
+- `DATABASE_URL` は明示必須とし、既定値だけで mutating DB command を実行しない。
+- 未削除の既存 user がいる場合は password hash と `is_active=true` を更新し、`admin` role を冪等に付与する。
+- deleted user しかいない場合は、既存 partial unique index 契約に従って新しい active user を作る。
+- 平文 password は stdout / stderr / audit に出さない。
+
+この追記は `documents/plans/20260810-admin-crud.md` の実装計画に基づく。古い「通常ユーザーとして扱う」記述は当時の前提として残すが、実装・運用では本追記を優先する。

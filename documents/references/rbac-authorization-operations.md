@@ -124,6 +124,17 @@ docker compose exec -T backend uv run python manage.py authz-grant-role \
 
 新規登録ユーザーには role は自動付与されない。admin API や admin 画面を使うには、対象ユーザーへ `admin` role を明示付与する。
 
+### Admin seed
+
+ローカルまたは development 環境では、管理画面確認用に `seed-admin` を使える。
+
+```bash
+cd backend
+DATABASE_URL=postgresql+asyncpg://... uv run python manage.py seed-admin
+```
+
+対象は `admin@example.com`、初期 password は `Password@123!`、role は `admin` 固定である。既存の未削除 user がいれば password hash と `is_active=true` を更新し、`admin` role を冪等に付与する。deleted user しかいない場合は新しい user を作る。production など許可外 environment では DB 接続前に失敗する。
+
 ## 権限を追加する手順
 
 1. `DEFAULT_AUTHORIZATION_PERMISSIONS` に permission を追加する。
@@ -138,6 +149,8 @@ docker compose exec -T backend uv run python manage.py authz-grant-role \
 `GET /api/admin/roles` は code catalog から role / permission 一覧を返す。DB catalog は読まない。
 
 `PUT /api/admin/users/{userId}/roles` は role set 置き換えである。未知 role を指定した場合は `422 ROLE_NOT_FOUND`。対象 user が存在しない、または deleted user の場合は `404 USER_NOT_FOUND`。inactive user は role 管理対象として許可する。
+
+`/api/admin/users` は user CRUD API である。`GET` は `offset` / `limit` pagination、email search、`isActive` filter、`role` filter を持つ。`POST` は user 作成と初期 role 付与を同一 transaction で行う。`PATCH /api/admin/users/{userId}` は email、password、`isActive`、roles を同一 request で更新し、UI から role API と分けて呼ぶ必要はない。password 変更と `isActive=false` は対象 user の session を revoke する。`DELETE` は logical deletion と cleanup を行い、`USER_MARKED_DELETED` と `USER_DELETED_BY_ADMIN` の audit を残す。
 
 既存 DB に unknown role assignment が残っている user を admin API で編集する場合、public response には既知 role だけが返る。その既知 role set を `PUT` で保存すると、未知 role assignment は通常の role set 置き換え差分として削除され、`ROLE_REVOKED` audit が残る。retired role を一括削除したい場合は prune CLI を使い、rename の場合は明示 remap を先に行う。
 

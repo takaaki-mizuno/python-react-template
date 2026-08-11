@@ -16,6 +16,7 @@ from app.models.auth_event_type import AuthEventType
 from app.models.authorization import (PermissionDefinition, RoleWithPermissions, UserAuthorization,
                                       UserRoleReplacementResult)
 from app.models.authorization_errors import AuthorizationUserNotFoundError, RoleNotFoundError
+from app.usecases.authorization_audit import role_audit_detail
 
 
 class AuthorizationUsecase(AuthorizationUsecaseInterface):
@@ -106,10 +107,11 @@ class AuthorizationUsecase(AuthorizationUsecaseInterface):
                 event_type=event_type,
                 ip_address=ip_address,
                 user_agent=user_agent,
-                detail_json={
-                    "actorUserId": str(actor_context.user.id),
-                    "targetUserId": str(target_user_id),
-                    "roleCode": role_code,
-                    "resultingRoles": list(resulting_roles),
-                },
+                detail_json=role_audit_detail(
+                    source=None,
+                    actor_user_id=actor_context.user.id,
+                    target_user_id=target_user_id,
+                    role_code=role_code,
+                    resulting_roles=resulting_roles,
+                ),
             ))

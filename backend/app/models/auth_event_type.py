@@ -20,3 +20,6 @@ class AuthEventType(StrEnum):
     OIDC_REAUTH_FAILED = "oidc_reauth_failed"
     ROLE_GRANTED = "role_granted"
     ROLE_REVOKED = "role_revoked"
+    USER_CREATED_BY_ADMIN = "user_created_by_admin"
+    USER_UPDATED_BY_ADMIN = "user_updated_by_admin"
+    USER_DELETED_BY_ADMIN = "user_deleted_by_admin"

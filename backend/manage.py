@@ -14,13 +14,17 @@ from app.bootstrap.cli import run_with_container
 from app.config import get_config
 from app.config.authorization import authorization_config_errors, role_catalog_by_code
 from app.config.database import DatabaseSettings, get_alembic_database_url, get_database_settings
+from app.interfaces.services.admin_user_repository_interface import AdminUserRepositoryInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.authorization_repository_interface import \
     AuthorizationRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
+from app.libraries.password_hasher import PasswordHashExecutor
+from app.models.admin_user import AdminUserUpdateChanges
 from app.models.auth_audit_log import AuthAuditLog
 from app.models.auth_event_type import AuthEventType
 from app.models.authorization import UnknownRoleAssignment
+from app.usecases.authorization_audit import role_audit_detail
 
 app = typer.Typer()
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -290,15 +294,77 @@ def authz_grant_role(
                         event_type=AuthEventType.ROLE_GRANTED,
                         ip_address=None,
                         user_agent=None,
-                        detail_json={
-                            "source": "cli",
-                            "actorUserId": None,
-                            "targetUserId": str(user.id),
-                            "roleCode": granted_role_code,
-                            "resultingRoles": list(result.current_role_codes),
-                        },
+                        detail_json=role_audit_detail(
+                            source="cli",
+                            actor_user_id=None,
+                            target_user_id=user.id,
+                            role_code=granted_role_code,
+                            resulting_roles=result.current_role_codes,
+                        ),
                     ))
         typer.echo(f"Granted role {role} to {normalized_email}.")
+
+    asyncio.run(run_with_container(operation))
+
+
+@app.command("seed-admin")
+def seed_admin() -> None:
+    environment = get_config().ENVIRONMENT.lower()
+    if environment not in {"local", "development"}:
+        typer.secho("seed-admin is local/development only.", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    _get_explicit_database_settings("seed-admin")
+
+    async def operation(container: Injector) -> None:
+        admin_user_repository = container.get(AdminUserRepositoryInterface)
+        auth_repository = container.get(AuthRepositoryInterface)
+        authorization_repository = container.get(AuthorizationRepositoryInterface)
+        unit_of_work = container.get(UnitOfWorkInterface)
+        password_hash_executor = container.get(PasswordHashExecutor)
+        email = "admin@example.com"
+        role = "admin"
+        password_hash = await password_hash_executor.hash("Password@123!")
+        async with unit_of_work.transaction():
+            user = await auth_repository.find_user_by_email(email)
+            if user is None:
+                user = await admin_user_repository.create_user(
+                    email,
+                    password_hash,
+                    is_active=True,
+                )
+            else:
+                user = await admin_user_repository.update_user(
+                    user.id,
+                    AdminUserUpdateChanges(
+                        password=None,
+                        is_active=True,
+                        fields_set=frozenset({"password", "is_active"}),
+                    ),
+                    password_hash=password_hash,
+                )
+            existing_roles = frozenset(await authorization_repository.get_user_role_codes(user.id))
+            result = await authorization_repository.replace_user_roles(
+                user.id,
+                tuple(sorted(existing_roles | frozenset({role}))),
+                assigned_by_user_id=None,
+            )
+            for granted_role_code in result.granted_role_codes:
+                await auth_repository.create_audit_log(
+                    AuthAuditLog(
+                        user_id=None,
+                        session_id=None,
+                        event_type=AuthEventType.ROLE_GRANTED,
+                        ip_address=None,
+                        user_agent=None,
+                        detail_json=role_audit_detail(
+                            source="cli-seed-admin",
+                            actor_user_id=None,
+                            target_user_id=user.id,
+                            role_code=granted_role_code,
+                            resulting_roles=result.current_role_codes,
+                        ),
+                    ))
+        typer.echo(f"Seeded admin user {email}.")
 
     asyncio.run(run_with_container(operation))
 

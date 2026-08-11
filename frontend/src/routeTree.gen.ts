@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated.app'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.admin'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated.app_.settings'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated.admin_.users'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -58,6 +59,11 @@ const AuthenticatedAppSettingsRoute =
     path: '/app/settings',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/admin_/users',
+  path: '/admin/users',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/app': typeof AuthenticatedAppRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRoutesByTo {
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/app': typeof AuthenticatedAppRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRoutesById {
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/app': typeof AuthenticatedAppRoute
+  '/_authenticated/admin_/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/app_/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRouteTypes {
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/admin'
     | '/app'
+    | '/admin/users'
     | '/app/settings'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/admin'
     | '/app'
+    | '/admin/users'
     | '/app/settings'
   id:
     | '__root__'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authenticated/admin'
     | '/_authenticated/app'
+    | '/_authenticated/admin_/users'
     | '/_authenticated/app_/settings'
   fileRoutesById: FileRoutesById
 }
@@ -185,18 +197,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin_/users': {
+      id: '/_authenticated/admin_/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedAppRoute: typeof AuthenticatedAppRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedAppRoute: AuthenticatedAppRoute,
+  AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,
 }
 

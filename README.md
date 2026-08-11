@@ -50,6 +50,19 @@ FRONTEND_PORT=3001 BACKEND_PORT=8001 POSTGRES_PORT=5433 \
   docker compose up -d --build
 ```
 
+### 管理者ユーザーを作成する
+
+ローカル開発環境では、migration 適用後に管理画面確認用ユーザーを作成できる。
+
+```bash
+docker compose exec -T backend \
+  env ENVIRONMENT=local \
+      DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app \
+  uv run python manage.py seed-admin
+```
+
+作成されるアカウントは `admin@example.com` / `Password@123!` で、`admin` role が付与される。再実行しても重複作成せず、未削除の既存ユーザーを active に戻して password と role を指定状態へ収束させる。`seed-admin` は `local` / `development` 専用で、本番環境では DB 接続前に失敗する。
+
 ## PostgreSQL構成
 
 Docker Composeはローカル開発用に次のDBを使用します。

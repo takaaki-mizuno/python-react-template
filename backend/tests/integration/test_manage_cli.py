@@ -135,6 +135,31 @@ def test_authz_prune_unknown_role_assignments_deletes_unknown_and_audits(monkeyp
     assert audit_detail["roleCode"] == "deleted-role"
 
 
+def test_seed_admin_creates_admin_user_and_is_idempotent(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", require_test_database_url())
+    monkeypatch.setenv("ENVIRONMENT", "local")
+
+    first_result = CliRunner().invoke(manage.app, ["seed-admin"])
+    second_result = CliRunner().invoke(manage.app, ["seed-admin"])
+
+    user_rows = _fetch_scalars(
+        "SELECT email FROM users WHERE lower(email) = 'admin@example.com' "
+        "AND deleted_at IS NULL", )
+    role_rows = _fetch_scalars(
+        "SELECT role_code FROM user_roles "
+        "JOIN users ON users.id = user_roles.user_id "
+        "WHERE lower(users.email) = 'admin@example.com'", )
+    audit_count = _fetch_scalar(
+        "SELECT count(*) FROM auth_audit_logs WHERE event_type = :event_type",
+        {"event_type": AuthEventType.ROLE_GRANTED},
+    )
+    assert first_result.exit_code == 0
+    assert second_result.exit_code == 0
+    assert user_rows == ["admin@example.com"]
+    assert role_rows == ["admin"]
+    assert audit_count == 1
+
+
 def _fetch_scalars(statement: str, params: dict | None = None):
 
     async def operation(session: AsyncSession):

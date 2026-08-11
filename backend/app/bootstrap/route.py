@@ -8,6 +8,7 @@ from starlette.exceptions import HTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
+from app.controllers.admin_user_controller import router as admin_user_router
 from app.controllers.auth_controller import router as auth_router
 from app.controllers.authorization_controller import router as authorization_router
 from app.controllers.healthz_controller import router as healthz_router
@@ -76,6 +77,7 @@ def setup_routes(
 
 def _setup_api_routes(app: FastAPI) -> FastAPI:
     router = APIRouter()
+    router.include_router(admin_user_router)
     router.include_router(authorization_router)
     router.include_router(auth_router)
     router.include_router(healthz_router)

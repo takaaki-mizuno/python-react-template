@@ -7,6 +7,7 @@ from uuid import uuid4
 from typer.testing import CliRunner
 
 import manage
+from app.interfaces.services.admin_user_repository_interface import AdminUserRepositoryInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.authorization_repository_interface import \
     AuthorizationRepositoryInterface
@@ -863,3 +864,194 @@ def test_authz_grant_role_exits_when_role_is_not_found_before_database_url(monke
     assert result.exit_code == 1
     assert "Role not found: missing" in result.stderr
     assert "DATABASE_URL" not in result.stderr
+
+
+def test_seed_admin_rejects_production_before_database_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(manage, "get_config", lambda: SimpleNamespace(ENVIRONMENT="production"))
+
+    result = CliRunner().invoke(manage.app, ["seed-admin"])
+
+    assert result.exit_code == 1
+    assert "local/development only" in result.stderr
+    assert "DATABASE_URL" not in result.stderr
+
+
+def test_seed_admin_requires_database_url_in_local(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(manage, "get_config", lambda: SimpleNamespace(ENVIRONMENT="local"))
+
+    result = CliRunner().invoke(manage.app, ["seed-admin"])
+
+    assert result.exit_code == 2
+    assert "DATABASE_URL must be configured explicitly for seed-admin" in result.stderr
+
+
+def test_seed_admin_creates_user_assigns_role_and_audits(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+    monkeypatch.setattr(manage, "get_config", lambda: SimpleNamespace(ENVIRONMENT="local"))
+    audit_logs = []
+    created_users = []
+
+    class UnitOfWorkStub:
+
+        @asynccontextmanager
+        async def transaction(self):
+            yield
+
+    class PasswordHashExecutorStub:
+
+        async def hash(self, raw_password):
+            assert raw_password == "Password@123!"
+            return "hashed-password"
+
+    class AuthRepositoryStub:
+
+        async def find_user_by_email(self, email):
+            assert email == "admin@example.com"
+            return None
+
+        async def create_audit_log(self, audit_log):
+            audit_logs.append(audit_log)
+
+    class AdminUserRepositoryStub:
+
+        async def create_user(self, email, password_hash, is_active):
+            assert email == "admin@example.com"
+            assert password_hash == "hashed-password"
+            assert is_active is True
+            user = User(id=uuid4(), email=email, password_hash=password_hash, is_active=True)
+            created_users.append(user)
+            return user
+
+    class AuthorizationRepositoryStub:
+
+        async def get_user_role_codes(self, user_id):
+            assert user_id == created_users[0].id
+            return ()
+
+        async def replace_user_roles(self, user_id, role_codes, assigned_by_user_id):
+            assert user_id == created_users[0].id
+            assert role_codes == ("admin", )
+            assert assigned_by_user_id is None
+            return UserRoleReplacementResult(
+                user_id=user_id,
+                granted_role_codes=("admin", ),
+                revoked_role_codes=(),
+                current_role_codes=("admin", ),
+            )
+
+    class InjectorStub:
+
+        def get(self, interface):
+            if interface is UnitOfWorkInterface:
+                return UnitOfWorkStub()
+            if interface is AuthRepositoryInterface:
+                return AuthRepositoryStub()
+            if interface is AdminUserRepositoryInterface:
+                return AdminUserRepositoryStub()
+            if interface is AuthorizationRepositoryInterface:
+                return AuthorizationRepositoryStub()
+            if interface is manage.PasswordHashExecutor:
+                return PasswordHashExecutorStub()
+            raise AssertionError(interface)
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(manage.app, ["seed-admin"])
+
+    assert result.exit_code == 0
+    assert "Seeded admin user admin@example.com." in result.stdout
+    assert "Password@123!" not in result.stdout
+    assert audit_logs[0].event_type == AuthEventType.ROLE_GRANTED
+    assert audit_logs[0].detail_json == {
+        "source": "cli-seed-admin",
+        "actorUserId": None,
+        "targetUserId": str(created_users[0].id),
+        "roleCode": "admin",
+        "resultingRoles": ["admin"],
+    }
+
+
+def test_seed_admin_updates_existing_user_and_is_idempotent_when_role_exists(monkeypatch):
+    user = User(id=uuid4(), email="admin@example.com", password_hash="old", is_active=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://app:app@localhost:5432/app_test")
+    monkeypatch.setattr(manage, "get_config", lambda: SimpleNamespace(ENVIRONMENT="development"))
+    audit_logs = []
+    updates = []
+
+    class UnitOfWorkStub:
+
+        @asynccontextmanager
+        async def transaction(self):
+            yield
+
+    class PasswordHashExecutorStub:
+
+        async def hash(self, raw_password):
+            assert raw_password == "Password@123!"
+            return "new-hash"
+
+    class AuthRepositoryStub:
+
+        async def find_user_by_email(self, email):
+            assert email == "admin@example.com"
+            return user
+
+        async def create_audit_log(self, audit_log):
+            audit_logs.append(audit_log)
+
+    class AdminUserRepositoryStub:
+
+        async def update_user(self, user_id, changes, password_hash):
+            updates.append((user_id, changes, password_hash))
+            user.password_hash = password_hash
+            user.is_active = changes.is_active
+            return user
+
+    class AuthorizationRepositoryStub:
+
+        async def get_user_role_codes(self, user_id):
+            assert user_id == user.id
+            return ("admin", )
+
+        async def replace_user_roles(self, user_id, role_codes, assigned_by_user_id):
+            assert user_id == user.id
+            assert role_codes == ("admin", )
+            assert assigned_by_user_id is None
+            return UserRoleReplacementResult(
+                user_id=user_id,
+                granted_role_codes=(),
+                revoked_role_codes=(),
+                current_role_codes=("admin", ),
+            )
+
+    class InjectorStub:
+
+        def get(self, interface):
+            if interface is UnitOfWorkInterface:
+                return UnitOfWorkStub()
+            if interface is AuthRepositoryInterface:
+                return AuthRepositoryStub()
+            if interface is AdminUserRepositoryInterface:
+                return AdminUserRepositoryStub()
+            if interface is AuthorizationRepositoryInterface:
+                return AuthorizationRepositoryStub()
+            if interface is manage.PasswordHashExecutor:
+                return PasswordHashExecutorStub()
+            raise AssertionError(interface)
+
+    async def run_with_container_stub(operation):
+        return await operation(InjectorStub())
+
+    monkeypatch.setattr(manage, "run_with_container", run_with_container_stub)
+
+    result = CliRunner().invoke(manage.app, ["seed-admin"])
+
+    assert result.exit_code == 0
+    assert updates[0][2] == "new-hash"
+    assert updates[0][1].is_active is True
+    assert audit_logs == []

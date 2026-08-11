@@ -8,10 +8,12 @@ from app.bootstrap import container as container_module
 from app.config import Config
 from app.config.auth import AuthSettings
 from app.config.oidc import OidcProviderSettings, OidcSettings
+from app.interfaces.services.admin_user_repository_interface import AdminUserRepositoryInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.oidc_provider_client_interface import OidcProviderClientInterface
 from app.interfaces.services.sample_item_repository_interface import SampleItemRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
+from app.interfaces.usecases.admin_user_usecase_interface import AdminUserUsecaseInterface
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecaseInterface
 from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsecaseInterface
@@ -61,6 +63,8 @@ def test_build_container_binds_module_provider_singletons(monkeypatch):
     assert injector.get(OidcProviderClientInterface) is injector.get(OidcProviderClientInterface)
     assert injector.get(OAuthOidcUsecaseInterface) is injector.get(OAuthOidcUsecaseInterface)
     assert injector.get(SampleItemUsecaseInterface) is injector.get(SampleItemUsecaseInterface)
+    assert injector.get(AdminUserUsecaseInterface) is injector.get(AdminUserUsecaseInterface)
+    assert injector.get(AdminUserRepositoryInterface) is injector.get(AdminUserRepositoryInterface)
     assert injector.get(SampleItemRepositoryInterface) is injector.get(
         SampleItemRepositoryInterface)
     assert injector.get(AuthRepositoryInterface) is injector.get(AuthRepositoryInterface)
