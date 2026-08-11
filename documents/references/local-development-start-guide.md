@@ -264,6 +264,36 @@ curl http://localhost:8000/api/healthz
 docker compose exec backend uv run python manage.py db-upgrade --revision head
 ```
 
+### 初期 migration を作り直した後にローカル DB を作り直したい
+
+未デプロイ前提で初期 migration file の中身を作り直した場合は、ローカル DB も作り直します。既存 DB に同じ revision id が適用済みだと、Alembic は新しい migration 内容を再実行しません。
+
+登録ユーザーや開発中データが消えてよいことを確認してから実行してください。
+
+```bash
+docker compose down
+rm -rf docker/postgres/data
+docker compose up -d --build postgres backend frontend
+```
+
+Backend コンテナは起動時に migration を実行します。明示的に確認したい場合は次を実行します。
+
+```bash
+docker compose exec -T backend uv run python manage.py db-upgrade --revision head
+docker compose exec -T backend uv run python manage.py db-check
+```
+
+管理画面を確認する場合は、migration 後に seed admin を入れます。
+
+```bash
+docker compose exec -T backend \
+  env ENVIRONMENT=local \
+      DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app \
+  uv run python manage.py seed-admin
+```
+
+作成される管理者は `admin@example.com` / `Password@123!` です。
+
 ### 依存関係が古い、またはコンテナ内の状態がおかしい
 
 まず build し直します。

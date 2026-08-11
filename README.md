@@ -27,9 +27,9 @@ docker compose up -d --build postgres backend frontend
 docker compose ps
 ```
 
-`docker compose ps`で`postgres`が`healthy`、`backend`と`frontend`が`Up`になるまで待ってからmigrationを実行してください。
+`docker compose ps`で`postgres`が`healthy`、`backend`と`frontend`が`Up`になるまで待ってください。Backend コンテナは起動時に `db-upgrade` を自動実行します。
 
-初回起動時またはmigration追加後は、runtime DBの`app`へmigrationを適用します。
+明示的に migration を再実行・確認したい場合は、runtime DBの`app`へ migration を適用します。
 
 ```bash
 docker compose exec -T backend \
@@ -119,6 +119,39 @@ hostから実行する場合:
 ```
 
 `APP_POSTGRES_PORT`はルート`.env`の`POSTGRES_PORT`と同じ値にしてください。
+
+### 初期 migration を作り直した場合
+
+未デプロイ前提で既存の初期 migration file を書き換えた場合、旧 schema が入っているローカル DB は捨てて作り直します。Alembic は revision id で適用済み判定をするため、同じ revision file の中身だけを書き換えても、旧 DB には新しい schema が再適用されません。
+
+保持したいローカルデータがないことを確認してから実行してください。
+
+```bash
+docker compose down
+rm -rf docker/postgres/data
+docker compose up -d --build postgres backend frontend
+```
+
+Backend コンテナは起動時に `db-upgrade` を実行します。明示的に migration と schema drift を確認する場合:
+
+```bash
+docker compose exec -T backend \
+  uv run python manage.py db-upgrade --revision head
+
+docker compose exec -T backend \
+  uv run python manage.py db-check
+```
+
+管理画面確認用の seed admin も入れる場合:
+
+```bash
+docker compose exec -T backend \
+  env ENVIRONMENT=local \
+      DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app \
+  uv run python manage.py seed-admin
+```
+
+作成されるアカウントは `admin@example.com` / `Password@123!` です。
 
 ### Downgradeする
 
