@@ -1,0 +1,54 @@
+{
+  "app": {
+    "name": "python-react-template"
+  },
+  "actions": {
+    "backToTop": "トップへ戻る",
+    "backToApp": "アプリへ戻る",
+    "closeLogoutError": "ログアウトエラーを閉じる",
+    "closeLanguageError": "表示言語エラーを閉じる",
+    "openMenu": "メニューを開く",
+    "closeMenu": "メニューを閉じる"
+  },
+  "apiError": {
+    "csrf": "セッションの確認に失敗しました。ページを再読み込みして、もう一度お試しください。",
+    "status400": "入力内容を確認してください。",
+    "status401": "ログインが必要です。",
+    "status403": "この操作を実行する権限がありません。",
+    "status409": "現在の状態では処理できません。",
+    "status422": "入力内容を確認してください。",
+    "status429": "試行回数が多すぎます。時間をおいて再度お試しください。",
+    "fallback": "通信に失敗しました。時間をおいて再度お試しください。"
+  },
+  "errors": {
+    "notFound": {
+      "title": "ページが見つかりません",
+      "message": "指定されたページは存在しないか、移動した可能性があります。"
+    },
+    "unexpected": {
+      "title": "問題が発生しました",
+      "message": "時間をおいて再度お試しください。問題が続く場合は管理者へ連絡してください。"
+    },
+    "forbidden": {
+      "title": "アクセスできません",
+      "message": "このページを表示する権限がありません。"
+    }
+  },
+  "header": {
+    "home": "ページ先頭へ移動",
+    "mobileNavigation": "モバイルページ内ナビゲーション",
+    "navigation": "ページ内ナビゲーション",
+    "sections": "セクション"
+  },
+  "language": {
+    "label": "表示言語",
+    "trigger": "表示言語を変更",
+    "english": "English",
+    "japanese": "日本語",
+    "updateFailed": "表示言語の更新に失敗しました。"
+  },
+  "metadata": {
+    "defaultTitle": "python-react-template",
+    "defaultDescription": "FastAPI と React のフルスタックテンプレート"
+  }
+}

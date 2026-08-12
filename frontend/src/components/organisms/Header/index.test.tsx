@@ -113,12 +113,12 @@ describe('Header', () => {
       (await screen.findByRole('link', { name: 'ログイン' })).getAttribute(
         'href',
       ),
-    ).toBe('/login?redirect=%2Fapp')
+    ).toBe('/ja/login?redirect=%2Fapp')
     expect(
       (await screen.findByRole('link', { name: '新規登録' })).getAttribute(
         'href',
       ),
-    ).toBe('/register?redirect=%2Fapp')
+    ).toBe('/ja/register?redirect=%2Fapp')
   })
 
   test('ログイン済み時は email と logout button を表示し、login/register link は出さない', async () => {
@@ -166,6 +166,47 @@ describe('Header', () => {
     expect(router.state.location.pathname).toBe('/app')
   })
 
+  test('言語更新失敗時は閉じたメニューの外側に alert を表示する', async () => {
+    document.cookie = 'csrf_token=csrf-123; path=/'
+    const user = {
+      id: '00000000-0000-0000-0000-000000000001',
+      email: 'user@example.com',
+      languageCode: 'ja',
+      roles: [],
+      permissions: [],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/auth/me' && init?.method !== 'PATCH') {
+          return Promise.resolve(jsonResponse(user))
+        }
+
+        if (input === '/api/auth/me' && init?.method === 'PATCH') {
+          return Promise.resolve(jsonResponse({ detail: 'Server error' }, 500))
+        }
+
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }),
+    )
+
+    renderWithRouter({ initialEntries: ['/app'] })
+
+    await screen.findByText(user.email)
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: '表示言語を変更' }),
+      { button: 0, ctrlKey: false },
+    )
+    fireEvent.click(
+      await screen.findByRole('menuitemradio', { name: 'English' }),
+    )
+
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      '表示言語の更新に失敗しました。',
+    )
+  })
+
   test('ログアウト処理中はアカウントトリガーに pending 状態を表示する', async () => {
     document.cookie = 'csrf_token=csrf-123; path=/'
     let resolveLogout: (response: Response) => void = () => {}
@@ -202,7 +243,7 @@ describe('Header', () => {
     resolveLogout(new Response(null, { status: 204 }))
 
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/login')
+      expect(router.state.location.pathname).toBe('/ja/login')
     })
   })
 
@@ -257,7 +298,9 @@ describe('Header', () => {
     })
     openAccountMenu(accountTrigger)
     fireEvent.click(screen.getByRole('menuitem', { name: 'ログアウト' }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe('/ja/login'),
+    )
 
     fireEvent.change(await screen.findByLabelText('メールアドレス'), {
       target: { value: nextUser.email },

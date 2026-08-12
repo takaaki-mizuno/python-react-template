@@ -6,6 +6,10 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import { useAccountDeletion } from './useAccountDeletion'
 import type { ReactNode } from 'react'
+import {
+  readLastResolvedLanguage,
+  writeLastResolvedLanguage,
+} from '@/lib/i18n/storage'
 import { queryKeys } from '@/lib/queryKeys'
 
 afterEach(() => {
@@ -20,9 +24,11 @@ test('account deletion 成功時は logout と同じ cache policy を適用す�
     .mockResolvedValue(new Response(null, { status: 204 }))
   vi.stubGlobal('fetch', fetchMock)
   const queryClient = new QueryClient()
+  writeLastResolvedLanguage('en')
   queryClient.setQueryData(queryKeys.auth.me, {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
+    languageCode: 'en',
     roles: [],
     permissions: [],
   })
@@ -42,4 +48,5 @@ test('account deletion 成功時は logout と同じ cache policy を適用す�
 
   expect(queryClient.getQueryData(queryKeys.auth.me)).toBeNull()
   expect(queryClient.getQueryData(['projects'])).toBeUndefined()
+  expect(readLastResolvedLanguage()).toBeNull()
 })

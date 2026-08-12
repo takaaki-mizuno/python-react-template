@@ -1,14 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/organisms/ErrorState'
 
 const ForbiddenPage = () => {
+  const { t } = useTranslation('common')
+
   return (
     <ErrorState
-      message="このページを表示する権限がありません。必要な場合は管理者へ連絡してください。"
-      primaryAction={{ label: 'アプリへ戻る', to: '/app' }}
+      message={t('errors.forbidden.message')}
+      primaryAction={{ label: t('actions.backToApp'), to: '/app' }}
       statusCode="403"
-      title="アクセスできません"
+      title={t('errors.forbidden.title')}
     />
   )
 }

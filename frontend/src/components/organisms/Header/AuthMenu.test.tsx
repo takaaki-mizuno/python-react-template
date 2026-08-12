@@ -22,20 +22,25 @@ let logoutIsPending = false
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
+    params,
     search,
     to,
     ...props
   }: {
     children: ReactNode
+    params?: { locale?: string }
     search?: { redirect?: string }
     to: string
   }) => {
+    const pathname = params?.locale
+      ? to.replace('/{-$locale}', `/${params.locale}`)
+      : to
     const redirect = search?.redirect
       ? `?redirect=${encodeURIComponent(search.redirect)}`
       : ''
 
     return (
-      <a href={`${to}${redirect}`} {...props}>
+      <a href={`${pathname}${redirect}`} {...props}>
         {children}
       </a>
     )
@@ -71,10 +76,10 @@ describe('AuthMenu', () => {
 
     expect(
       screen.getByRole('link', { name: 'ログイン' }).getAttribute('href'),
-    ).toBe('/login?redirect=%2Fapp')
+    ).toBe('/ja/login?redirect=%2Fapp')
     expect(
       screen.getByRole('link', { name: '新規登録' }).getAttribute('href'),
-    ).toBe('/register?redirect=%2Fapp')
+    ).toBe('/ja/register?redirect=%2Fapp')
   })
 
   test('ログイン済み時は email と logout button を表示する', () => {
@@ -107,8 +112,7 @@ describe('AuthMenu', () => {
     await waitFor(() => {
       expect(logoutMutateAsyncMock).toHaveBeenCalledOnce()
       expect(navigateMock).toHaveBeenCalledWith({
-        search: { redirect: '/app' },
-        to: '/login',
+        href: '/ja/login?redirect=/app',
       })
     })
   })

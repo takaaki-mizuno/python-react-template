@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/css'
@@ -24,6 +25,8 @@ export function AdminDataTable<T>({
   loading = false,
   emptyMessage,
 }: AdminDataTableProps<T>) {
+  const { t } = useTranslation('admin')
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] border-collapse text-sm">
@@ -62,7 +65,7 @@ export function AdminDataTable<T>({
                 className="px-4 py-12 text-center text-muted-foreground"
                 colSpan={columns.length}
               >
-                {loading ? '読み込み中です。' : emptyMessage}
+                {loading ? t('common.loading') : emptyMessage}
               </td>
             </tr>
           )}

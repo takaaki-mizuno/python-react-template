@@ -1,8 +1,12 @@
+import { useTranslation } from 'react-i18next'
+
 import { Card, CardContent } from '@/components/atoms/card'
 
 const ArchitectureDiagram = () => {
+  const { t } = useTranslation('landing')
+
   return (
-    <Card role="img" aria-label="frontend と backend と build 出力の関係図">
+    <Card role="img" aria-label={t('architecture.diagram.label')}>
       <CardContent>
         <svg
           className="h-auto w-full"
@@ -49,23 +53,23 @@ const ArchitectureDiagram = () => {
             fontFamily="Helvetica Neue, Arial, Noto Sans JP, sans-serif"
           >
             <text fontSize="13" letterSpacing="1.2" x="78" y="72">
-              フロントエンド
+              {t('architecture.diagram.frontendLabel')}
             </text>
             <text fontSize="26" fontWeight="700" x="78" y="102">
               React + Vite
             </text>
             <text fill="var(--muted-foreground)" fontSize="14" x="78" y="126">
-              UI 実装と build を担当
+              {t('architecture.diagram.frontendDescription')}
             </text>
 
             <text fontSize="13" letterSpacing="1.2" x="78" y="196">
-              バックエンド
+              {t('architecture.diagram.backendLabel')}
             </text>
             <text fontSize="26" fontWeight="700" x="78" y="226">
               FastAPI
             </text>
             <text fill="var(--muted-foreground)" fontSize="14" x="78" y="250">
-              API と CLI を担当
+              {t('architecture.diagram.backendDescription')}
             </text>
           </g>
 
@@ -80,13 +84,13 @@ const ArchitectureDiagram = () => {
               x="424"
               y="130"
             >
-              ビルド出力
+              {t('architecture.diagram.outputLabel')}
             </text>
             <text fontSize="26" fontWeight="700" x="424" y="162">
               backend/static/
             </text>
             <text fill="var(--muted-foreground)" fontSize="14" x="424" y="188">
-              frontend の成果物を集約し、そのまま配信
+              {t('architecture.diagram.outputDescription')}
             </text>
           </g>
         </svg>

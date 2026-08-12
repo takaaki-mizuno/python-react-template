@@ -17,6 +17,7 @@ from app.models.auth_errors import (AuthSessionNotFoundError, EmailAlreadyRegist
                                     UserNotFoundError)
 from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
+from app.models.language import DEFAULT_LANGUAGE_CODE
 from app.models.user import User
 from app.services.auth_repository import AuthRepository
 
@@ -154,6 +155,42 @@ def test_create_user_accepts_nullable_password_hash_type_annotation():
 
     assert interface_hints["password_hash"] == str | None
     assert concrete_hints["password_hash"] == str | None
+
+
+@pytest.mark.asyncio
+async def test_create_user_defaults_language_code_to_ja() -> None:
+    session = CapturingSession()
+    repository = AuthRepository(unit_of_work=CapturingUnitOfWork(session))
+
+    await repository.create_user(email="user@example.com", password_hash="hash")
+
+    assert isinstance(session.added[0], User)
+    assert session.added[0].language_code == DEFAULT_LANGUAGE_CODE
+
+
+@pytest.mark.asyncio
+async def test_create_user_accepts_language_code() -> None:
+    session = CapturingSession()
+    repository = AuthRepository(unit_of_work=CapturingUnitOfWork(session))
+
+    await repository.create_user(email="user@example.com", password_hash="hash", language_code="en")
+
+    assert isinstance(session.added[0], User)
+    assert session.added[0].language_code == "en"
+
+
+@pytest.mark.asyncio
+async def test_update_user_language_updates_language_and_modified_at() -> None:
+    modified_at = utcnow()
+    user = User(email="user@example.com", password_hash="hash", language_code="ja")
+    session = CapturingSession(get_result=user)
+    repository = AuthRepository(unit_of_work=CapturingUnitOfWork(session))
+
+    updated_user = await repository.update_user_language(user.id, "en", modified_at)
+
+    assert updated_user.language_code == "en"
+    assert updated_user.modified_at == modified_at
+    assert session.added == [user]
 
 
 def test_repository_exposes_only_authentication_specific_user_id_lookup():

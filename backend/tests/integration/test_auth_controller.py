@@ -142,6 +142,80 @@ def test_register_then_me_returns_current_user(client):
     assert me_response.json()["email"] == "user@example.com"
 
 
+def test_register_accepts_language_code_and_me_returns_it(client):
+    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+
+    register_response = client.post(
+        "/api/auth/register",
+        json={
+            "email": "language-register@example.com",
+            "password": "Password123!",
+            "languageCode": "en",
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    me_response = client.get("/api/auth/me")
+
+    assert register_response.status_code == 201
+    assert register_response.json()["languageCode"] == "en"
+    assert me_response.status_code == 200
+    assert me_response.json()["languageCode"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_patch_me_updates_language_code(client, async_session):
+    _register(client, "language-patch@example.com")
+
+    response = client.patch(
+        "/api/auth/me",
+        json={"languageCode": "en"},
+        headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
+    )
+    stored_language = await async_session.scalar(
+        text("SELECT language_code FROM users WHERE email = :email"),
+        {"email": "language-patch@example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json()["languageCode"] == "en"
+    assert stored_language == "en"
+
+
+def test_patch_me_empty_body_is_noop(client):
+    _register(client, "language-empty-patch@example.com")
+
+    response = client.patch(
+        "/api/auth/me",
+        json={},
+        headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["languageCode"] == "ja"
+
+
+def test_patch_me_rejects_invalid_null_and_missing_csrf(client):
+    _register(client, "language-invalid-patch@example.com")
+
+    invalid_response = client.patch(
+        "/api/auth/me",
+        json={"languageCode": "fr"},
+        headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
+    )
+    null_response = client.patch(
+        "/api/auth/me",
+        json={"languageCode": None},
+        headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
+    )
+    missing_csrf_response = client.patch("/api/auth/me", json={"languageCode": "en"})
+
+    assert invalid_response.status_code == 422
+    assert null_response.status_code == 422
+    assert missing_csrf_response.status_code == 403
+    assert_error_code(missing_csrf_response, "CSRF_VALIDATION_FAILED")
+
+
 @pytest.mark.asyncio
 async def test_register_persists_only_session_and_csrf_token_hashes(
     client,

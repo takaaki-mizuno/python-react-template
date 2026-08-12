@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import type { OidcProvider } from '@/lib/authApi'
 import { Button } from '@/components/atoms/button'
 
@@ -12,6 +14,8 @@ export function OidcProviderButton({
   onClick,
   provider,
 }: OidcProviderButtonProps) {
+  const { t } = useTranslation('auth')
+
   return (
     <Button
       className="h-11 w-full justify-center"
@@ -20,7 +24,7 @@ export function OidcProviderButton({
       type="button"
       variant="outline"
     >
-      {provider.displayName}で続行
+      {t('actions.continueWithProvider', { provider: provider.displayName })}
     </Button>
   )
 }

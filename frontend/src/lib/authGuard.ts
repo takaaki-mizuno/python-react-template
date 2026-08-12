@@ -1,6 +1,10 @@
 import { redirect } from '@tanstack/react-router'
 
 import { currentUserQueryOptions } from './authApi'
+import {
+  detectPreferredPublicLanguage,
+  localizedAuthPath,
+} from './i18n/publicLocale'
 import { hasPermission } from './permissions'
 import type { QueryClient } from '@tanstack/react-query'
 
@@ -18,8 +22,7 @@ export async function requireAuth({
 
   if (!user) {
     throw redirect({
-      to: '/login',
-      search: { redirect: location.href },
+      href: localizedLoginHref(location.href),
     })
   }
 }
@@ -47,12 +50,16 @@ export async function requireAnyPermission(
 
   if (!user) {
     throw redirect({
-      to: '/login',
-      search: { redirect: options.location.href },
+      href: localizedLoginHref(options.location.href),
     })
   }
 
   if (!permissions.some((permission) => hasPermission(user, permission))) {
     throw redirect({ to: '/forbidden' })
   }
+}
+
+function localizedLoginHref(redirectHref: string): string {
+  const params = new URLSearchParams({ redirect: redirectHref })
+  return `${localizedAuthPath('login', detectPreferredPublicLanguage())}?${params.toString()}`
 }

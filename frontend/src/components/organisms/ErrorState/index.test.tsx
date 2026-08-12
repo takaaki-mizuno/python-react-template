@@ -42,5 +42,5 @@ test('ErrorState は status / title / message / primary action を表示する',
   ).toBeTruthy()
   expect(
     screen.getByRole('link', { name: 'トップへ戻る' }).getAttribute('href'),
-  ).toBe('/')
+  ).toBe('/ja')
 })

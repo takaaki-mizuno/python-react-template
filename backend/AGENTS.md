@@ -112,6 +112,16 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - production では `/docs`、`/redoc`、`/openapi.json` を公開しない
 - `Status` は healthz などの限定用途に使う。CRUD success response の模範にはしない
 
+## i18n / User Language
+
+- `users.language_code` はユーザーの認証済み UI 表示言語 preference であり、許可値は `en` / `ja`、既定値は `ja`
+- `app.models.language` の `SUPPORTED_LANGUAGE_CODES` / `DEFAULT_LANGUAGE_CODE` を backend の言語コード正典とする。DB の `users.language_code` と `auth_oidc_authorization_states.language_code` の CHECK 制約も同じ許可値に揃える
+- `GET /api/auth/me`、password login、register、OIDC login は `languageCode` を返す
+- `PATCH /api/auth/me` は認証済み user の `languageCode` 更新 endpoint。CSRF middleware の対象で、明示 `null` と unsupported code は 422、empty body は no-op 200
+- register は request の `languageCode` を新規 user に保存する。未指定時は `ja`
+- OIDC login start は optional query `languageCode` を受け、auto-provision 時の初期 user language にだけ使う。invalid query は OIDC redirect 契約を壊さず `ja` へフォールバックする。既存 identity / 既存 user link / account deletion reauth では user preference を上書きしない
+- 新しい言語を追加する場合は、`SUPPORTED_LANGUAGE_CODES`、`LanguageCode`、`users.language_code` CHECK、`auth_oidc_authorization_states.language_code` CHECK、frontend `languageOptions`、locale JSON、formatter locale map、translation key parity test を同じ変更で更新する
+
 ## Phase 5 認証永続化規約
 
 - `DATABASE_URL` が DB 接続設定の正であり、Alembic もここから async URL を導出する。`ALEMBIC_DATABASE_URL` は使わない

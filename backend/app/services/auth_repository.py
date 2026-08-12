@@ -18,6 +18,7 @@ from app.models.auth_event_type import AuthEventType
 from app.models.auth_identity import AuthIdentity
 from app.models.auth_oidc_state import AuthOidcState, AuthOidcStateConsumeResult
 from app.models.auth_session import AuthSession
+from app.models.language import DEFAULT_LANGUAGE_CODE, LanguageCode
 from app.models.user import User
 
 REJECTED_SESSION_REPLAY_LOCK_CLASS_ID = 0x41555253
@@ -36,9 +37,14 @@ class AuthRepository(AuthRepositoryInterface):
         else:
             await session.commit()
 
-    async def create_user(self, email: str, password_hash: str | None) -> User:
+    async def create_user(
+        self,
+        email: str,
+        password_hash: str | None,
+        language_code: LanguageCode = DEFAULT_LANGUAGE_CODE,
+    ) -> User:
         async with self._unit_of_work.session_scope() as session:
-            user = User(email=email, password_hash=password_hash)
+            user = User(email=email, password_hash=password_hash, language_code=language_code)
             session.add(user)
             try:
                 await self._persist(session)
@@ -46,6 +52,23 @@ class AuthRepository(AuthRepositoryInterface):
                 if not self._unit_of_work.is_transaction_session(session):
                     await session.rollback()
                 raise EmailAlreadyRegisteredError from error
+            await session.refresh(user)
+            return user
+
+    async def update_user_language(
+        self,
+        user_id: UUID,
+        language_code: LanguageCode,
+        modified_at: datetime,
+    ) -> User:
+        async with self._unit_of_work.session_scope() as session:
+            user = await session.get(User, user_id)
+            if user is None or user.deleted_at is not None:
+                raise UserNotFoundError(user_id)
+            user.language_code = language_code
+            user.modified_at = modified_at
+            session.add(user)
+            await self._persist(session)
             await session.refresh(user)
             return user
 

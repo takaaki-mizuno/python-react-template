@@ -8,11 +8,13 @@ from app.config.auth import AuthSettings
 from app.libraries.clock import utcnow
 from app.libraries.password_hasher import hash_password, verify_password
 from app.libraries.session_tokens import hash_token
+from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_csrf import SessionCsrfStatus
 from app.models.auth_errors import InvalidCredentialsError, RateLimitExceededError
 from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
-from app.models.user import User
+from app.models.language import DEFAULT_LANGUAGE_CODE, LanguageCode
+from app.models.user import AuthUserUpdateChanges, User
 from app.usecases.auth_usecase import DUMMY_PASSWORD_HASH, AuthUsecase
 
 
@@ -96,15 +98,36 @@ class AuthRepositoryStub:
         self.audit_logs = []
         self.recorded_login_user_ids = []
         self.created_users: list[User] = []
+        self.updated_language_records = []
         self.revoked_session_ids = []
         self.revoked_user_session_records = []
         self.rejected_session_replays = []
 
-    async def create_user(self, email: str, password_hash: str | None) -> User:
-        user = User(email=email, password_hash=password_hash, is_active=True)
+    async def create_user(
+        self,
+        email: str,
+        password_hash: str | None,
+        language_code: LanguageCode = DEFAULT_LANGUAGE_CODE,
+    ) -> User:
+        user = User(
+            email=email,
+            password_hash=password_hash,
+            is_active=True,
+            language_code=language_code,
+        )
         self.user = user
         self.created_users.append(user)
         return user
+
+    async def update_user_language(self, user_id, language_code, modified_at):
+        self.updated_language_records.append((user_id, language_code, modified_at))
+        if self.user is None or self.user.id != user_id or self.user.deleted_at is not None:
+            from app.models.auth_errors import UserNotFoundError
+
+            raise UserNotFoundError(user_id)
+        self.user.language_code = language_code
+        self.user.modified_at = modified_at
+        return self.user
 
     async def find_user_by_email(self, _normalized_email: str) -> User | None:
         return self.user
@@ -444,6 +467,7 @@ async def test_register_records_last_login_for_issued_session():
     ).register(
         email="new@example.com",
         password="Password123!",
+        language_code="ja",
         current_session_token=None,
         ip_address="127.0.0.1",
         user_agent="pytest",
@@ -459,6 +483,22 @@ async def test_register_records_last_login_for_issued_session():
 
 
 @pytest.mark.asyncio
+async def test_register_passes_language_code_to_created_user():
+    repository = AuthRepositoryStub(user=None)
+
+    issued_session = await _usecase(repository).register(
+        email="new@example.com",
+        password="Password123!",
+        language_code="en",
+        current_session_token=None,
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert issued_session.user.language_code == "en"
+
+
+@pytest.mark.asyncio
 async def test_register_checks_registration_rate_limit_bucket():
     rate_limiter = AllowingRateLimiter()
     rate_limiter.registration_allowed = False
@@ -471,6 +511,7 @@ async def test_register_checks_registration_rate_limit_bucket():
         ).register(
             email="new@example.com",
             password="Password123!",
+            language_code="ja",
             current_session_token=None,
             ip_address="127.0.0.1",
             user_agent="pytest",
@@ -495,6 +536,7 @@ async def test_register_login_rate_limit_does_not_write_audit_log():
         ).register(
             email="blocked@example.com",
             password="Password123!",
+            language_code="ja",
             current_session_token=None,
             ip_address="127.0.0.1",
             user_agent="pytest",
@@ -526,12 +568,74 @@ async def test_register_duplicate_records_failure_before_audit_insert():
         ).register(
             email="existing@example.com",
             password="Password123!",
+            language_code="ja",
             current_session_token=None,
             ip_address="127.0.0.1",
             user_agent="pytest",
         )
 
     assert rate_limiter.failure_records == [("127.0.0.1", "existing@example.com", False)]
+
+
+@pytest.mark.asyncio
+async def test_update_current_user_updates_language_and_preserves_context():
+    user = User(email="settings@example.com", password_hash="hash", language_code="ja")
+    session = AuthSession(
+        user_id=user.id,
+        session_token_hash="session-token-hash",
+        csrf_token_hash="csrf-token-hash",
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
+    )
+    auth_context = AuthenticatedSessionContext(
+        user=user,
+        session=session,
+        roles=frozenset({"admin"}),
+        permissions=frozenset({"admin:access"}),
+    )
+    repository = AuthRepositoryStub(user=user)
+
+    updated_context = await _usecase(repository).update_current_user(
+        auth_context,
+        AuthUserUpdateChanges(language_code="en", fields_set=frozenset({"language_code"})),
+    )
+
+    assert updated_context.user.language_code == "en"
+    assert updated_context.session is session
+    assert updated_context.roles == frozenset({"admin"})
+    assert updated_context.permissions == frozenset({"admin:access"})
+    assert repository.updated_language_records[0][0] == user.id
+
+
+@pytest.mark.asyncio
+async def test_update_current_user_empty_body_is_no_op():
+    user = User(email="settings@example.com", password_hash="hash", language_code="ja")
+    session = AuthSession(
+        user_id=user.id,
+        session_token_hash="session-token-hash",
+        csrf_token_hash="csrf-token-hash",
+        created_at=utcnow(),
+        issued_at=utcnow(),
+        last_seen_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=10),
+    )
+    auth_context = AuthenticatedSessionContext(
+        user=user,
+        session=session,
+        roles=frozenset(),
+        permissions=frozenset(),
+    )
+    repository = AuthRepositoryStub(user=user)
+
+    updated_context = await _usecase(repository).update_current_user(
+        auth_context,
+        AuthUserUpdateChanges(fields_set=frozenset()),
+    )
+
+    assert updated_context is auth_context
+    assert repository.updated_language_records == []
 
 
 class TransactionRecordingRepository(AuthRepositoryStub):

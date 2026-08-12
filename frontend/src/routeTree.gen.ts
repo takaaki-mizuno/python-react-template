@@ -9,24 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as RegisterRouteImport } from './routes/register'
-import { Route as LoginRouteImport } from './routes/login'
+import { Route as Char123LocaleChar125RouteImport } from './routes/{-$locale}'
 import { Route as ForbiddenRouteImport } from './routes/forbidden'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as Char123LocaleChar125IndexRouteImport } from './routes/{-$locale}/index'
+import { Route as Char123LocaleChar125RegisterRouteImport } from './routes/{-$locale}/register'
+import { Route as Char123LocaleChar125LoginRouteImport } from './routes/{-$locale}/login'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated.app'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.admin'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated.app_.settings'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated.admin_.users'
 
-const RegisterRoute = RegisterRouteImport.update({
-  id: '/register',
-  path: '/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const Char123LocaleChar125Route = Char123LocaleChar125RouteImport.update({
+  id: '/{-$locale}',
+  path: '/{-$locale}',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForbiddenRoute = ForbiddenRouteImport.update({
@@ -38,11 +34,24 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const Char123LocaleChar125IndexRoute =
+  Char123LocaleChar125IndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => Char123LocaleChar125Route,
+  } as any)
+const Char123LocaleChar125RegisterRoute =
+  Char123LocaleChar125RegisterRouteImport.update({
+    id: '/register',
+    path: '/register',
+    getParentRoute: () => Char123LocaleChar125Route,
+  } as any)
+const Char123LocaleChar125LoginRoute =
+  Char123LocaleChar125LoginRouteImport.update({
+    id: '/login',
+    path: '/login',
+    getParentRoute: () => Char123LocaleChar125Route,
+  } as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -66,93 +75,88 @@ const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
   '/forbidden': typeof ForbiddenRoute
-  '/login': typeof LoginRoute
-  '/register': typeof RegisterRoute
+  '/{-$locale}': typeof Char123LocaleChar125RouteWithChildren
   '/admin': typeof AuthenticatedAdminRoute
   '/app': typeof AuthenticatedAppRoute
+  '/{-$locale}/login': typeof Char123LocaleChar125LoginRoute
+  '/{-$locale}/register': typeof Char123LocaleChar125RegisterRoute
+  '/{-$locale}/': typeof Char123LocaleChar125IndexRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/forbidden': typeof ForbiddenRoute
-  '/login': typeof LoginRoute
-  '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/app': typeof AuthenticatedAppRoute
+  '/{-$locale}/login': typeof Char123LocaleChar125LoginRoute
+  '/{-$locale}/register': typeof Char123LocaleChar125RegisterRoute
+  '/{-$locale}': typeof Char123LocaleChar125IndexRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/forbidden': typeof ForbiddenRoute
-  '/login': typeof LoginRoute
-  '/register': typeof RegisterRoute
+  '/{-$locale}': typeof Char123LocaleChar125RouteWithChildren
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/app': typeof AuthenticatedAppRoute
+  '/{-$locale}/login': typeof Char123LocaleChar125LoginRoute
+  '/{-$locale}/register': typeof Char123LocaleChar125RegisterRoute
+  '/{-$locale}/': typeof Char123LocaleChar125IndexRoute
   '/_authenticated/admin_/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/app_/settings': typeof AuthenticatedAppSettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
     | '/forbidden'
-    | '/login'
-    | '/register'
+    | '/{-$locale}'
     | '/admin'
     | '/app'
+    | '/{-$locale}/login'
+    | '/{-$locale}/register'
+    | '/{-$locale}/'
     | '/admin/users'
     | '/app/settings'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/forbidden'
-    | '/login'
-    | '/register'
     | '/admin'
     | '/app'
+    | '/{-$locale}/login'
+    | '/{-$locale}/register'
+    | '/{-$locale}'
     | '/admin/users'
     | '/app/settings'
   id:
     | '__root__'
-    | '/'
     | '/_authenticated'
     | '/forbidden'
-    | '/login'
-    | '/register'
+    | '/{-$locale}'
     | '/_authenticated/admin'
     | '/_authenticated/app'
+    | '/{-$locale}/login'
+    | '/{-$locale}/register'
+    | '/{-$locale}/'
     | '/_authenticated/admin_/users'
     | '/_authenticated/app_/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   ForbiddenRoute: typeof ForbiddenRoute
-  LoginRoute: typeof LoginRoute
-  RegisterRoute: typeof RegisterRoute
+  Char123LocaleChar125Route: typeof Char123LocaleChar125RouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/register': {
-      id: '/register'
-      path: '/register'
-      fullPath: '/register'
-      preLoaderRoute: typeof RegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/{-$locale}': {
+      id: '/{-$locale}'
+      path: '/{-$locale}'
+      fullPath: '/{-$locale}'
+      preLoaderRoute: typeof Char123LocaleChar125RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/forbidden': {
@@ -169,12 +173,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/{-$locale}/': {
+      id: '/{-$locale}/'
       path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      fullPath: '/{-$locale}/'
+      preLoaderRoute: typeof Char123LocaleChar125IndexRouteImport
+      parentRoute: typeof Char123LocaleChar125Route
+    }
+    '/{-$locale}/register': {
+      id: '/{-$locale}/register'
+      path: '/register'
+      fullPath: '/{-$locale}/register'
+      preLoaderRoute: typeof Char123LocaleChar125RegisterRouteImport
+      parentRoute: typeof Char123LocaleChar125Route
+    }
+    '/{-$locale}/login': {
+      id: '/{-$locale}/login'
+      path: '/login'
+      fullPath: '/{-$locale}/login'
+      preLoaderRoute: typeof Char123LocaleChar125LoginRouteImport
+      parentRoute: typeof Char123LocaleChar125Route
     }
     '/_authenticated/app': {
       id: '/_authenticated/app'
@@ -225,12 +243,25 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
+interface Char123LocaleChar125RouteChildren {
+  Char123LocaleChar125LoginRoute: typeof Char123LocaleChar125LoginRoute
+  Char123LocaleChar125RegisterRoute: typeof Char123LocaleChar125RegisterRoute
+  Char123LocaleChar125IndexRoute: typeof Char123LocaleChar125IndexRoute
+}
+
+const Char123LocaleChar125RouteChildren: Char123LocaleChar125RouteChildren = {
+  Char123LocaleChar125LoginRoute: Char123LocaleChar125LoginRoute,
+  Char123LocaleChar125RegisterRoute: Char123LocaleChar125RegisterRoute,
+  Char123LocaleChar125IndexRoute: Char123LocaleChar125IndexRoute,
+}
+
+const Char123LocaleChar125RouteWithChildren =
+  Char123LocaleChar125Route._addFileChildren(Char123LocaleChar125RouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   ForbiddenRoute: ForbiddenRoute,
-  LoginRoute: LoginRoute,
-  RegisterRoute: RegisterRoute,
+  Char123LocaleChar125Route: Char123LocaleChar125RouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

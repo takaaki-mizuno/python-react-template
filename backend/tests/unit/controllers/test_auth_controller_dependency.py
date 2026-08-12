@@ -28,7 +28,7 @@ from app.models.oidc import OidcAuthorizationStartResult, OidcCallbackResult
 from app.models.oidc_errors import (OidcAuthorizationRateLimitedError,
                                     OidcProviderAccessDeniedError, OidcProviderMetadataError,
                                     OidcProviderUnavailableError, OidcReauthStaleError)
-from app.models.user import User, utcnow
+from app.models.user import AuthUserUpdateChanges, User, utcnow
 
 
 class StubAuthUsecase(AuthUsecaseInterface):
@@ -45,6 +45,7 @@ class StubAuthUsecase(AuthUsecaseInterface):
         self.register_called = False
         self.logout_called = False
         self.csrf_session_tokens: list[str | None] = []
+        self.updated_changes: AuthUserUpdateChanges | None = None
 
     async def issue_csrf_token(self, session_token: str | None = None) -> str:
         self.csrf_issued = True
@@ -66,6 +67,7 @@ class StubAuthUsecase(AuthUsecaseInterface):
         self,
         email: str,
         password: str,
+        language_code: str,
         current_session_token: str | None,
         ip_address: str | None,
         user_agent: str | None,
@@ -77,6 +79,7 @@ class StubAuthUsecase(AuthUsecaseInterface):
             id=uuid4(),
             email=email,
             password_hash="hash",
+            language_code=language_code,
         )
         session = AuthSession(
             user_id=user.id,
@@ -112,6 +115,7 @@ class StubAuthUsecase(AuthUsecaseInterface):
             id=uuid4(),
             email=email,
             password_hash="hash",
+            language_code="ja",
         )
         session = AuthSession(
             user_id=user.id,
@@ -137,6 +141,15 @@ class StubAuthUsecase(AuthUsecaseInterface):
         user_agent: str | None,
     ):
         return self.auth_context
+
+    async def update_current_user(
+        self,
+        auth_context: AuthenticatedSessionContext,
+        changes: AuthUserUpdateChanges,
+    ) -> AuthenticatedSessionContext:
+        self.updated_changes = changes
+        auth_context.user.language_code = changes.language_code or auth_context.user.language_code
+        return auth_context
 
     async def logout(
         self,
@@ -198,6 +211,7 @@ class StubOAuthOidcUsecase(OAuthOidcUsecaseInterface):
         purpose,
         current_session: AuthenticatedSessionContext | None,
         ip_address: str | None,
+        language_code=None,
     ) -> OidcAuthorizationStartResult:
         self.start_calls.append({
             "provider_id": provider_id,
@@ -205,6 +219,7 @@ class StubOAuthOidcUsecase(OAuthOidcUsecaseInterface):
             "purpose": purpose,
             "current_session": current_session,
             "ip_address": ip_address,
+            "language_code": language_code,
         })
         if self.start_error is not None:
             raise self.start_error
@@ -597,7 +612,7 @@ def test_oidc_start_redirects_to_provider_and_sets_browser_binding_cookie():
     client = _client_with_stub(StubAuthUsecase(), oauth_oidc_usecase=oidc_usecase)
 
     response = client.get(
-        "/api/auth/oidc/google/start?redirect=/app",
+        "/api/auth/oidc/google/start?redirect=/app&languageCode=en",
         follow_redirects=False,
     )
 
@@ -605,11 +620,25 @@ def test_oidc_start_redirects_to_provider_and_sets_browser_binding_cookie():
     assert response.headers["location"] == "https://idp.example/google/authorize"
     assert oidc_usecase.start_calls[0]["purpose"] == "login"
     assert oidc_usecase.start_calls[0]["redirect_path"] == "/app"
+    assert oidc_usecase.start_calls[0]["language_code"] == "en"
     set_cookie = response.headers["set-cookie"]
     assert set_cookie.startswith("oidc_binding_test=browser-binding-value")
     assert "HttpOnly" in set_cookie
     assert "SameSite=lax" in set_cookie
     assert "Max-Age=300" in set_cookie
+
+
+def test_oidc_start_invalid_language_falls_back_to_default_language():
+    oidc_usecase = StubOAuthOidcUsecase()
+    client = _client_with_stub(StubAuthUsecase(), oauth_oidc_usecase=oidc_usecase)
+
+    response = client.get(
+        "/api/auth/oidc/google/start?languageCode=fr",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert oidc_usecase.start_calls[0]["language_code"] == "ja"
 
 
 def test_oidc_start_rate_limit_redirects_to_login_error():
@@ -909,6 +938,37 @@ def test_get_me_without_authenticated_session_returns_unauthorized_envelope():
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_get_me_returns_language_code():
+    auth_context = _authenticated_context()
+    auth_context.user.language_code = "en"
+    client = _client_with_stub(StubAuthUsecase(auth_context=auth_context))
+
+    response = client.get("/api/auth/me")
+
+    assert response.status_code == 200
+    assert response.json()["languageCode"] == "en"
+
+
+def test_patch_me_updates_language_with_fields_set():
+    auth_context = _authenticated_context()
+    usecase = StubAuthUsecase(auth_context=auth_context)
+    client = _client_with_stub(usecase)
+    _set_csrf_cookie(client)
+
+    response = client.patch(
+        "/api/auth/me",
+        json={"languageCode": "en"},
+        headers=_csrf_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["languageCode"] == "en"
+    assert usecase.updated_changes == AuthUserUpdateChanges(
+        language_code="en",
+        fields_set=frozenset({"language_code"}),
+    )
 
 
 def test_register_duplicate_email_returns_error_envelope():

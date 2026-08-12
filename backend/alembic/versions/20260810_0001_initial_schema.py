@@ -33,6 +33,13 @@ def upgrade() -> None:
         ),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False),
         sa.Column(
+            "language_code",
+            sa.Text(),
+            server_default=sa.text("'ja'"),
+            nullable=False,
+            comment="User interface language code.",
+        ),
+        sa.Column(
             "registered_at",
             sa.BigInteger(),
             nullable=False,
@@ -59,6 +66,8 @@ def upgrade() -> None:
             nullable=True,
             comment="Unix timestamp in milliseconds. NULL means the user is not logically deleted.",
         ),
+        sa.CheckConstraint("language_code in ('en', 'ja')",
+                           name=op.f("ck_users_language_code_supported")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
     )
     op.create_index(
@@ -361,6 +370,12 @@ def upgrade() -> None:
             comment="NULL means no login hint was provided to the authorization request.",
         ),
         sa.Column(
+            "language_code",
+            sa.Text(),
+            nullable=True,
+            comment="NULL means no public language preference was captured.",
+        ),
+        sa.Column(
             "expires_at",
             sa.BigInteger(),
             nullable=False,
@@ -374,6 +389,8 @@ def upgrade() -> None:
         ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("language_code is null or language_code in ('en', 'ja')",
+                           name=op.f("ck_auth_oidc_authorization_states_language_code_supported")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_auth_oidc_authorization_states")),
     )
     op.create_index(

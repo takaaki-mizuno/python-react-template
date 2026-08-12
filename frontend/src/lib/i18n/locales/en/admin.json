@@ -1,0 +1,79 @@
+{
+  "home": {
+    "title": "Admin",
+    "description": "Entry point for administrator features.",
+    "users": {
+      "title": "User management",
+      "description": "Create, search, update roles, and delete users.",
+      "open": "Open"
+    }
+  },
+  "common": {
+    "cancel": "Cancel",
+    "loading": "Loading.",
+    "search": "Search users",
+    "previousPage": "Previous page",
+    "nextPage": "Next page"
+  },
+  "users": {
+    "title": "User management",
+    "description": "Manage users, status, and roles together from the admin screen.",
+    "create": "Create user",
+    "searchPlaceholder": "Search by email address",
+    "status": {
+      "label": "Status",
+      "filter": "Status filter",
+      "all": "All",
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "role": {
+      "label": "Role",
+      "filter": "Role filter",
+      "all": "All"
+    },
+    "table": {
+      "email": "Email address",
+      "status": "Status",
+      "roles": "Roles",
+      "lastLogin": "Last login",
+      "createdAt": "Created",
+      "updatedAt": "Updated",
+      "noRoles": "None",
+      "neverLoggedIn": "Never logged in",
+      "editUser": "Edit {{email}}",
+      "deleteUser": "Delete {{email}}",
+      "emptyFiltered": "No users match the current filters.",
+      "empty": "No users have been registered yet."
+    },
+    "form": {
+      "createTitle": "Create user",
+      "editTitle": "Edit user",
+      "description": "Set the email address, status, and roles.",
+      "email": "Email address",
+      "password": "Password",
+      "active": "Active",
+      "roles": "Roles",
+      "noAvailableRoles": "No roles are available.",
+      "createSubmit": "Create",
+      "saveSubmit": "Save"
+    },
+    "delete": {
+      "confirmLabel": "Delete",
+      "title": "Delete user",
+      "description": "Delete {{email}}. Deleted users are excluded from admin CRUD."
+    },
+    "errors": {
+      "emailAlreadyRegistered": "This email address is already registered.",
+      "weakPassword": "Enter a password between 12 and 128 characters.",
+      "roleNotFound": "The specified role was not found.",
+      "fallback": "The user management operation failed."
+    }
+  },
+  "metadata": {
+    "adminTitle": "Admin | python-react-template",
+    "adminDescription": "Administration screens.",
+    "usersTitle": "User management | python-react-template",
+    "usersDescription": "Manage users and permissions."
+  }
+}

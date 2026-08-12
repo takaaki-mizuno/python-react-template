@@ -1,0 +1,79 @@
+{
+  "home": {
+    "title": "管理",
+    "description": "管理者向け機能への入口です。",
+    "users": {
+      "title": "ユーザー管理",
+      "description": "ユーザーの作成、検索、ロール変更、削除を行います。",
+      "open": "開く"
+    }
+  },
+  "common": {
+    "cancel": "キャンセル",
+    "loading": "読み込み中です。",
+    "search": "ユーザー検索",
+    "previousPage": "前のページ",
+    "nextPage": "次のページ"
+  },
+  "users": {
+    "title": "ユーザー管理",
+    "description": "管理画面からユーザー、状態、ロールを一括で管理します。",
+    "create": "ユーザー作成",
+    "searchPlaceholder": "メールアドレスで検索",
+    "status": {
+      "label": "状態",
+      "filter": "状態フィルタ",
+      "all": "すべて",
+      "active": "有効",
+      "inactive": "停止"
+    },
+    "role": {
+      "label": "ロール",
+      "filter": "ロールフィルタ",
+      "all": "すべて"
+    },
+    "table": {
+      "email": "メールアドレス",
+      "status": "状態",
+      "roles": "ロール",
+      "lastLogin": "最終ログイン",
+      "createdAt": "作成日時",
+      "updatedAt": "更新日時",
+      "noRoles": "なし",
+      "neverLoggedIn": "未ログイン",
+      "editUser": "{{email}} を編集",
+      "deleteUser": "{{email}} を削除",
+      "emptyFiltered": "条件に一致するユーザーはいません。",
+      "empty": "ユーザーはまだ登録されていません。"
+    },
+    "form": {
+      "createTitle": "ユーザー作成",
+      "editTitle": "ユーザー編集",
+      "description": "メールアドレス、状態、ロールを設定します。",
+      "email": "メールアドレス",
+      "password": "パスワード",
+      "active": "有効",
+      "roles": "ロール",
+      "noAvailableRoles": "選択可能なロールがありません。",
+      "createSubmit": "作成する",
+      "saveSubmit": "保存する"
+    },
+    "delete": {
+      "confirmLabel": "削除する",
+      "title": "ユーザーを削除",
+      "description": "{{email}} を削除します。削除済みユーザーは管理CRUDの対象外になります。"
+    },
+    "errors": {
+      "emailAlreadyRegistered": "このメールアドレスは既に登録されています。",
+      "weakPassword": "パスワードは12文字以上128文字以下で入力してください。",
+      "roleNotFound": "指定されたロールが見つかりません。",
+      "fallback": "ユーザー管理の操作に失敗しました。"
+    }
+  },
+  "metadata": {
+    "adminTitle": "管理 | python-react-template",
+    "adminDescription": "管理者向け画面です。",
+    "usersTitle": "ユーザー管理 | python-react-template",
+    "usersDescription": "ユーザーと権限を管理します。"
+  }
+}

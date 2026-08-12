@@ -2,7 +2,7 @@ from logging import Logger
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import RedirectResponse
 
 from app.bootstrap.error_handlers import api_error
@@ -28,8 +28,9 @@ from app.models.auth_errors import (AccountDeletionConfirmationMismatchError,
                                     InvalidCredentialsError, RateLimitExceededError,
                                     WeakPasswordError)
 from app.models.auth_schemas import (AccountDeletionRequest, AuthUserResponse, CsrfTokenResponse,
-                                     LoginRequest, RegisterRequest)
+                                     LoginRequest, RegisterRequest, UpdateAuthUserRequest)
 from app.models.error import ErrorResponse
+from app.models.language import DEFAULT_LANGUAGE_CODE, is_supported_language_code
 # yapf: disable
 from app.models.oidc_errors import (OidcAuthorizationRateLimitedError,
                                     OidcBrowserBindingMismatchError, OidcCallbackFlowError,
@@ -42,6 +43,7 @@ from app.models.oidc_errors import (OidcAuthorizationRateLimitedError,
                                     OidcReauthAuthTimeRequiredError, OidcReauthStaleError,
                                     OidcReauthSubjectMismatchError, OidcStateMismatchError,
                                     OidcTokenExchangeError)
+from app.models.user import AuthUserUpdateChanges
 
 # yapf: enable
 
@@ -354,10 +356,14 @@ async def start_oidc_login(
         provider_id: str,
         request: Request,
         redirect: str | None = None,
+        language_code_param: str | None = Query(default=None, alias="languageCode"),
         auth_settings: AuthSettings = Depends(get_auth_settings),
         usecase: OAuthOidcUsecaseInterface = Depends(get_oauth_oidc_usecase),
         logger: Logger = Depends(get_logger),
 ) -> RedirectResponse:
+    language_code = (language_code_param if language_code_param is not None
+                     and is_supported_language_code(language_code_param) else
+                     DEFAULT_LANGUAGE_CODE if language_code_param is not None else None)
     try:
         result = await usecase.start_authorization(
             provider_id=provider_id,
@@ -365,6 +371,7 @@ async def start_oidc_login(
             purpose="login",
             current_session=None,
             ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
+            language_code=language_code,
         )
     except OIDC_KNOWN_ERRORS as error:
         return oidc_start_failure_redirect("/login", error)
@@ -598,6 +605,24 @@ async def get_me(
     return _auth_user_response(auth_context)
 
 
+@router.patch("/me", response_model=AuthUserResponse, responses=ME_ERROR_RESPONSES)
+async def update_me(
+        payload: UpdateAuthUserRequest,
+        response: Response,
+        auth_context: AuthenticatedSessionContext = Depends(require_current_session),
+        usecase: AuthUsecaseInterface = Depends(get_auth_usecase),
+) -> AuthUserResponse:
+    response.headers["Cache-Control"] = "no-store"
+    updated_context = await usecase.update_current_user(
+        auth_context,
+        AuthUserUpdateChanges(
+            language_code=payload.language_code,
+            fields_set=frozenset(payload.model_fields_set),
+        ),
+    )
+    return _auth_user_response(updated_context)
+
+
 @router.delete(
     "/me",
     status_code=204,
@@ -680,6 +705,7 @@ async def register(
         issued_session = await usecase.register(
             email=payload.email,
             password=payload.password,
+            language_code=payload.language_code,
             current_session_token=request.cookies.get(session_cookie_name(auth_settings)),
             ip_address=get_client_ip(request, auth_settings.AUTH_TRUSTED_PROXY_IPS),
             user_agent=get_user_agent(request),
@@ -800,4 +826,5 @@ def _auth_user_response(
         email=source.user.email,
         roles=sorted(source.roles),
         permissions=sorted(source.permissions),
+        language_code=source.user.language_code,
     )

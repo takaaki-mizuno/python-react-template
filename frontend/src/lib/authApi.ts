@@ -3,10 +3,12 @@ import { queryOptions } from '@tanstack/react-query'
 import { ApiError } from './apiError'
 import { apiClient } from './apiClient'
 import { queryKeys } from './queryKeys'
+import type { LanguageCode } from './i18n/languages'
 
 export type AuthUser = {
   id: string
   email: string
+  languageCode: LanguageCode
   roles: Array<string>
   permissions: Array<string>
 }
@@ -19,6 +21,11 @@ export type LoginPayload = {
 export type RegisterPayload = {
   email: string
   password: string
+  languageCode: LanguageCode
+}
+
+export type UpdateCurrentUserPayload = {
+  languageCode: LanguageCode
 }
 
 export type DeleteAccountPayload = {
@@ -62,6 +69,12 @@ export async function registerWithPassword(
   return apiClient.post<AuthUser>('/api/auth/register', { body: payload })
 }
 
+export async function updateCurrentUser(
+  payload: UpdateCurrentUserPayload,
+): Promise<AuthUser> {
+  return apiClient.patch<AuthUser>('/api/auth/me', { body: payload })
+}
+
 export async function logoutCurrentSession(): Promise<void> {
   return apiClient.post<void>('/api/auth/logout')
 }
@@ -83,8 +96,9 @@ export function startOidcLogin(
   providerId: string,
   redirect: string,
   assign: (url: string) => void = window.location.assign.bind(window.location),
+  languageCode?: LanguageCode,
 ) {
-  assign(oidcStartUrl(providerId, 'start', redirect))
+  assign(oidcStartUrl(providerId, 'start', redirect, languageCode))
 }
 
 export function startOidcReauth(
@@ -99,8 +113,12 @@ function oidcStartUrl(
   providerId: string,
   action: 'start' | 'reauth',
   redirect: string,
+  languageCode?: LanguageCode,
 ) {
   const params = new URLSearchParams({ redirect })
+  if (languageCode && action === 'start') {
+    params.set('languageCode', languageCode)
+  }
   return `/api/auth/oidc/${encodeURIComponent(providerId)}/${action}?${params.toString()}`
 }
 

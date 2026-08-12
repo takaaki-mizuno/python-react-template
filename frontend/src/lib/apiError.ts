@@ -1,3 +1,5 @@
+import i18n from './i18n/i18n'
+
 export class ApiError extends Error {
   status: number
   body: unknown
@@ -29,29 +31,39 @@ type UserMessageOptions = {
   fallback?: string
 }
 
-const builtInCodeMessages: Record<string, string> = {
-  CSRF_VALIDATION_FAILED:
-    'セッションの確認に失敗しました。ページを再読み込みして、もう一度お試しください。',
+type BuiltInErrorMessageKey =
+  | 'apiError.csrf'
+  | 'apiError.status400'
+  | 'apiError.status401'
+  | 'apiError.status403'
+  | 'apiError.status409'
+  | 'apiError.status422'
+  | 'apiError.status429'
+  | 'apiError.fallback'
+
+const builtInCodeMessageKeys: Record<string, BuiltInErrorMessageKey> = {
+  CSRF_VALIDATION_FAILED: 'apiError.csrf',
 }
 
-const builtInStatusMessages: Partial<Record<number, string>> = {
-  400: '入力内容を確認してください。',
-  401: 'ログインが必要です。',
-  403: 'この操作を実行する権限がありません。',
-  409: '現在の状態では処理できません。',
-  422: '入力内容を確認してください。',
-  429: '試行回数が多すぎます。時間をおいて再度お試しください。',
+const builtInStatusMessageKeys: Partial<
+  Record<number, BuiltInErrorMessageKey>
+> = {
+  400: 'apiError.status400',
+  401: 'apiError.status401',
+  403: 'apiError.status403',
+  409: 'apiError.status409',
+  422: 'apiError.status422',
+  429: 'apiError.status429',
 }
 
-const defaultFallbackMessage =
-  '通信に失敗しました。時間をおいて再度お試しください。'
+const defaultFallbackMessageKey: BuiltInErrorMessageKey = 'apiError.fallback'
 
 export function toUserMessage(
   error: unknown,
   options: UserMessageOptions = {},
 ): string {
   if (!(error instanceof ApiError)) {
-    return options.fallback ?? defaultFallbackMessage
+    return options.fallback ?? translateKey(defaultFallbackMessageKey)
   }
 
   const codeOverride = error.code ? options.code?.[error.code] : undefined
@@ -64,15 +76,23 @@ export function toUserMessage(
     return statusOverride
   }
 
-  if (error.code && builtInCodeMessages[error.code]) {
-    return builtInCodeMessages[error.code]
+  const codeMessageKey = error.code
+    ? builtInCodeMessageKeys[error.code]
+    : undefined
+  if (codeMessageKey) {
+    return translateKey(codeMessageKey)
   }
 
+  const statusMessageKey = builtInStatusMessageKeys[error.status]
   return (
-    builtInStatusMessages[error.status] ??
+    (statusMessageKey ? translateKey(statusMessageKey) : undefined) ??
     options.fallback ??
-    defaultFallbackMessage
+    translateKey(defaultFallbackMessageKey)
   )
+}
+
+function translateKey(key: BuiltInErrorMessageKey): string {
+  return i18n.t(key)
 }
 
 export function accountDeletionOidcReauthProviders(

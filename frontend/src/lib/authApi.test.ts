@@ -7,6 +7,7 @@ import {
   fetchOidcProviders,
   startOidcLogin,
   startOidcReauth,
+  updateCurrentUser,
 } from './authApi'
 
 afterEach(() => {
@@ -59,6 +60,36 @@ test('fetchOidcProviders は providerId と displayName だけを読む', async 
   ])
 })
 
+test('updateCurrentUser は PATCH /api/auth/me を呼ぶ', async () => {
+  document.cookie = 'csrf_token=csrf-123; path=/'
+  const responseBody = {
+    id: '00000000-0000-0000-0000-000000000001',
+    email: 'user@example.com',
+    languageCode: 'en',
+    roles: [],
+    permissions: [],
+  }
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify(responseBody), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(updateCurrentUser({ languageCode: 'en' })).resolves.toEqual(
+    responseBody,
+  )
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/auth/me',
+    expect.objectContaining({
+      body: JSON.stringify({ languageCode: 'en' }),
+      method: 'PATCH',
+    }),
+  )
+})
+
 test('startOidcLogin は redirect を壊さず start endpoint へ遷移する', () => {
   const assign = vi.fn()
 
@@ -66,6 +97,16 @@ test('startOidcLogin は redirect を壊さず start endpoint へ遷移する', 
 
   expect(assign).toHaveBeenCalledWith(
     '/api/auth/oidc/google/start?redirect=%2Fapp%2Fsettings%3Ftab%3Ddanger%23delete',
+  )
+})
+
+test('startOidcLogin は languageCode を start endpoint の query に含める', () => {
+  const assign = vi.fn()
+
+  startOidcLogin('google', '/app', assign, 'en')
+
+  expect(assign).toHaveBeenCalledWith(
+    '/api/auth/oidc/google/start?redirect=%2Fapp&languageCode=en',
   )
 })
 

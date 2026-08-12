@@ -25,6 +25,8 @@ from app.models.auth_errors import (EmailAlreadyRegisteredError, InvalidCredenti
 from app.models.auth_event_type import AuthEventType
 from app.models.auth_session import AuthSession
 from app.models.authorization import UserAuthorization
+from app.models.language import LanguageCode
+from app.models.user import AuthUserUpdateChanges
 
 DUMMY_PASSWORD_HASH = ("$argon2id$v=19$m=65536,t=3,p=4$TO8J42R39QBv7pem26bDUQ"
                        "$TsSlSgdcZ3mv06Gl9wQ7WaBhED0WIbQhcLhG35aHQd4")
@@ -110,6 +112,7 @@ class AuthUsecase(AuthUsecaseInterface):
         self,
         email: str,
         password: str,
+        language_code: LanguageCode,
         current_session_token: str | None,
         ip_address: str | None,
         user_agent: str | None,
@@ -154,6 +157,7 @@ class AuthUsecase(AuthUsecaseInterface):
                 user = await self._auth_repository.create_user(
                     normalized_email,
                     await self._password_hash_executor.hash(password),
+                    language_code=language_code,
                 )
                 login_at = utcnow()
                 user = await self._auth_repository.record_user_login(user.id, login_at)
@@ -196,6 +200,31 @@ class AuthUsecase(AuthUsecaseInterface):
             csrf_token=csrf_token,
             roles=frozenset(),
             permissions=frozenset(),
+        )
+
+    async def update_current_user(
+        self,
+        auth_context: AuthenticatedSessionContext,
+        changes: AuthUserUpdateChanges,
+    ) -> AuthenticatedSessionContext:
+        if not changes.fields_set:
+            return auth_context
+        if "language_code" not in changes.fields_set:
+            return auth_context
+        if changes.language_code is None:
+            return auth_context
+
+        async with self._unit_of_work.transaction():
+            user = await self._auth_repository.update_user_language(
+                auth_context.user.id,
+                changes.language_code,
+                utcnow(),
+            )
+        return AuthenticatedSessionContext(
+            user=user,
+            session=auth_context.session,
+            roles=auth_context.roles,
+            permissions=auth_context.permissions,
         )
 
     async def login(

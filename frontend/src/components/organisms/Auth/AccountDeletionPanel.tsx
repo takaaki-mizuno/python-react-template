@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { FormEvent } from 'react'
 
 import type { AccountDeletionOidcReauthProvider } from '@/lib/apiError'
@@ -36,6 +37,7 @@ export function AccountDeletionPanel({
   onReauth,
   onSubmit,
 }: AccountDeletionPanelProps) {
+  const { t } = useTranslation('auth')
   const [confirmEmail, setConfirmEmail] = useState('')
   const [password, setPassword] = useState('')
   const errorId = 'account-deletion-error'
@@ -51,7 +53,9 @@ export function AccountDeletionPanel({
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-xl font-semibold tracking-tight">アカウント削除</h2>
+        <h2 className="text-xl font-semibold tracking-tight">
+          {t('accountDeletion.title')}
+        </h2>
         <CardDescription>{currentEmail}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -62,7 +66,7 @@ export function AccountDeletionPanel({
             disabled={isPending}
             id="account-delete-confirm-email"
             invalid={invalidField === 'confirmEmail'}
-            label="メールアドレスを入力して削除を確認"
+            label={t('accountDeletion.confirmEmailLabel')}
             onChange={(value) => {
               setConfirmEmail(value)
               onFieldChange?.('confirmEmail')
@@ -76,7 +80,7 @@ export function AccountDeletionPanel({
             disabled={isPending}
             id="account-delete-password"
             invalid={invalidField === 'password'}
-            label="現在のパスワード"
+            label={t('accountDeletion.passwordLabel')}
             onChange={(value) => {
               setPassword(value)
               onFieldChange?.('password')
@@ -98,7 +102,7 @@ export function AccountDeletionPanel({
             </div>
           ) : null}
           <Button disabled={isPending} type="submit" variant="destructive">
-            アカウントを削除
+            {t('accountDeletion.submit')}
           </Button>
         </form>
       </CardContent>

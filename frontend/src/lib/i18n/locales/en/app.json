@@ -1,0 +1,27 @@
+{
+  "dashboard": {
+    "badge": "Dashboard",
+    "title": "App",
+    "account": {
+      "title": "Account",
+      "description": "Manage your email address and deletion actions.",
+      "settingsLink": "Account settings"
+    },
+    "admin": {
+      "title": "Admin",
+      "description": "Go to the administrator workspace.",
+      "open": "Open admin"
+    }
+  },
+  "settings": {
+    "breadcrumbLabel": "Breadcrumb",
+    "appLink": "App",
+    "title": "Account settings"
+  },
+  "metadata": {
+    "appTitle": "App | python-react-template",
+    "appDescription": "Application screens for authenticated users.",
+    "settingsTitle": "Settings | python-react-template",
+    "settingsDescription": "Manage account settings."
+  }
+}

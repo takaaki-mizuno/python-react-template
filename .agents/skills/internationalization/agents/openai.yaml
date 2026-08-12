@@ -1,0 +1,4 @@
+interface:
+  display_name: "Internationalization"
+  short_description: "Implement and maintain project i18n"
+  default_prompt: "Use the internationalization skill to implement or review i18n changes in this project."

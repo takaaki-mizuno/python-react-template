@@ -21,10 +21,28 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
+  useNavigate: () => vi.fn(),
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: {
+      location: { hash: string; pathname: string; searchStr: string }
+    }) => unknown
+  }) =>
+    select({
+      location: { hash: '', pathname: '/ja/', searchStr: '' },
+    }),
 }))
 
 vi.mock('./AuthMenu', () => ({
   default: () => <div data-testid="auth-menu" />,
+}))
+
+vi.mock('@/hooks/useAuthSession', () => ({
+  useAuthSession: () => ({
+    updateLanguage: { isPending: false, mutate: vi.fn() },
+    user: null,
+  }),
 }))
 
 const navigationItems = [

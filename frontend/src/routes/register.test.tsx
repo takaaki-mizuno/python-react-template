@@ -41,7 +41,7 @@ test('register 成功後は redirect 先へ遷移し auth cache を同期する'
   )
 
   const { router, queryClient } = renderWithRouter({
-    initialEntries: ['/register?redirect=/app%3Ftab%3Dsettings'],
+    initialEntries: ['/ja/register?redirect=/app%3Ftab%3Dsettings'],
     queryClientOptions: {
       queries: { retry: false },
       mutations: { retry: false },
@@ -64,7 +64,7 @@ test('EMAIL_ALREADY_REGISTERED は専用メッセージを表示する', async (
   })
 
   renderWithRouter({
-    initialEntries: ['/register'],
+    initialEntries: ['/ja/register'],
     queryClientOptions: {
       queries: { retry: false },
       mutations: { retry: false },
@@ -87,7 +87,7 @@ test('VALIDATION_ERROR は入力確認メッセージを表示する', async () 
   })
 
   renderWithRouter({
-    initialEntries: ['/register'],
+    initialEntries: ['/ja/register'],
     queryClientOptions: {
       queries: { retry: false },
       mutations: { retry: false },
@@ -110,7 +110,7 @@ test('REGISTER_RATE_LIMITED は rate limit メッセージを表示する', asyn
   })
 
   renderWithRouter({
-    initialEntries: ['/register'],
+    initialEntries: ['/ja/register'],
     queryClientOptions: {
       queries: { retry: false },
       mutations: { retry: false },
@@ -144,7 +144,7 @@ test('register は OIDC provider button を表示する', async () => {
   )
 
   renderWithRouter({
-    initialEntries: ['/register?redirect=/app%3Ftab%3Dsettings'],
+    initialEntries: ['/ja/register?redirect=/app%3Ftab%3Dsettings'],
   })
 
   expect(
@@ -161,12 +161,44 @@ test('ログイン済みユーザーが /register を開くと redirect 先へ�
   )
 
   const { router } = renderWithRouter({
-    initialEntries: ['/register?redirect=/app%3Ftab%3Dsettings'],
+    initialEntries: ['/ja/register?redirect=/app%3Ftab%3Dsettings'],
   })
 
   await screen.findByRole('heading', { name: 'アプリ' })
 
   expect(router.state.location.href).toBe('/app?tab=settings')
+})
+
+test('legacy /register は path/search を保って locale 付き URL へ正規化する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(jsonResponse({ detail: 'Unauthorized' }, 401)),
+  )
+
+  const { router } = renderWithRouter({
+    initialEntries: ['/register?redirect=%2Fapp%3Ftab%3Dsettings'],
+  })
+
+  await screen.findByRole('heading', { name: '新規登録' })
+
+  expect(router.state.location.pathname).toBe('/ja/register')
+  expect(router.state.location.search.redirect).toBe('/app?tab=settings')
+})
+
+test('legacy /register は hash を保って locale 付き URL へ正規化する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(jsonResponse({ detail: 'Unauthorized' }, 401)),
+  )
+
+  const { router } = renderWithRouter({
+    initialEntries: ['/register#form'],
+  })
+
+  await screen.findByRole('heading', { name: '新規登録' })
+
+  expect(router.state.location.pathname).toBe('/ja/register')
+  expect(router.state.location.hash).toBe('form')
 })
 
 async function submitRegisterForm() {

@@ -110,6 +110,16 @@ npm install -D <pkg>   # devDependencies
 - login の invalid credentials は現状 form-level error として扱い、email / password を invalid にしない。register の backend duplicate email や rate limit は現状 form-level error として扱う。register の client-side password length / confirmation mismatch は現状 field-specific error として password / password confirmation を invalid にする
 - P8-FE-1 / P8-FE-2 / P8-FE-3 はこの契約に従う。login / register / account deletion の feedback 挙動変更が必要な場合は、component / route tests を明記した別 Task として扱い、shared feedback component 抽出に混ぜない
 
+## i18n
+
+- 翻訳本文の正は `src/lib/i18n/locales/{ja,en}/*.json`。`src/lib/i18n/resources.ts` は JSON import と集約だけを行い、翻訳本文を直書きしない
+- 新規 UI 文言は component / route に直書きせず、用途に応じて `common` / `auth` / `landing` / `app` / `admin` namespace に追加する。日本語と英語の JSON key 構造は `src/lib/i18n/resources.test.ts` で一致させる
+- current language の書き手は `src/lib/i18n/LanguageSyncManager.tsx` に集約する。mutation handler や login/register handler から `i18n.changeLanguage()` を直接呼ばない
+- public route は `/ja/...` / `/en/...` の URL locale を優先し、authenticated route は `/app` / `/admin` のように locale prefix を持たず `AuthUser.languageCode` を優先する
+- React component 外の翻訳は `src/lib/i18n/i18n.ts` の i18n instance を使う。`src/lib/apiError.ts` のような pure utility で `useTranslation()` を呼ばない
+- 日付・数値など locale 依存 format は `src/lib/i18n/formatters.ts` に集約し、画面で `Intl.DateTimeFormat('ja-JP')` などを直書きしない
+- 新しい言語を追加する場合は、backend の `SUPPORTED_LANGUAGE_CODES`、`users.language_code` CHECK、`auth_oidc_authorization_states.language_code` CHECK、frontend の `languageOptions`、locale JSON、formatter locale map、translation key parity test を同じ変更で更新する
+
 ## スタイル (Tailwind + shadcn/ui)
 
 - ユーティリティクラス優先。任意 CSS は最小限

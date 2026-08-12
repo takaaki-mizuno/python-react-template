@@ -1,0 +1,27 @@
+{
+  "dashboard": {
+    "badge": "ダッシュボード",
+    "title": "アプリ",
+    "account": {
+      "title": "アカウント",
+      "description": "メールアドレスと削除操作を管理します。",
+      "settingsLink": "アカウント設定"
+    },
+    "admin": {
+      "title": "管理",
+      "description": "管理者向けの操作領域へ移動します。",
+      "open": "管理画面を開く"
+    }
+  },
+  "settings": {
+    "breadcrumbLabel": "パンくず",
+    "appLink": "アプリ",
+    "title": "アカウント設定"
+  },
+  "metadata": {
+    "appTitle": "アプリ | python-react-template",
+    "appDescription": "認証済みユーザー向けのアプリ画面です。",
+    "settingsTitle": "設定 | python-react-template",
+    "settingsDescription": "アカウント設定を管理します。"
+  }
+}

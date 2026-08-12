@@ -16,6 +16,7 @@ from app.models.auth_event_type import AuthEventType
 from app.models.auth_identity import AuthIdentity
 from app.models.auth_oidc_state import AuthOidcState
 from app.models.auth_session import AuthSession
+from app.models.language import DEFAULT_LANGUAGE_CODE, LanguageCode
 from app.models.oidc import OidcAuthorizationUrl, OidcTokenSetForValidation, OidcVerifiedClaims
 # yapf: disable
 from app.models.oidc_errors import (OidcAuthorizationRateLimitedError,
@@ -59,7 +60,7 @@ class AuthRepositoryStub:
         self.users_by_id: dict = {}
         self.users_by_email: dict[str, User] = {}
         self.identities_by_subject: dict[tuple[str, str], AuthIdentity] = {}
-        self.created_users: list[tuple[str, str | None, bool]] = []
+        self.created_users: list[tuple[str, str | None, LanguageCode, bool]] = []
         self.created_identities: list[tuple[AuthIdentity, bool]] = []
         self.created_sessions: list[tuple[AuthSession, bool]] = []
         self.revoked_session_ids: list = []
@@ -120,13 +121,24 @@ class AuthRepositoryStub:
     async def find_user_by_id_for_authentication(self, user_id) -> User | None:
         return self.users_by_id.get(user_id)
 
-    async def create_user(self, email: str, password_hash: str | None) -> User:
+    async def create_user(
+        self,
+        email: str,
+        password_hash: str | None,
+        language_code: LanguageCode = DEFAULT_LANGUAGE_CODE,
+    ) -> User:
         if self.create_user_error is not None:
             raise self.create_user_error
-        user = User(email=email, password_hash=password_hash, is_active=True)
+        user = User(
+            email=email,
+            password_hash=password_hash,
+            is_active=True,
+            language_code=language_code,
+        )
         self.users_by_id[user.id] = user
         self.users_by_email[email.strip().lower()] = user
-        self.created_users.append((email, password_hash, self._unit_of_work.in_transaction))
+        self.created_users.append(
+            (email, password_hash, language_code, self._unit_of_work.in_transaction))
         return user
 
     async def create_auth_identity(self, identity: AuthIdentity) -> AuthIdentity:
@@ -375,6 +387,7 @@ async def _started_login(
     usecase: OAuthOidcUsecase,
     repository: AuthRepositoryStub,
     provider_client: OidcProviderClientStub,
+    language_code: LanguageCode | None = None,
 ):
     result = await usecase.start_authorization(
         provider_id="google",
@@ -382,6 +395,7 @@ async def _started_login(
         purpose="login",
         current_session=None,
         ip_address="127.0.0.1",
+        language_code=language_code,
     )
     state = provider_client.authorization_calls[-1]["state"]
     created_state = repository.created_states[-1][0]
@@ -485,8 +499,17 @@ async def test_start_authorization_creates_state_and_browser_binding_cookie(
     assert created_state.pkce_verifier
     assert created_state.expected_user_id is None
     assert created_state.expected_session_id is None
+    assert created_state.language_code is None
     assert authorization_call["prompt"] is None
     assert authorization_call["max_age"] is None
+
+
+async def test_start_authorization_stores_login_language_code() -> None:
+    usecase, repository, _, provider_client = _usecase()
+
+    await _started_login(usecase, repository, provider_client, language_code="en")
+
+    assert repository.created_states[-1][0].language_code == "en"
 
 
 async def test_start_reauth_requires_current_session() -> None:
@@ -729,7 +752,12 @@ async def test_complete_callback_auto_links_verified_email_user() -> None:
 
 async def test_complete_callback_auto_provisions_verified_email_user() -> None:
     usecase, repository, _, provider_client = _usecase()
-    result, state, _ = await _started_login(usecase, repository, provider_client)
+    result, state, _ = await _started_login(
+        usecase,
+        repository,
+        provider_client,
+        language_code="en",
+    )
 
     callback = await usecase.complete_callback(
         provider_id="google",
@@ -743,7 +771,8 @@ async def test_complete_callback_auto_provisions_verified_email_user() -> None:
     )
 
     assert callback.issued_session is not None
-    assert repository.created_users[0][0:2] == ("user@example.com", None)
+    assert repository.created_users[0][0:3] == ("user@example.com", None, "en")
+    assert callback.issued_session.user.language_code == "en"
     assert repository.created_identities[0][0].user_id == callback.issued_session.user.id
     assert [audit.event_type for audit, _ in repository.audit_logs] == [
         AuthEventType.OIDC_USER_PROVISIONED,

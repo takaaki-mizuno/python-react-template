@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { FormEvent } from 'react'
 
 import { Button } from '@/components/atoms/button'
@@ -19,6 +20,7 @@ export default function LoginForm({
   onSubmit: (values: LoginValues) => void
   isPending: boolean
 }) {
+  const { t } = useTranslation('auth')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
@@ -34,7 +36,7 @@ export default function LoginForm({
         autoComplete="email"
         describedBy={errorMessage ? errorId : undefined}
         id="login-email"
-        label="メールアドレス"
+        label={t('fields.email')}
         onChange={setEmail}
         required
         type="email"
@@ -44,7 +46,7 @@ export default function LoginForm({
         autoComplete="current-password"
         describedBy={errorMessage ? errorId : undefined}
         id="login-password"
-        label="パスワード"
+        label={t('fields.password')}
         onChange={setPassword}
         required
         type="password"
@@ -52,7 +54,7 @@ export default function LoginForm({
       />
       <AuthFormFeedback id={errorId} message={errorMessage} />
       <Button disabled={isPending} type="submit">
-        ログイン
+        {t('actions.login')}
       </Button>
     </form>
   )

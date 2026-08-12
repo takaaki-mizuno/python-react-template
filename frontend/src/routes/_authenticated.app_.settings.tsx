@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 
 import type { AccountDeletionInvalidField } from '@/components/organisms/Auth/AccountDeletionPanel'
 import type { AccountDeletionOidcReauthProvider } from '@/lib/apiError'
@@ -20,6 +22,7 @@ import {
 import { startOidcReauth } from '@/lib/authApi'
 import { useAccountDeletion } from '@/hooks/useAccountDeletion'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import { detectPreferredPublicLanguage } from '@/lib/i18n/publicLocale'
 
 type AccountDeletionErrorFeedback = {
   message: string
@@ -28,6 +31,8 @@ type AccountDeletionErrorFeedback = {
 }
 
 const SettingsPage = () => {
+  const { t: appT } = useTranslation('app')
+  const { t: authT } = useTranslation('auth')
   const navigate = useNavigate()
   const search = Route.useSearch()
   const { user } = useAuthSession()
@@ -37,7 +42,7 @@ const SettingsPage = () => {
     string | null
   >(null)
   const accountDeletion = useAccountDeletion()
-  const queryFeedback = accountDeletionQueryFeedback(search)
+  const queryFeedback = accountDeletionQueryFeedback(search, authT)
   const queryFeedbackKey = queryFeedback
     ? `${search.oidcError ?? ''}:${search.oidcReauth ?? ''}`
     : null
@@ -53,21 +58,21 @@ const SettingsPage = () => {
     <main className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
       <div className="grid gap-8">
         <div className="grid gap-2">
-          <Breadcrumb aria-label="パンくず">
+          <Breadcrumb aria-label={appT('settings.breadcrumbLabel')}>
             <BreadcrumbList>
               <BreadcrumbItem>
                 <BreadcrumbLink asChild>
-                  <Link to="/app">アプリ</Link>
+                  <Link to="/app">{appT('settings.appLink')}</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
-                <BreadcrumbPage>アカウント設定</BreadcrumbPage>
+                <BreadcrumbPage>{appT('settings.title')}</BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
           <h1 className="text-2xl font-semibold tracking-tight">
-            アカウント設定
+            {appT('settings.title')}
           </h1>
         </div>
         <AccountDeletionPanel
@@ -94,10 +99,13 @@ const SettingsPage = () => {
             setErrorFeedback(null)
             accountDeletion.mutate(payload, {
               onSuccess: () => {
-                void navigate({ to: '/' })
+                void navigate({
+                  params: { locale: detectPreferredPublicLanguage() },
+                  to: '/{-$locale}',
+                })
               },
               onError: (error) => {
-                setErrorFeedback(toAccountDeletionErrorFeedback(error))
+                setErrorFeedback(toAccountDeletionErrorFeedback(error, authT))
               },
             })
           }}
@@ -121,14 +129,16 @@ export const Route = createFileRoute('/_authenticated/app_/settings')({
   component: SettingsPage,
 })
 
-function accountDeletionQueryFeedback(search: {
-  oidcError?: string
-  oidcReauth?: string
-}): AccountDeletionErrorFeedback | null {
+function accountDeletionQueryFeedback(
+  search: {
+    oidcError?: string
+    oidcReauth?: string
+  },
+  t: TFunction<'auth'>,
+): AccountDeletionErrorFeedback | null {
   if (search.oidcReauth === 'success') {
     return {
-      message:
-        '再認証が完了しました。もう一度アカウント削除を実行してください。',
+      message: t('accountDeletion.reauthSuccess'),
       invalidField: null,
     }
   }
@@ -136,42 +146,35 @@ function accountDeletionQueryFeedback(search: {
     return null
   }
   const messages: Record<string, string> = {
-    OIDC_REAUTH_SUBJECT_MISMATCH:
-      '再認証されたアカウントが現在のユーザーと一致しません。',
-    OIDC_REAUTH_STALE:
-      '再認証の有効期限が切れています。もう一度お試しください。',
-    OIDC_REAUTH_AUTH_TIME_REQUIRED:
-      'このプロバイダーでは削除に必要な再認証時刻を確認できませんでした。',
-    OIDC_PROVIDER_ACCESS_DENIED:
-      '認証プロバイダーで再認証がキャンセルされました。',
-    OIDC_PROVIDER_UNAVAILABLE:
-      '認証プロバイダーに接続できませんでした。時間をおいて再度お試しください。',
-    OIDC_IDENTITY_UNAVAILABLE:
-      'この連携アカウントは現在利用できません。管理者に連絡してください。',
+    OIDC_REAUTH_SUBJECT_MISMATCH: t('accountDeletion.subjectMismatch'),
+    OIDC_REAUTH_STALE: t('accountDeletion.reauthStale'),
+    OIDC_REAUTH_AUTH_TIME_REQUIRED: t('accountDeletion.authTimeRequired'),
+    OIDC_PROVIDER_ACCESS_DENIED: t('accountDeletion.providerAccessDenied'),
+    OIDC_PROVIDER_UNAVAILABLE: t('accountDeletion.providerUnavailable'),
+    OIDC_IDENTITY_UNAVAILABLE: t('accountDeletion.identityUnavailable'),
   }
   return {
-    message:
-      messages[search.oidcError] ??
-      '再認証に失敗しました。もう一度お試しください。',
+    message: messages[search.oidcError] ?? t('accountDeletion.reauthFailed'),
     invalidField: null,
   }
 }
 
 function toAccountDeletionErrorFeedback(
   error: unknown,
+  t: TFunction<'auth'>,
 ): AccountDeletionErrorFeedback {
   const validationField = accountDeletionValidationField(error)
   if (validationField) {
     return {
       message:
         validationField === 'confirmEmail'
-          ? 'メールアドレスを入力してください。'
-          : '現在のパスワードを入力してください。',
+          ? t('accountDeletion.emailRequired')
+          : t('accountDeletion.passwordRequired'),
       invalidField: validationField,
     }
   }
 
-  const retryAfterMessage = accountDeletionRetryAfterMessage(error)
+  const retryAfterMessage = accountDeletionRetryAfterMessage(error, t)
   if (retryAfterMessage) {
     return {
       message: retryAfterMessage,
@@ -182,28 +185,31 @@ function toAccountDeletionErrorFeedback(
   return {
     message: toUserMessage(error, {
       code: {
-        ACCOUNT_DELETION_CONFIRMATION_MISMATCH:
-          '入力されたメールアドレスが現在のアカウントと一致しません。',
-        ACCOUNT_DELETION_REAUTH_REQUIRED:
-          'アカウント削除には現在のパスワード入力が必要です。',
-        ACCOUNT_DELETION_INVALID_PASSWORD: '現在のパスワードが一致しません。',
-        ACCOUNT_DELETION_REAUTH_RATE_LIMITED:
-          '確認の試行回数が多すぎます。時間をおいて再度お試しください。',
+        ACCOUNT_DELETION_CONFIRMATION_MISMATCH: t(
+          'accountDeletion.emailMismatch',
+        ),
+        ACCOUNT_DELETION_REAUTH_REQUIRED: t(
+          'accountDeletion.passwordReauthRequired',
+        ),
+        ACCOUNT_DELETION_INVALID_PASSWORD: t('accountDeletion.invalidPassword'),
+        ACCOUNT_DELETION_REAUTH_RATE_LIMITED: t('accountDeletion.rateLimited'),
         ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED:
           accountDeletionOidcReauthProviders(error).length > 0
-            ? 'アカウント削除にはOAuth/OIDC再認証が必要です。'
-            : '再認証できる連携プロバイダーがありません。サポートに連絡してください。',
+            ? t('accountDeletion.oidcReauthRequired')
+            : t('accountDeletion.noReauthProvider'),
       },
-      status: { 422: '入力内容を確認してください。' },
-      fallback:
-        'アカウント削除に失敗しました。時間をおいて再度お試しください。',
+      status: { 422: t('feedback.checkInput') },
+      fallback: t('accountDeletion.deleteFailed'),
     }),
     invalidField: accountDeletionInvalidField(error),
     linkedProviders: accountDeletionOidcReauthProviders(error),
   }
 }
 
-function accountDeletionRetryAfterMessage(error: unknown): string | null {
+function accountDeletionRetryAfterMessage(
+  error: unknown,
+  t: TFunction<'auth'>,
+): string | null {
   if (
     !(error instanceof ApiError) ||
     error.status !== 429 ||
@@ -213,20 +219,22 @@ function accountDeletionRetryAfterMessage(error: unknown): string | null {
     return null
   }
 
-  return `確認の試行回数が多すぎます。${formatRetryAfter(error.retryAfterSeconds)}に再度お試しください。`
+  return t('accountDeletion.retryAfter', {
+    duration: formatRetryAfter(error.retryAfterSeconds, t),
+  })
 }
 
-function formatRetryAfter(seconds: number): string {
+function formatRetryAfter(seconds: number, t: TFunction<'auth'>): string {
   if (seconds < 60) {
-    return `${seconds}秒後`
+    return t('accountDeletion.durationSeconds', { count: seconds })
   }
 
   const minutes = Math.ceil(seconds / 60)
   if (minutes < 60) {
-    return `${minutes}分後`
+    return t('accountDeletion.durationMinutes', { count: minutes })
   }
 
-  return `${Math.ceil(minutes / 60)}時間後`
+  return t('accountDeletion.durationHours', { count: Math.ceil(minutes / 60) })
 }
 
 function accountDeletionValidationField(

@@ -4,6 +4,7 @@ import { RouterProvider } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 
 import './styles.css'
+import './lib/i18n/i18n'
 import reportWebVitals from './reportWebVitals.ts'
 import { createAppRouter } from './lib/appRouter.tsx'
 

@@ -6,13 +6,28 @@ from app.models.auth_audit_log import AuthAuditLog
 from app.models.auth_identity import AuthIdentity
 from app.models.auth_oidc_state import AuthOidcState, AuthOidcStateConsumeResult
 from app.models.auth_session import AuthSession
+from app.models.language import DEFAULT_LANGUAGE_CODE, LanguageCode
 from app.models.user import User
 
 
 class AuthRepositoryInterface(metaclass=ABCMeta):
 
     @abstractmethod
-    async def create_user(self, email: str, password_hash: str | None) -> User:
+    async def create_user(
+        self,
+        email: str,
+        password_hash: str | None,
+        language_code: LanguageCode = DEFAULT_LANGUAGE_CODE,
+    ) -> User:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def update_user_language(
+        self,
+        user_id: UUID,
+        language_code: LanguageCode,
+        modified_at: datetime,
+    ) -> User:
         raise NotImplementedError
 
     @abstractmethod

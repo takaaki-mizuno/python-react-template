@@ -50,7 +50,7 @@ test('login の 5xx を画面上のエラーとして表示する', async () => 
     }),
   )
   renderWithRouter({
-    initialEntries: ['/login'],
+    initialEntries: ['/ja/login'],
     queryClientOptions: {
       queries: { retry: false },
       mutations: { retry: false },
@@ -117,7 +117,7 @@ test('login 成功後は正規化済み redirect 先へ遷移し auth cache を�
   )
 
   const { router, queryClient } = renderWithRouter({
-    initialEntries: ['/login?redirect=/app%3Ftab%3Dsettings'],
+    initialEntries: ['/ja/login?redirect=/app%3Ftab%3Dsettings'],
     queryClientOptions: {
       queries: { retry: false },
       mutations: { retry: false },
@@ -150,12 +150,54 @@ test('危険な redirect は /app へ正規化する', async () => {
   )
 
   const { router } = renderWithRouter({
-    initialEntries: ['/login?redirect=https%3A%2F%2Fevil.example%2Fapp'],
+    initialEntries: ['/ja/login?redirect=https%3A%2F%2Fevil.example%2Fapp'],
   })
 
   await screen.findByRole('heading', { name: 'ログイン' })
 
   expect(router.state.location.search.redirect).toBe('/app')
+})
+
+test('legacy /login は path/search を保って locale 付き URL へ正規化する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
+  )
+
+  const { router } = renderWithRouter({
+    initialEntries: ['/login?redirect=%2Fapp%3Ftab%3Dsettings'],
+  })
+
+  await screen.findByRole('heading', { name: 'ログイン' })
+
+  expect(router.state.location.pathname).toBe('/ja/login')
+  expect(router.state.location.search.redirect).toBe('/app?tab=settings')
+})
+
+test('legacy /login は hash を保って locale 付き URL へ正規化する', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
+  )
+
+  const { router } = renderWithRouter({
+    initialEntries: ['/login#form'],
+  })
+
+  await screen.findByRole('heading', { name: 'ログイン' })
+
+  expect(router.state.location.pathname).toBe('/ja/login')
+  expect(router.state.location.hash).toBe('form')
 })
 
 test('login は redirect を引き継いだ register link を表示する', async () => {
@@ -170,14 +212,14 @@ test('login は redirect を引き継いだ register link を表示する', asyn
   )
 
   renderWithRouter({
-    initialEntries: ['/login?redirect=/app%3Ftab%3Dsettings'],
+    initialEntries: ['/ja/login?redirect=/app%3Ftab%3Dsettings'],
   })
 
   expect(
     (
       await screen.findByRole('link', { name: 'アカウントを作成' })
     ).getAttribute('href'),
-  ).toBe('/register?redirect=%2Fapp%3Ftab%3Dsettings')
+  ).toBe('/ja/register?redirect=%2Fapp%3Ftab%3Dsettings')
 })
 
 test('login は OIDC provider button を表示する', async () => {
@@ -204,7 +246,7 @@ test('login は OIDC provider button を表示する', async () => {
   )
 
   renderWithRouter({
-    initialEntries: ['/login?redirect=/app%3Ftab%3Dsettings'],
+    initialEntries: ['/ja/login?redirect=/app%3Ftab%3Dsettings'],
   })
 
   expect(
@@ -224,7 +266,7 @@ test('login は OIDC callback error を form-level message にする', async () 
   )
 
   renderWithRouter({
-    initialEntries: ['/login?oidcError=OIDC_IDENTITY_LINK_REQUIRED'],
+    initialEntries: ['/ja/login?oidcError=OIDC_IDENTITY_LINK_REQUIRED'],
   })
 
   expect((await screen.findByRole('alert')).textContent).toBe(
@@ -269,7 +311,7 @@ test.each([
   )
 
   renderWithRouter({
-    initialEntries: [`/login?oidcError=${code}`],
+    initialEntries: [`/ja/login?oidcError=${code}`],
   })
 
   expect((await screen.findByRole('alert')).textContent).toBe(message)
@@ -297,7 +339,7 @@ test('ログイン済みユーザーが /login を開くと redirect 先へ送�
   )
 
   const { router } = renderWithRouter({
-    initialEntries: ['/login?redirect=/app%3Ftab%3Dsettings'],
+    initialEntries: ['/ja/login?redirect=/app%3Ftab%3Dsettings'],
   })
 
   await screen.findByRole('heading', { name: 'アプリ' })

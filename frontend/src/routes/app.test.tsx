@@ -29,7 +29,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-test('未ログインで /app へ来たら /login へ送る', async () => {
+test('未ログインで /app へ来たら localized login へ送る', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(
@@ -141,7 +141,7 @@ test('/app はダッシュボードの導入ラベルを表示する', async () 
   expect(screen.getByText('ダッシュボード')).toBeTruthy()
 })
 
-test('/app 表示後に query が 401 になると /login へ遷移し auth cache を null にする', async () => {
+test('/app 表示後に query が 401 になると localized login へ遷移し auth cache を null にする', async () => {
   let sessionExpired = false
   vi.stubGlobal(
     'fetch',
@@ -175,13 +175,13 @@ test('/app 表示後に query が 401 になると /login へ遷移し auth cach
     .catch(() => undefined)
 
   await waitFor(() => {
-    expect(router.state.location.pathname).toBe('/login')
+    expect(router.state.location.pathname).toBe('/ja/login')
   })
   expect(router.state.location.search.redirect).toBe('/app')
   expect(queryClient.getQueryData(queryKeys.auth.me)).toBeNull()
 })
 
-test('/login 表示中の 401 は redirect loop しない', async () => {
+test('localized login 表示中の 401 は redirect loop しない', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(
@@ -193,7 +193,7 @@ test('/login 表示中の 401 は redirect loop しない', async () => {
   )
 
   const { router, queryClient } = renderWithRouter({
-    initialEntries: ['/login'],
+    initialEntries: ['/ja/login'],
   })
 
   expect(await screen.findByRole('heading', { name: 'ログイン' })).toBeTruthy()
@@ -205,7 +205,7 @@ test('/login 表示中の 401 は redirect loop しない', async () => {
     })
     .catch(() => undefined)
 
-  expect(router.state.location.pathname).toBe('/login')
+  expect(router.state.location.pathname).toBe('/ja/login')
 })
 
 test('CSRF 403 は /forbidden へ遷移しない', async () => {

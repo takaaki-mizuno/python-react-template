@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { FormEvent } from 'react'
 
 import { Button } from '@/components/atoms/button'
@@ -19,6 +20,7 @@ export default function RegisterForm({
   isPending: boolean
   onSubmit: (values: RegisterValues) => void
 }) {
+  const { t } = useTranslation('auth')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
@@ -35,13 +37,13 @@ export default function RegisterForm({
     setInvalidFields(new Set())
 
     if (password.length < 12) {
-      setValidationMessage('パスワードは12文字以上で入力してください。')
+      setValidationMessage(t('feedback.passwordTooShort'))
       setInvalidFields(new Set(['password']))
       return
     }
 
     if (password !== passwordConfirmation) {
-      setValidationMessage('パスワードが一致しません。')
+      setValidationMessage(t('feedback.passwordMismatch'))
       setInvalidFields(new Set(['password', 'passwordConfirmation']))
       return
     }
@@ -55,7 +57,7 @@ export default function RegisterForm({
         autoComplete="email"
         describedBy={displayError ? errorId : undefined}
         id="register-email"
-        label="メールアドレス"
+        label={t('fields.email')}
         onChange={setEmail}
         required
         type="email"
@@ -66,7 +68,7 @@ export default function RegisterForm({
         describedBy={displayError ? errorId : undefined}
         id="register-password"
         invalid={invalidFields.has('password')}
-        label="パスワード"
+        label={t('fields.password')}
         onChange={setPassword}
         required
         type="password"
@@ -77,7 +79,7 @@ export default function RegisterForm({
         describedBy={displayError ? errorId : undefined}
         id="register-password-confirmation"
         invalid={invalidFields.has('passwordConfirmation')}
-        label="パスワード確認"
+        label={t('fields.passwordConfirmation')}
         onChange={setPasswordConfirmation}
         required
         type="password"
@@ -85,7 +87,7 @@ export default function RegisterForm({
       />
       <AuthFormFeedback id={errorId} message={displayError} />
       <Button disabled={isPending} type="submit">
-        アカウントを作成
+        {t('actions.createAccount')}
       </Button>
     </form>
   )

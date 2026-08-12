@@ -1,6 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Loader2, LogOut, UserRound, XIcon } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription } from '@/components/atoms/alert'
 import { Avatar, AvatarFallback } from '@/components/atoms/avatar'
@@ -14,22 +15,27 @@ import {
   DropdownMenuTrigger,
 } from '@/components/atoms/dropdown-menu'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import {
+  detectPreferredPublicLanguage,
+  localizedAuthPath,
+} from '@/lib/i18n/publicLocale'
 
 export default function AuthMenu() {
+  const { t } = useTranslation(['auth', 'common'])
   const navigate = useNavigate()
   const { user, logout } = useAuthSession()
   const [logoutError, setLogoutError] = useState<string | null>(null)
+  const publicLanguage = detectPreferredPublicLanguage()
+  const loginHref = `${localizedAuthPath('login', publicLanguage)}?redirect=/app`
 
   const handleLogout = async () => {
     setLogoutError(null)
 
     try {
       await logout.mutateAsync()
-      await navigate({ to: '/login', search: { redirect: '/app' } })
+      await navigate({ href: loginHref })
     } catch {
-      setLogoutError(
-        'ログアウトに失敗しました。時間をおいて再度お試しください。',
-      )
+      setLogoutError(t('auth:account.logoutFailed'))
     }
   }
 
@@ -37,13 +43,21 @@ export default function AuthMenu() {
     return (
       <div className="flex items-center gap-2">
         <Button asChild variant="ghost">
-          <Link search={{ redirect: '/app' }} to="/login">
-            ログイン
+          <Link
+            params={{ locale: publicLanguage }}
+            search={{ redirect: '/app' }}
+            to="/{-$locale}/login"
+          >
+            {t('auth:actions.login')}
           </Link>
         </Button>
         <Button asChild>
-          <Link search={{ redirect: '/app' }} to="/register">
-            新規登録
+          <Link
+            params={{ locale: publicLanguage }}
+            search={{ redirect: '/app' }}
+            to="/{-$locale}/register"
+          >
+            {t('auth:actions.register')}
           </Link>
         </Button>
       </div>
@@ -57,8 +71,8 @@ export default function AuthMenu() {
           <Button
             aria-label={
               logout.isPending
-                ? `${user.email} ログアウト処理中`
-                : `${user.email} アカウントメニュー`
+                ? t('auth:account.loggingOut', { email: user.email })
+                : t('auth:account.menu', { email: user.email })
             }
             className="gap-2 data-[pending=true]:opacity-70"
             aria-busy={logout.isPending || undefined}
@@ -80,7 +94,7 @@ export default function AuthMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
-          <DropdownMenuLabel>アカウント</DropdownMenuLabel>
+          <DropdownMenuLabel>{t('auth:account.label')}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             disabled={logout.isPending}
@@ -89,7 +103,7 @@ export default function AuthMenu() {
             }}
           >
             <LogOut className="size-4" aria-hidden="true" />
-            ログアウト
+            {t('auth:account.logout')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -102,7 +116,7 @@ export default function AuthMenu() {
             {logoutError}
           </AlertDescription>
           <Button
-            aria-label="ログアウトエラーを閉じる"
+            aria-label={t('common:actions.closeLogoutError')}
             className="absolute top-2 right-2 size-7 text-destructive hover:text-destructive"
             onClick={() => setLogoutError(null)}
             size="icon"

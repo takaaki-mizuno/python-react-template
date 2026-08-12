@@ -1,7 +1,9 @@
 from datetime import timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from app.libraries.clock import utcnow
@@ -433,3 +435,92 @@ async def test_auth_ip_addresses_roundtrip_as_strings(async_session):
     assert isinstance(session_ip, str)
     assert audit_ip == "2001:db8::1"
     assert isinstance(audit_ip, str)
+
+
+async def test_users_language_code_schema_and_constraints(async_session):
+    column_result = await async_session.execute(
+        text("""
+            select data_type, is_nullable, column_default
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'users'
+              and column_name = 'language_code'
+        """))
+    column_row = column_result.one()
+    constraint_result = await async_session.execute(
+        text("""
+            select conname, pg_get_constraintdef(oid) as definition
+            from pg_constraint
+            where conrelid = 'public.users'::regclass
+              and conname = 'ck_users_language_code_supported'
+        """))
+
+    assert column_row.data_type == "text"
+    assert column_row.is_nullable == "NO"
+    assert "ja" in column_row.column_default
+    constraint_row = constraint_result.one()
+    assert constraint_row.conname == "ck_users_language_code_supported"
+    assert "language_code" in constraint_row.definition
+
+    inserted_language = await async_session.scalar(
+        text("""
+            insert into users (
+                id, email, password_hash, is_active,
+                registered_at, modified_at, created_at, updated_at
+            )
+            values (
+                :id, :email, 'hashed-password', true,
+                1, 1, now(), now()
+            )
+            returning language_code
+        """),
+        {
+            "id": uuid4(),
+            "email": "language-default@example.com",
+        },
+    )
+    assert inserted_language == "ja"
+
+    with pytest.raises(IntegrityError):
+        await async_session.execute(
+            text("""
+                insert into users (
+                    id, email, password_hash, is_active, language_code,
+                    registered_at, modified_at, created_at, updated_at
+                )
+                values (
+                    :id, :email, 'hashed-password', true, 'fr',
+                    1, 1, now(), now()
+                )
+            """),
+            {
+                "id": uuid4(),
+                "email": "language-invalid@example.com",
+            },
+        )
+    await async_session.rollback()
+
+
+async def test_oidc_state_language_code_schema(async_session):
+    column_result = await async_session.execute(
+        text("""
+            select data_type, is_nullable
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'auth_oidc_authorization_states'
+              and column_name = 'language_code'
+        """))
+    constraint_result = await async_session.execute(
+        text("""
+            select conname, pg_get_constraintdef(oid) as definition
+            from pg_constraint
+            where conrelid = 'public.auth_oidc_authorization_states'::regclass
+              and conname = 'ck_auth_oidc_authorization_states_language_code_supported'
+        """))
+
+    column_row = column_result.one()
+    assert column_row.data_type == "text"
+    assert column_row.is_nullable == "YES"
+    constraint_row = constraint_result.one()
+    assert constraint_row.conname == "ck_auth_oidc_authorization_states_language_code_supported"
+    assert "language_code" in constraint_row.definition

@@ -168,6 +168,36 @@ def test_oidc_callback_auto_provisions_user_and_me_returns_user(oidc_client):
     assert me_response.json()["email"] == "user@example.com"
 
 
+def test_oidc_auto_provision_uses_language_code_from_start_query(oidc_client):
+    client, _ = oidc_client
+    state, _ = _start_oidc(
+        client,
+        "/api/auth/oidc/google/start?redirect=/app&languageCode=en",
+    )
+
+    callback_response = _complete_oidc(client, state)
+    me_response = client.get("/api/auth/me")
+
+    assert callback_response.status_code == 303
+    assert me_response.status_code == 200
+    assert me_response.json()["languageCode"] == "en"
+
+
+def test_oidc_invalid_language_code_falls_back_to_default(oidc_client):
+    client, _ = oidc_client
+    state, _ = _start_oidc(
+        client,
+        "/api/auth/oidc/google/start?redirect=/app&languageCode=fr",
+    )
+
+    callback_response = _complete_oidc(client, state)
+    me_response = client.get("/api/auth/me")
+
+    assert callback_response.status_code == 303
+    assert me_response.status_code == 200
+    assert me_response.json()["languageCode"] == "ja"
+
+
 @pytest.mark.asyncio
 async def test_oidc_start_creates_state_and_is_rate_limited(oidc_client, async_session):
     client, _ = oidc_client
@@ -216,6 +246,34 @@ async def test_oidc_verified_email_auto_links_existing_password_user(oidc_client
     assert client.get("/api/auth/me").json()["id"] == existing_user_id
     assert [(str(row.user_id), row.provider_subject)
             for row in identity_rows] == [(existing_user_id, "linked-subject")]
+
+
+def test_oidc_link_preserves_existing_user_language_code(oidc_client):
+    client, fake_provider = oidc_client
+    csrf_token = _csrf(client)
+    register_response = client.post(
+        "/api/auth/register",
+        json={
+            "email": "user@example.com",
+            "password": "Password123!",
+            "languageCode": "en",
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert register_response.status_code == 201
+    client.cookies.clear()
+    fake_provider.subject = "linked-language-subject"
+    state, _ = _start_oidc(
+        client,
+        "/api/auth/oidc/google/start?redirect=/app&languageCode=ja",
+    )
+
+    callback_response = _complete_oidc(client, state)
+    me_response = client.get("/api/auth/me")
+
+    assert callback_response.status_code == 303
+    assert me_response.status_code == 200
+    assert me_response.json()["languageCode"] == "en"
 
 
 @pytest.mark.asyncio

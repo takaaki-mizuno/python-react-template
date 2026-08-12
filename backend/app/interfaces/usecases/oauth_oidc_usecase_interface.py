@@ -2,6 +2,7 @@ from abc import ABCMeta, abstractmethod
 from typing import NoReturn
 
 from app.models.auth_context import AuthenticatedSessionContext
+from app.models.language import LanguageCode
 from app.models.oidc import (OidcAuthorizationPurpose, OidcAuthorizationStartResult,
                              OidcCallbackResult)
 
@@ -16,6 +17,7 @@ class OAuthOidcUsecaseInterface(metaclass=ABCMeta):
         purpose: OidcAuthorizationPurpose,
         current_session: AuthenticatedSessionContext | None,
         ip_address: str | None,
+        language_code: LanguageCode | None = None,
     ) -> OidcAuthorizationStartResult:
         raise NotImplementedError
 

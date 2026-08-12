@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, DateTime, Index, Text, Uuid
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, Text, Uuid
 from sqlmodel import Field, SQLModel
 
 from app.libraries.clock import utcnow
@@ -13,6 +13,10 @@ from app.libraries.sqlalchemy_types import UnixTimestampMillis
 class AuthOidcState(SQLModel, table=True):
     __tablename__ = "auth_oidc_authorization_states"
     __table_args__ = (
+        CheckConstraint(
+            "language_code is null or language_code in ('en', 'ja')",
+            name="language_code_supported",
+        ),
         Index("uq_auth_oidc_states_state_hash", "state_hash", unique=True),
         Index("ix_auth_oidc_states_expires_at", "expires_at"),
         Index("ix_auth_oidc_states_consumed_at", "consumed_at"),
@@ -50,6 +54,14 @@ class AuthOidcState(SQLModel, table=True):
             Text,
             nullable=True,
             comment="NULL means no login hint was provided to the authorization request.",
+        ),
+    )
+    language_code: str | None = Field(
+        default=None,
+        sa_column=Column(
+            Text,
+            nullable=True,
+            comment="NULL means no public language preference was captured.",
         ),
     )
     expires_at: datetime = Field(sa_column=Column(

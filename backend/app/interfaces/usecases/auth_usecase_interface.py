@@ -2,6 +2,8 @@ from abc import ABCMeta, abstractmethod
 
 from app.models.auth_context import AuthenticatedSessionContext, IssuedAuthSession
 from app.models.auth_csrf import SessionCsrfStatus
+from app.models.language import LanguageCode
+from app.models.user import AuthUserUpdateChanges
 
 
 class AuthUsecaseInterface(metaclass=ABCMeta):
@@ -25,10 +27,19 @@ class AuthUsecaseInterface(metaclass=ABCMeta):
         self,
         email: str,
         password: str,
+        language_code: LanguageCode,
         current_session_token: str | None,
         ip_address: str | None,
         user_agent: str | None,
     ) -> IssuedAuthSession:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def update_current_user(
+        self,
+        auth_context: AuthenticatedSessionContext,
+        changes: AuthUserUpdateChanges,
+    ) -> AuthenticatedSessionContext:
         raise NotImplementedError
 
     @abstractmethod

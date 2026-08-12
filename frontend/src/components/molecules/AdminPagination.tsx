@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/atoms/button'
 
@@ -15,6 +16,7 @@ export function AdminPagination({
   total,
   onOffsetChange,
 }: AdminPaginationProps) {
+  const { t } = useTranslation('admin')
   const start = total === 0 ? 0 : offset + 1
   const end = Math.min(total, offset + limit)
   const previousOffset = Math.max(0, offset - limit)
@@ -29,7 +31,7 @@ export function AdminPagination({
       </p>
       <div className="flex items-center gap-2">
         <Button
-          aria-label="前のページ"
+          aria-label={t('common.previousPage')}
           disabled={!hasPrevious}
           size="icon-sm"
           type="button"
@@ -39,7 +41,7 @@ export function AdminPagination({
           <ChevronLeft className="size-4" />
         </Button>
         <Button
-          aria-label="次のページ"
+          aria-label={t('common.nextPage')}
           disabled={!hasNext}
           size="icon-sm"
           type="button"

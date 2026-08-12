@@ -1,4 +1,5 @@
 import { Search } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { FormEvent, ReactNode } from 'react'
 
 import { Input } from '@/components/atoms/input'
@@ -23,6 +24,8 @@ export function AdminCrudToolbar({
   children,
   className,
 }: AdminCrudToolbarProps) {
+  const { t } = useTranslation('admin')
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     onSearchSubmit()
@@ -39,7 +42,7 @@ export function AdminCrudToolbar({
         <form className="relative" onSubmit={handleSubmit}>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            aria-label="ユーザー検索"
+            aria-label={t('common.search')}
             className="pl-9"
             maxLength={320}
             placeholder={searchPlaceholder}

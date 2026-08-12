@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription } from '@/components/atoms/alert'
 import { Button } from '@/components/atoms/button'
@@ -30,6 +31,8 @@ export function AdminConfirmDialog({
   onCancel,
   onConfirm,
 }: AdminConfirmDialogProps) {
+  const { t } = useTranslation('admin')
+
   return (
     <Dialog
       open={open}
@@ -59,7 +62,7 @@ export function AdminConfirmDialog({
             variant="outline"
             onClick={onCancel}
           >
-            キャンセル
+            {t('common.cancel')}
           </Button>
           <Button
             disabled={isPending}

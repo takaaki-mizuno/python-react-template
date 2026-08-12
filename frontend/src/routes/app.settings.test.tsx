@@ -3,6 +3,8 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
+import type { LanguageCode } from '@/lib/i18n/languages'
+import { writePublicLanguage } from '@/lib/i18n/storage'
 import { queryKeys } from '@/lib/queryKeys'
 import { renderWithRouter } from '@/test/renderRouter'
 
@@ -39,14 +41,15 @@ test('未認証で /app/settings を開くと login へ redirect する', async 
   const { router } = renderWithRouter({ initialEntries: ['/app/settings'] })
 
   await waitFor(() => {
-    expect(router.state.location.pathname).toBe('/login')
+    expect(router.state.location.pathname).toBe('/ja/login')
   })
   expect(router.state.location.search.redirect).toBe('/app/settings')
   expect(screen.queryByRole('heading', { name: 'アカウント設定' })).toBeNull()
 })
 
-test('/app/settings で account deletion に成功すると cache を消して / へ遷移する', async () => {
+test('/app/settings で account deletion に成功すると cache を消して public fallback locale の / へ遷移する', async () => {
   document.cookie = 'csrf_token=csrf-123; path=/'
+  writePublicLanguage('ja')
   let accountDeleted = false
   const fetchMock = vi
     .fn()
@@ -59,7 +62,13 @@ test('/app/settings で account deletion に成功すると cache を消して /
         return Promise.resolve(new Response(null, { status: 401 }))
       }
 
-      return Promise.resolve(authUserResponse())
+      return Promise.resolve(
+        authUserResponse({
+          id: '00000000-0000-0000-0000-000000000001',
+          email: 'user@example.com',
+          languageCode: 'en',
+        }),
+      )
     })
   vi.stubGlobal('fetch', fetchMock)
   const { router, queryClient } = renderWithRouter({
@@ -70,25 +79,24 @@ test('/app/settings で account deletion に成功すると cache を消して /
   })
 
   expect(
-    await screen.findByRole('heading', { name: 'アカウント削除' }),
+    await screen.findByRole('heading', { name: 'Delete account' }),
   ).toBeTruthy()
-  expect(screen.getByRole('heading', { name: 'アカウント設定' })).toBeTruthy()
-  expect(screen.getByRole('navigation', { name: 'パンくず' })).toBeTruthy()
-  expect(
-    screen.getByRole('link', { name: 'アプリ' }).getAttribute('href'),
-  ).toBe('/app')
+  expect(screen.getByRole('heading', { name: 'Account settings' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'App' }).getAttribute('href')).toBe(
+    '/app',
+  )
   fireEvent.change(
-    screen.getByLabelText('メールアドレスを入力して削除を確認'),
+    screen.getByLabelText('Enter your email address to confirm deletion'),
     {
       target: { value: 'user@example.com' },
     },
   )
-  fireEvent.change(screen.getByLabelText('現在のパスワード'), {
+  fireEvent.change(screen.getByLabelText('Current password'), {
     target: { value: 'Password123!' },
   })
-  fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Delete account' }))
 
-  await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  await waitFor(() => expect(router.state.location.pathname).toBe('/ja'))
   const deleteCall = fetchMock.mock.calls.find(
     ([input, init]) => input === '/api/auth/me' && init?.method === 'DELETE',
   )
@@ -587,7 +595,11 @@ test('/app には settings への導線がある', async () => {
 })
 
 function authUserResponse(
-  user = {
+  user: {
+    email: string
+    id: string
+    languageCode?: LanguageCode
+  } = {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
   },

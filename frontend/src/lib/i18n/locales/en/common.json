@@ -1,0 +1,54 @@
+{
+  "app": {
+    "name": "python-react-template"
+  },
+  "actions": {
+    "backToTop": "Back to top",
+    "backToApp": "Back to app",
+    "closeLogoutError": "Dismiss logout error",
+    "closeLanguageError": "Dismiss language error",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
+  },
+  "apiError": {
+    "csrf": "We could not verify your session. Reload the page and try again.",
+    "status400": "Check your input.",
+    "status401": "You need to log in.",
+    "status403": "You do not have permission to perform this action.",
+    "status409": "This action cannot be completed in the current state.",
+    "status422": "Check your input.",
+    "status429": "Too many attempts. Wait a while and try again.",
+    "fallback": "The request failed. Wait a while and try again."
+  },
+  "errors": {
+    "notFound": {
+      "title": "Page not found",
+      "message": "The page does not exist or may have moved."
+    },
+    "unexpected": {
+      "title": "Something went wrong",
+      "message": "Wait a while and try again. Contact an administrator if the problem continues."
+    },
+    "forbidden": {
+      "title": "Access denied",
+      "message": "You do not have permission to view this page."
+    }
+  },
+  "header": {
+    "home": "Go to top",
+    "mobileNavigation": "Mobile page navigation",
+    "navigation": "Page navigation",
+    "sections": "Sections"
+  },
+  "language": {
+    "label": "Language",
+    "trigger": "Change language",
+    "english": "English",
+    "japanese": "日本語",
+    "updateFailed": "Could not update the display language."
+  },
+  "metadata": {
+    "defaultTitle": "python-react-template",
+    "defaultDescription": "A full-stack template with FastAPI and React"
+  }
+}

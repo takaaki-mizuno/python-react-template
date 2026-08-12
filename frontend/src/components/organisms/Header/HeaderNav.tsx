@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import type { NavigationItem } from './types'
 import { Button } from '@/components/atoms/button'
 import {
@@ -18,9 +20,11 @@ export default function HeaderNav({
   mobile = false,
   onNavigate,
 }: HeaderNavProps) {
+  const { t } = useTranslation('common')
+
   if (mobile) {
     return (
-      <nav aria-label="モバイルページ内ナビゲーション" className="grid gap-2">
+      <nav aria-label={t('header.mobileNavigation')} className="grid gap-2">
         {items.map((item) => (
           <Button
             asChild
@@ -39,7 +43,7 @@ export default function HeaderNav({
 
   return (
     <NavigationMenu
-      aria-label="ページ内ナビゲーション"
+      aria-label={t('header.navigation')}
       className="hidden lg:flex"
       viewport={false}
     >

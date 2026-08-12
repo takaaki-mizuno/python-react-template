@@ -6,6 +6,10 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import { useAuthSession } from './useAuthSession'
 import type { ReactNode } from 'react'
+import {
+  readLastResolvedLanguage,
+  writeLastResolvedLanguage,
+} from '@/lib/i18n/storage'
 import { queryKeys } from '@/lib/queryKeys'
 
 afterEach(() => {
@@ -59,6 +63,7 @@ test('logout 成功時は表示中userを null にして auth 以外の cache �
   const user = {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
+    languageCode: 'en',
     roles: [],
     permissions: [],
   }
@@ -96,6 +101,7 @@ test('logout 成功時は表示中userを null にして auth 以外の cache �
     }),
   )
   const queryClient = new QueryClient()
+  writeLastResolvedLanguage('en')
   queryClient.setQueryData(['projects'], [{ id: 'project-1' }])
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -110,6 +116,7 @@ test('logout 成功時は表示中userを null にして auth 以外の cache �
   await waitFor(() => expect(result.current.user).toBeNull())
   expect(queryClient.getQueryData(queryKeys.auth.me)).toBeNull()
   expect(queryClient.getQueryData(['projects'])).toBeUndefined()
+  expect(readLastResolvedLanguage()).toBeNull()
 })
 
 test('未ログイン状態から auth cache が更新されると user を返す', async () => {
@@ -133,6 +140,7 @@ test('未ログイン状態から auth cache が更新されると user を返�
   const nextUser = {
     id: '00000000-0000-0000-0000-000000000002',
     email: 'next@example.com',
+    languageCode: 'ja',
     roles: [],
     permissions: [],
   }

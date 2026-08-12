@@ -70,6 +70,16 @@ def test_auth_model_metadata_matches_auth_migration_indexes_and_defaults():
     assert users.c.is_active.server_default is not None
 
 
+def test_user_language_code_metadata():
+    users = SQLModel.metadata.tables["users"]
+    constraint_names = {constraint.name for constraint in users.constraints}
+
+    assert users.c.language_code.nullable is False
+    assert str(users.c.language_code.type) == "TEXT"
+    assert users.c.language_code.server_default is not None
+    assert "ck_users_language_code_supported" in constraint_names
+
+
 def test_user_deleted_at_and_active_email_unique_index_metadata():
     users = SQLModel.metadata.tables["users"]
     active_email_index = next(index for index in users.indexes

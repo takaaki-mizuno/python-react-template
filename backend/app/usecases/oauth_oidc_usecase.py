@@ -28,6 +28,7 @@ from app.models.auth_event_type import AuthEventType
 from app.models.auth_identity import AuthIdentity
 from app.models.auth_oidc_state import AuthOidcState
 from app.models.authorization import UserAuthorization
+from app.models.language import DEFAULT_LANGUAGE_CODE, LanguageCode, is_supported_language_code
 from app.models.oidc import (OidcAuthorizationPurpose, OidcAuthorizationStartResult,
                              OidcCallbackResult, OidcVerifiedClaims)
 # yapf: disable
@@ -76,6 +77,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
         purpose: OidcAuthorizationPurpose,
         current_session: AuthenticatedSessionContext | None,
         ip_address: str | None,
+        language_code: LanguageCode | None = None,
     ) -> OidcAuthorizationStartResult:
         try:
             provider = self._oidc_settings.get_provider(provider_id)
@@ -122,6 +124,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
                     redirect_path=_normalize_redirect_path(redirect_path),
                     login_hint=(current_session.user.email.strip().lower() if
                                 purpose == "account_deletion_reauth" and current_session else None),
+                    language_code=(language_code if purpose == "login" else None),
                     expires_at=now +
                     timedelta(seconds=self._oidc_settings.AUTH_OIDC_STATE_TTL_SECONDS),
                 ))
@@ -302,10 +305,13 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
         ip_address: str | None,
         user_agent: str | None,
     ) -> OidcCallbackResult:
+        language_code = (oidc_state.language_code if oidc_state.language_code is not None
+                         and is_supported_language_code(oidc_state.language_code) else None)
         async with self._unit_of_work.transaction():
             user, identity, setup_audits = await self._resolve_login_user_and_identity(
                 provider,
                 claims,
+                language_code,
             )
             login_at = utcnow()
             user = await self._auth_repository.record_user_login(user.id, login_at)
@@ -366,6 +372,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
         self,
         provider: OidcProviderSettings,
         claims: OidcVerifiedClaims,
+        language_code: LanguageCode | None,
     ) -> tuple[User, AuthIdentity, list[AuthEventType]]:
         identity = await self._auth_repository.find_identity_by_provider_subject(
             provider.provider_id,
@@ -397,7 +404,11 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
         if not provider.allows_auto_provision:
             raise OidcProvisioningDisabledError
         try:
-            user = await self._auth_repository.create_user(normalized_email, None)
+            user = await self._auth_repository.create_user(
+                normalized_email,
+                None,
+                language_code=language_code or DEFAULT_LANGUAGE_CODE,
+            )
         except EmailAlreadyRegisteredError as exc:
             raise OidcIdentityUnavailableError from exc
         identity = await self._auth_repository.create_auth_identity(

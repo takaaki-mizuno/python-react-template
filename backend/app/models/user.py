@@ -1,21 +1,36 @@
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Index, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Index, Text, text
 from sqlmodel import Field, SQLModel
 
 from app.libraries.clock import utcnow
 from app.libraries.sqlalchemy_types import UnixTimestampMillis
+from app.models.language import DEFAULT_LANGUAGE_CODE, LanguageCode
+
+
+@dataclass(frozen=True, slots=True)
+class AuthUserUpdateChanges:
+    language_code: LanguageCode | None = field(default=None)
+    fields_set: frozenset[str] = field(default_factory=frozenset)
 
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
-    __table_args__ = (Index(
-        "uq_users_email_lower_active",
-        text("lower(email)"),
-        unique=True,
-        postgresql_where=text("deleted_at IS NULL"),
-    ), Index("ix_users_registered_at_id", "registered_at", "id"))
+    __table_args__ = (
+        CheckConstraint(
+            "language_code in ('en', 'ja')",
+            name="language_code_supported",
+        ),
+        Index(
+            "uq_users_email_lower_active",
+            text("lower(email)"),
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index("ix_users_registered_at_id", "registered_at", "id"),
+    )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     email: str = Field(sa_column=Column(Text, nullable=False), )
@@ -32,6 +47,15 @@ class User(SQLModel, table=True):
                                              nullable=False,
                                              default=True,
                                              server_default=text("true")), )
+    language_code: str = Field(
+        default=DEFAULT_LANGUAGE_CODE,
+        sa_column=Column(
+            Text,
+            nullable=False,
+            server_default=text("'ja'"),
+            comment="User interface language code.",
+        ),
+    )
     registered_at: datetime = Field(sa_column=Column(
         UnixTimestampMillis(),
         nullable=False,

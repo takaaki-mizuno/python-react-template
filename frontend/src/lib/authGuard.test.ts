@@ -63,8 +63,8 @@ describe('authGuard', () => {
       expect(isRedirect(error)).toBe(true)
       const redirectError = error as RedirectError
       expect(redirectError.options).toMatchObject({
-        to: '/login',
-        search: { redirect: '/app/admin' },
+        href: '/ja/login?redirect=%2Fapp%2Fadmin',
+        statusCode: 307,
       })
     }
   })

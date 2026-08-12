@@ -1,0 +1,145 @@
+{
+  "metadata": {
+    "title": "python-react-template",
+    "description": "A full-stack template with FastAPI and React."
+  },
+  "navigation": {
+    "overview": "Overview",
+    "architecture": "Architecture",
+    "workflow": "Workflow",
+    "quality": "Quality"
+  },
+  "hero": {
+    "eyebrow": "Practical monorepo foundation",
+    "title": "A practical FastAPI and React monorepo that runs quickly",
+    "description": "A development foundation that separates backend and frontend responsibilities while keeping build, delivery, planning, and quality gates in one place. It is designed to keep structure and process clear even when AI agents participate in development.",
+    "featureTitle": "Template highlights",
+    "actions": [
+      {
+        "href": "#architecture",
+        "label": "View architecture",
+        "variant": "primary"
+      },
+      {
+        "href": "#workflow",
+        "label": "View workflow",
+        "variant": "secondary"
+      }
+    ],
+    "signalLines": [
+      "Separated backend / frontend responsibilities",
+      "Frontend build output goes to backend/static/",
+      "Planning workflow and quality gates defined up front"
+    ]
+  },
+  "tabs": {
+    "label": "Page summary",
+    "overview": "See what the starter structure includes.",
+    "architecture": "Review the frontend, backend, and static delivery connection points.",
+    "workflow": "Check the work sequence from Plan through Act.",
+    "quality": "Understand the verification gates to run before and after changes."
+  },
+  "overview": {
+    "label": "Overview",
+    "title": "What this template gives you from the start",
+    "description": "This page keeps the adoption-critical details short and close to implementation reality. It shows how the foundation fits together, not just which technologies are included.",
+    "cards": [
+      {
+        "title": "Backend",
+        "description": "Build FastAPI APIs and CLI tools together under backend/."
+      },
+      {
+        "title": "Frontend",
+        "description": "Use React + Vite to build UI quickly while keeping type safety."
+      },
+      {
+        "title": "Delivery flow",
+        "description": "Frontend builds are written to backend/static/ and served by the backend."
+      },
+      {
+        "title": "Development rules",
+        "description": "AGENTS.md and documents/plans/ provide a planning-first workflow."
+      }
+    ]
+  },
+  "architecture": {
+    "label": "Architecture",
+    "title": "A structure with clear responsibilities and connection points",
+    "description": "The frontend, backend, and build output relationship is visible first, so it is easy to see where changes belong after adoption.",
+    "highlights": [
+      "frontend/ owns the React + Vite UI implementation",
+      "backend/ owns the FastAPI API and CLI",
+      "Build output is collected in backend/static/"
+    ],
+    "diagram": {
+      "label": "Diagram of frontend, backend, and build output relationships",
+      "frontendLabel": "Frontend",
+      "frontendDescription": "Owns UI and builds",
+      "backendLabel": "Backend",
+      "backendDescription": "Owns API and CLI",
+      "outputLabel": "Build output",
+      "outputDescription": "Collects frontend assets and serves them"
+    }
+  },
+  "workflow": {
+    "label": "Workflow",
+    "title": "How work moves through this template",
+    "description": "The later sections show the development flow after adoption. Plan through Act is explicit so judgment stays consistent even when AI agents are involved.",
+    "steps": [
+      {
+        "key": "Plan",
+        "description": "Write the work, impact, and order in documents/plans/ before implementation."
+      },
+      {
+        "key": "Do",
+        "description": "Keep backend and frontend responsibilities separate and implement in small units."
+      },
+      {
+        "key": "Check",
+        "description": "Run tests, lint, and builds before deciding the work is complete."
+      },
+      {
+        "key": "Act",
+        "description": "Feed learnings back into plans and guides for the next change."
+      }
+    ]
+  },
+  "quality": {
+    "label": "Quality",
+    "title": "Quality gates included from the start",
+    "description": "The page goes beyond an introduction and shows the checks developers run when changing the project, reducing adoption risk.",
+    "groups": [
+      {
+        "title": "Frontend checks",
+        "summary": "Run format, lint, tests, and build checks to catch UI regressions.",
+        "items": ["npm run check", "npm test", "npm run build"]
+      },
+      {
+        "title": "Backend checks",
+        "summary": "Run tests plus formatter and import order checks to keep the full stack healthy.",
+        "items": [
+          "uv run pytest",
+          "uv run isort . --check-only",
+          "uv run yapf -dr app/"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "eyebrow": "Page navigation",
+    "title": "Keep the key information easy to revisit",
+    "description": "Primary CTAs stay as page anchors so the top page can move between architecture, workflow, and quality without adding friction.",
+    "actions": [
+      {
+        "href": "#overview",
+        "label": "Back to overview",
+        "variant": "secondary"
+      },
+      {
+        "href": "#quality",
+        "label": "View quality",
+        "variant": "primary"
+      }
+    ]
+  }
+}

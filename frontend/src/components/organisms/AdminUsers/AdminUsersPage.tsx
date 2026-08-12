@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { FormEvent } from 'react'
+import type { TFunction } from 'i18next'
 import type {
   AdminRole,
   AdminUserCreatePayload,
@@ -36,6 +38,8 @@ import {
   updateAdminUser,
 } from '@/lib/adminUsersApi'
 import { toUserMessage } from '@/lib/apiError'
+import { formatDateTime as formatLocalizedDateTime } from '@/lib/i18n/formatters'
+import { defaultLanguage, normalizeLanguageCode } from '@/lib/i18n/languages'
 import { queryKeys } from '@/lib/queryKeys'
 
 const PAGE_LIMIT = 20
@@ -61,6 +65,7 @@ export function AdminUsersPage({
   filters,
   onFiltersChange,
 }: AdminUsersPageProps) {
+  const { t, i18n } = useTranslation('admin')
   const queryClient = useQueryClient()
   const [searchValue, setSearchValue] = useState(filters.search ?? '')
   const [formMode, setFormMode] = useState<FormMode>(null)
@@ -70,6 +75,9 @@ export function AdminUsersPage({
   const [deleteTarget, setDeleteTarget] = useState<AdminUserListItem | null>(
     null,
   )
+  const currentLanguage =
+    normalizeLanguageCode(i18n.resolvedLanguage ?? i18n.language) ??
+    defaultLanguage
 
   useEffect(() => {
     setSearchValue(filters.search ?? '')
@@ -103,7 +111,7 @@ export function AdminUsersPage({
       setFormFeedback(null)
       void invalidateAdminUserQueries(queryClient)
     },
-    onError: (error) => setFormFeedback(adminUserErrorMessage(error)),
+    onError: (error) => setFormFeedback(adminUserErrorMessage(error, t)),
   })
   const updateMutation = useMutation({
     mutationFn: ({
@@ -118,7 +126,7 @@ export function AdminUsersPage({
       setFormFeedback(null)
       void invalidateAdminUserQueries(queryClient)
     },
-    onError: (error) => setFormFeedback(adminUserErrorMessage(error)),
+    onError: (error) => setFormFeedback(adminUserErrorMessage(error, t)),
   })
   const deleteMutation = useMutation({
     mutationFn: (userId: string) => deleteAdminUser(userId),
@@ -127,14 +135,14 @@ export function AdminUsersPage({
       setDeleteFeedback(null)
       void invalidateAdminUserQueries(queryClient)
     },
-    onError: (error) => setDeleteFeedback(adminUserErrorMessage(error)),
+    onError: (error) => setDeleteFeedback(adminUserErrorMessage(error, t)),
   })
 
   const columns = useMemo<Array<AdminDataTableColumn<AdminUserListItem>>>(
     () => [
       {
         key: 'email',
-        header: 'メールアドレス',
+        header: t('users.table.email'),
         render: (user) => (
           <div className="grid gap-1">
             <span className="font-medium">{user.email}</span>
@@ -144,16 +152,18 @@ export function AdminUsersPage({
       },
       {
         key: 'status',
-        header: '状態',
+        header: t('users.table.status'),
         render: (user) => (
           <Badge variant={user.isActive ? 'secondary' : 'outline'}>
-            {user.isActive ? '有効' : '停止'}
+            {user.isActive
+              ? t('users.status.active')
+              : t('users.status.inactive')}
           </Badge>
         ),
       },
       {
         key: 'roles',
-        header: 'ロール',
+        header: t('users.table.roles'),
         render: (user) => (
           <div className="flex flex-wrap gap-1">
             {user.roles.length > 0 ? (
@@ -163,26 +173,32 @@ export function AdminUsersPage({
                 </Badge>
               ))
             ) : (
-              <span className="text-muted-foreground">なし</span>
+              <span className="text-muted-foreground">
+                {t('users.table.noRoles')}
+              </span>
             )}
           </div>
         ),
       },
       {
         key: 'lastLoginAt',
-        header: '最終ログイン',
+        header: t('users.table.lastLogin'),
         render: (user) =>
-          user.lastLoginAt ? formatDateTime(user.lastLoginAt) : '未ログイン',
+          user.lastLoginAt
+            ? formatLocalizedDateTime(user.lastLoginAt, currentLanguage)
+            : t('users.table.neverLoggedIn'),
       },
       {
         key: 'createdAt',
-        header: '作成日時',
-        render: (user) => formatDateTime(user.createdAt),
+        header: t('users.table.createdAt'),
+        render: (user) =>
+          formatLocalizedDateTime(user.createdAt, currentLanguage),
       },
       {
         key: 'updatedAt',
-        header: '更新日時',
-        render: (user) => formatDateTime(user.updatedAt),
+        header: t('users.table.updatedAt'),
+        render: (user) =>
+          formatLocalizedDateTime(user.updatedAt, currentLanguage),
       },
       {
         key: 'actions',
@@ -191,7 +207,7 @@ export function AdminUsersPage({
         render: (user) => (
           <div className="flex justify-end gap-1">
             <Button
-              aria-label={`${user.email} を編集`}
+              aria-label={t('users.table.editUser', { email: user.email })}
               size="icon-sm"
               type="button"
               variant="ghost"
@@ -200,7 +216,7 @@ export function AdminUsersPage({
               <Pencil className="size-4" />
             </Button>
             <Button
-              aria-label={`${user.email} を削除`}
+              aria-label={t('users.table.deleteUser', { email: user.email })}
               size="icon-sm"
               type="button"
               variant="ghost"
@@ -215,7 +231,7 @@ export function AdminUsersPage({
         ),
       },
     ],
-    [],
+    [currentLanguage, t],
   )
 
   const users = usersQuery.data?.items ?? []
@@ -278,9 +294,11 @@ export function AdminUsersPage({
   return (
     <main className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
       <div className="grid gap-1">
-        <h1 className="text-2xl font-semibold tracking-normal">ユーザー管理</h1>
+        <h1 className="text-2xl font-semibold tracking-normal">
+          {t('users.title')}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          管理画面からユーザー、状態、ロールを一括で管理します。
+          {t('users.description')}
         </p>
       </div>
 
@@ -289,10 +307,10 @@ export function AdminUsersPage({
           action={
             <Button type="button" onClick={openCreateForm}>
               <Plus className="size-4" />
-              ユーザー作成
+              {t('users.create')}
             </Button>
           }
-          searchPlaceholder="メールアドレスで検索"
+          searchPlaceholder={t('users.searchPlaceholder')}
           searchValue={searchValue}
           onSearchChange={setSearchValue}
           onSearchSubmit={() =>
@@ -300,9 +318,9 @@ export function AdminUsersPage({
           }
         >
           <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-            状態
+            {t('users.status.label')}
             <select
-              aria-label="状態フィルタ"
+              aria-label={t('users.status.filter')}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               value={
                 filters.isActive === undefined
@@ -318,22 +336,22 @@ export function AdminUsersPage({
                 })
               }
             >
-              <option value="all">すべて</option>
-              <option value="true">有効</option>
-              <option value="false">停止</option>
+              <option value="all">{t('users.status.all')}</option>
+              <option value="true">{t('users.status.active')}</option>
+              <option value="false">{t('users.status.inactive')}</option>
             </select>
           </label>
           <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-            ロール
+            {t('users.role.label')}
             <select
-              aria-label="ロールフィルタ"
+              aria-label={t('users.role.filter')}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               value={filters.role ?? ''}
               onChange={(event) =>
                 updateFilters({ role: event.target.value || undefined })
               }
             >
-              <option value="">すべて</option>
+              <option value="">{t('users.role.all')}</option>
               {roles.map((role) => (
                 <option key={role.code} value={role.code}>
                   {role.displayName}
@@ -345,9 +363,7 @@ export function AdminUsersPage({
         <AdminDataTable
           columns={columns}
           emptyMessage={
-            hasFilter
-              ? '条件に一致するユーザーはいません。'
-              : 'ユーザーはまだ登録されていません。'
+            hasFilter ? t('users.table.emptyFiltered') : t('users.table.empty')
           }
           getRowKey={(user) => user.id}
           loading={usersQuery.isLoading}
@@ -379,10 +395,12 @@ export function AdminUsersPage({
             <form className="grid gap-5" onSubmit={submitForm}>
               <div className="grid gap-1">
                 <DialogTitle>
-                  {formMode.type === 'create' ? 'ユーザー作成' : 'ユーザー編集'}
+                  {formMode.type === 'create'
+                    ? t('users.form.createTitle')
+                    : t('users.form.editTitle')}
                 </DialogTitle>
                 <DialogDescription>
-                  メールアドレス、状態、ロールを設定します。
+                  {t('users.form.description')}
                 </DialogDescription>
               </div>
               {formFeedback ? (
@@ -392,7 +410,7 @@ export function AdminUsersPage({
               ) : null}
               <div className="grid gap-4">
                 <label className="grid gap-2">
-                  <Label>メールアドレス</Label>
+                  <Label>{t('users.form.email')}</Label>
                   <Input
                     required
                     autoComplete="email"
@@ -407,7 +425,7 @@ export function AdminUsersPage({
                   />
                 </label>
                 <label className="grid gap-2">
-                  <Label>パスワード</Label>
+                  <Label>{t('users.form.password')}</Label>
                   <Input
                     autoComplete="new-password"
                     minLength={12}
@@ -434,10 +452,12 @@ export function AdminUsersPage({
                       }))
                     }
                   />
-                  有効
+                  {t('users.form.active')}
                 </label>
                 <fieldset className="grid gap-2">
-                  <legend className="text-sm font-medium">ロール</legend>
+                  <legend className="text-sm font-medium">
+                    {t('users.form.roles')}
+                  </legend>
                   <div className="grid gap-2 rounded-md border p-3">
                     {roles.length > 0 ? (
                       roles.map((role) => (
@@ -461,7 +481,7 @@ export function AdminUsersPage({
                       ))
                     ) : (
                       <span className="text-sm text-muted-foreground">
-                        選択可能なロールがありません。
+                        {t('users.form.noAvailableRoles')}
                       </span>
                     )}
                   </div>
@@ -474,10 +494,12 @@ export function AdminUsersPage({
                   variant="outline"
                   onClick={closeForm}
                 >
-                  キャンセル
+                  {t('common.cancel')}
                 </Button>
                 <Button disabled={isFormPending} type="submit">
-                  {formMode.type === 'create' ? '作成する' : '保存する'}
+                  {formMode.type === 'create'
+                    ? t('users.form.createSubmit')
+                    : t('users.form.saveSubmit')}
                 </Button>
               </div>
             </form>
@@ -486,16 +508,16 @@ export function AdminUsersPage({
       </Dialog>
 
       <AdminConfirmDialog
-        confirmLabel="削除する"
+        confirmLabel={t('users.delete.confirmLabel')}
         description={
           deleteTarget
-            ? `${deleteTarget.email} を削除します。削除済みユーザーは管理CRUDの対象外になります。`
+            ? t('users.delete.description', { email: deleteTarget.email })
             : ''
         }
         errorMessage={deleteFeedback}
         isPending={deleteMutation.isPending}
         open={deleteTarget !== null}
-        title="ユーザーを削除"
+        title={t('users.delete.title')}
         onCancel={() => {
           setDeleteFeedback(null)
           setDeleteTarget(null)
@@ -557,20 +579,13 @@ function invalidateAdminUserQueries(
   ])
 }
 
-function adminUserErrorMessage(error: unknown): string {
+function adminUserErrorMessage(error: unknown, t: TFunction<'admin'>): string {
   return toUserMessage(error, {
     code: {
-      EMAIL_ALREADY_REGISTERED: 'このメールアドレスは既に登録されています。',
-      WEAK_PASSWORD: 'パスワードは12文字以上128文字以下で入力してください。',
-      ROLE_NOT_FOUND: '指定されたロールが見つかりません。',
+      EMAIL_ALREADY_REGISTERED: t('users.errors.emailAlreadyRegistered'),
+      WEAK_PASSWORD: t('users.errors.weakPassword'),
+      ROLE_NOT_FOUND: t('users.errors.roleNotFound'),
     },
-    fallback: 'ユーザー管理の操作に失敗しました。',
+    fallback: t('users.errors.fallback'),
   })
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('ja-JP', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
 }
