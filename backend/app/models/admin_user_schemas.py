@@ -1,16 +1,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import EmailStr, Field, field_validator
-from pydantic.alias_generators import to_camel
+from pydantic import EmailStr, Field, field_serializer, field_validator
 from sqlmodel import SQLModel
 from sqlmodel.main import SQLModelConfig
 
 from app.models.admin_user import AdminUserDetail, AdminUserRecord
+from app.models.time_serialization import unix_timestamp_seconds
 
 
 class AdminUserSchema(SQLModel):
-    model_config = SQLModelConfig(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+    model_config = SQLModelConfig(extra="forbid")
 
 
 class AdminUserCreateRequest(AdminUserSchema):
@@ -43,6 +43,16 @@ class AdminUserListItemResponse(AdminUserSchema):
     last_login_at: datetime | None
     roles: list[str]
 
+    @field_serializer("created_at", "updated_at", when_used="json")
+    def serialize_datetime(self, value: datetime) -> int:
+        return unix_timestamp_seconds(value)
+
+    @field_serializer("last_login_at", when_used="json")
+    def serialize_optional_datetime(self, value: datetime | None) -> int | None:
+        if value is None:
+            return None
+        return unix_timestamp_seconds(value)
+
     @classmethod
     def from_record(cls, record: AdminUserRecord) -> "AdminUserListItemResponse":
         return cls(
@@ -74,7 +84,7 @@ class AdminUserResponse(AdminUserListItemResponse):
 
 
 class AdminUserListResponse(AdminUserSchema):
-    items: list[AdminUserListItemResponse]
-    total: int
+    data: list[AdminUserListItemResponse]
+    count: int
     offset: int
     limit: int

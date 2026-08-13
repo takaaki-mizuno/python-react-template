@@ -1,13 +1,12 @@
 from uuid import UUID
 
 from pydantic import Field
-from pydantic.alias_generators import to_camel
 from sqlmodel import SQLModel
 from sqlmodel.main import SQLModelConfig
 
 
 class AuthorizationSchema(SQLModel):
-    model_config = SQLModelConfig(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+    model_config = SQLModelConfig(extra="forbid")
 
 
 class RoleResponse(AuthorizationSchema):
@@ -24,7 +23,7 @@ class PermissionResponse(AuthorizationSchema):
 
 
 class RoleListResponse(AuthorizationSchema):
-    roles: list[RoleResponse]
+    data: list[RoleResponse]
     permissions: list[PermissionResponse]
 
 

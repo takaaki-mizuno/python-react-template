@@ -270,10 +270,10 @@ async def test_create_user_hashes_password_assigns_roles_and_records_audit() -> 
         "user_created_by_admin",
         "role_granted",
     ]
-    assert auth_repository.audit_logs[0].detail_json["changedFields"] == [
+    assert auth_repository.audit_logs[0].detail_json["changed_fields"] == [
         "email",
         "password",
-        "isActive",
+        "is_active",
         "roles",
     ]
     assert auth_repository.audit_logs[1].detail_json["resultingRoles"] == ["admin"]
@@ -330,9 +330,9 @@ async def test_update_user_replaces_roles_revokes_sessions_for_password_and_inac
         "role_revoked",
         "user_updated_by_admin",
     ]
-    assert auth_repository.audit_logs[-1].detail_json["changedFields"] == [
+    assert auth_repository.audit_logs[-1].detail_json["changed_fields"] == [
         "password",
-        "isActive",
+        "is_active",
         "roles",
     ]
 

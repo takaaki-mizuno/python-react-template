@@ -14,7 +14,7 @@ test('現在の email と確認入力欄を表示し、空や不一致でも sub
     <AccountDeletionPanel currentEmail="user@example.com" onSubmit={vi.fn()} />,
   )
 
-  const confirmEmail =
+  const confirm_email =
     screen.getByLabelText('メールアドレスを入力して削除を確認')
   const password = screen.getByLabelText('現在のパスワード')
   const submitButton = screen.getByRole('button', {
@@ -22,11 +22,11 @@ test('現在の email と確認入力欄を表示し、空や不一致でも sub
   })
 
   expect(screen.getByText('user@example.com')).toBeTruthy()
-  expect(confirmEmail.closest('form')?.hasAttribute('novalidate')).toBe(true)
+  expect(confirm_email.closest('form')?.hasAttribute('novalidate')).toBe(true)
   expect(password.getAttribute('type')).toBe('password')
-  expect(confirmEmail.getAttribute('autocomplete')).toBe('off')
+  expect(confirm_email.getAttribute('autocomplete')).toBe('off')
   expect(password.getAttribute('autocomplete')).toBe('current-password')
-  expect(confirmEmail.hasAttribute('required')).toBe(false)
+  expect(confirm_email.hasAttribute('required')).toBe(false)
   expect(password.hasAttribute('required')).toBe(false)
   expect(submitButton.hasAttribute('disabled')).toBe(false)
 })
@@ -51,7 +51,7 @@ test('入力変更時に変更された field 名を通知する', () => {
     target: { value: 'Password123!' },
   })
 
-  expect(onFieldChange).toHaveBeenCalledWith('confirmEmail')
+  expect(onFieldChange).toHaveBeenCalledWith('confirm_email')
   expect(onFieldChange).toHaveBeenCalledWith('password')
 })
 
@@ -100,7 +100,7 @@ test('入力値を submit し、空 password は undefined にする', () => {
   fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
 
   expect(onSubmit).toHaveBeenCalledWith({
-    confirmEmail: 'user@example.com',
+    confirm_email: 'user@example.com',
     password: 'Password123!',
   })
 
@@ -111,7 +111,7 @@ test('入力値を submit し、空 password は undefined にする', () => {
   fireEvent.click(screen.getByRole('button', { name: 'アカウントを削除' }))
 
   expect(onSubmit).toHaveBeenCalledWith({
-    confirmEmail: 'user@example.com',
+    confirm_email: 'user@example.com',
     password: undefined,
   })
 })

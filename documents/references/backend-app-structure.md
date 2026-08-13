@@ -31,7 +31,7 @@ backend/
 controllers -> usecases -> services -> models
 ```
 
-- Controller は HTTP request / response、auth dependency、error envelope 変換を担当する。
+- Controller は HTTP request / response、auth dependency、Problem Details 変換を担当する。
 - UseCase は HTTP DTO を返さず、domain model / domain result / domain error を返す。
 - Service は SQLModel と `UnitOfWorkInterface` を使う永続化実装を担当する。
 - Model は SQLModel table、request/response DTO、domain dataclass、domain error を置く。
@@ -63,9 +63,11 @@ transaction 境界は `UnitOfWorkInterface` に置く。repository に `transact
 
 ## API と DTO
 
-public API JSON は request / response とも camelCase を正とする。`populate_by_name=True` は internal / test compatibility であり、docs と curl 例には snake_case を出さない。
+public API JSON は request / response とも `snake_case` を正とする。camelCase alias は追加しない。
 
-HTTP error は `ErrorResponse` envelope で返す。domain error は controller が `api_error()` へ変換する。
+HTTP error は RFC 9457 Problem Details (`application/problem+json`) で返す。domain error は controller が `api_error()` へ変換し、machine code は `app/models/problem_types.py` の registry を正とする。
+
+public API の日時 response は Unix timestamp seconds の number を返す。DB 内部の business timestamp が milliseconds の場合も、response DTO serializer で seconds へ変換する。
 
 `Status` は healthz などの限定用途に使う。CRUD success response の模範にはしない。
 
@@ -95,7 +97,7 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 - 削除済み user の email は `uq_users_email_lower_active` partial unique index により再登録可能。active user 同士の重複は DB が拒否する。
 - `DELETE /api/auth/me` は Phase 6 の公開 self-service account deletion endpoint。`AccountDeletionUsecase` が account management orchestration boundary であり、sample item cleanup、`mark_user_deleted()`、`revoke_sessions_for_user()` を 1 transaction に閉じる。`AuthUsecase` は sample repositories に依存しない。
 - `mark_user_deleted()` は `deleted_at IS NULL` の user を初めて削除状態にした場合だけ `USER_MARKED_DELETED` audit log を同じ repository 操作内で作成する。すでに削除済みの user では `deleted_at` を上書きせず、audit log も追加しない。Phase 6 の公開 account deletion workflow はこの repository 契約を経由し、current session id と request IP を audit log に残す。`session_id` / `ip_address` は省略不可の keyword-only argument であり、監査 context なしで呼ぶ場合も `None` を明示する。
-- OAuth-only account deletion caveat: `confirmEmail` is not an authentication factor. OAuth-only user (`password_hash IS NULL`) の削除は OAuth provider reauthentication 実装まで `confirmEmail` のみで許可している。顧客データ、課金、業務データを扱う派生プロジェクトでは、account deletion 公開前に OAuth reauthentication、削除猶予期間、または復元 workflow を設計する。
+- OAuth-only account deletion caveat: `confirm_email` is not an authentication factor. OAuth-only user (`password_hash IS NULL`) の削除は OAuth provider reauthentication を要求する。顧客データ、課金、業務データを扱う派生プロジェクトでは、account deletion 公開前に OAuth reauthentication、削除猶予期間、または復元 workflow を設計する。
 - account deletion の password 再認証失敗は `ACCOUNT_DELETION_REAUTH_FAILED` audit log を current user / current session / request IP / user_agent 付きで残す。rate limit は login rate limiter の IP bucket と email+IP bucket だけを読み、email 単独 bucket による退会妨害を避ける。
 - `tests/unit/usecases/test_account_deletion_coverage.py` は SQLModel metadata に読み込まれた `users` への直接 FK table から user-owned cleanup policy coverage を検出する。間接所有、FK なしの `user_id` column、metadata に import されていない model は検出しない。実際の cleanup 呼び出しは `test_account_deletion_usecase.py` と repository integration tests で検証する。
 - Phase 6 の account deletion は既存 schema を使うため、新しい DB migration を作らない。
@@ -105,7 +107,7 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 - `AuthSession.issued_at` は absolute TTL 起点、`expires_at` は expiry 判定、`created_at` は作成監査時刻。session touch 時の expiry 再計算に `created_at` を使わない。
 - 初期 schema migration の downgrade は全 application table を削除します。共有環境や本番 DB では downgrade より forward fix を基本方針にしてください。
 - `ip_address` columns は設計指針からの意図的逸脱として PostgreSQL `INET`、Python model boundary は `str | None`。
-- auth repository は domain error を投げる。HTTP error envelope への変換は controller の責務。
+- auth repository は domain error を投げる。HTTP Problem Details への変換は controller の責務。
 - `db-prune-auth` は `occurred_at` が threshold より前の audit log と、`expires_at` が threshold より前の session を削除する CLI。CLI bootstrap は FastAPI app を作らず DI container を使い、最後に `AsyncEngine.dispose()` を呼ぶ。両 threshold 指定時は audit log、expired session の順に実行するが、repository 操作ごとに commit されるため、途中失敗時は部分成功になり得る。
 - audit log session retention: `auth_audit_logs.session_id` は `ON DELETE SET NULL`。session を物理削除しても audit log row は残り、session 参照だけが `NULL` になる。audit 保持期間中に session id が必要な場合は session retention を audit log retention 以上にし、`NULL` を許容する場合は削除済み session token の後続 replay を既知 session として監査できないことを受け入れる。
 
@@ -153,7 +155,7 @@ HTTP error は `ErrorResponse` envelope で返す。domain error は controller 
 
 新しい resource を作る場合は、この構成をコピーして、schema 変更前に `documents/plans/` とユーザー確認を必ず通す。
 
-Sample item の cursor ordering は `sample_items.registered_at, id` を基準にする。public API の `createdAt` / `updatedAt` は互換維持のため残すが、それぞれ `sample_items.registered_at` / `sample_items.modified_at` から組み立てる。DB の `created_at` / `updated_at` はログ・切り分け用で cursor や public contract には使わない。
+Sample item の cursor ordering は `sample_items.registered_at, id` を基準にする。public API の `created_at` / `updated_at` はそれぞれ `sample_items.registered_at` / `sample_items.modified_at` から Unix timestamp seconds として組み立てる。DB の `created_at` / `updated_at` はログ・切り分け用で cursor や public contract には使わない。list response は `data` / `next_cursor` を返す。
 
 ## Admin CRUD
 
@@ -162,14 +164,14 @@ Admin CRUD は `admin:access` で保護する管理者向け workflow であり�
 共通実装は次を再利用する。
 
 - `models/admin_pagination.py`: `AdminOffsetPageRequest` / `AdminOffsetPageResult`
-- `models/admin_query.py`: search 正規化 helper
+- `models/admin_query.py`: query 正規化 helper
 - `usecases/authorization_audit.py`: role audit detail helper
 
 User CRUD は `/api/admin/users` にあり、`controllers/admin_user_controller.py`、`services/admin_user_repository.py`、`usecases/admin_user_usecase.py` の3層で構成する。user fields と roles を同時に更新する `PATCH /api/admin/users/{user_id}` は同一 transaction で処理し、UI から user PATCH と role PUT を分けて呼んで部分成功を起こさない。
 
-Admin 一覧は検索・filter・総件数表示に合わせて offset pagination を標準にする。user-facing feed や infinite scroll は既存 sample CRUD のように cursor pagination を選ぶ。public query parameter は camelCase を使い、Python 名と異なる場合は `Query(alias="...")` を controller で明示する。
+Admin 一覧は検索・filter・総件数表示に合わせて offset pagination を標準にする。user-facing feed や infinite scroll は既存 sample CRUD のように cursor pagination を選ぶ。public query parameter は `snake_case` を使い、検索文字列は `query`、active filter は `is_active` とする。list response は `data` / `count` / `offset` / `limit` を返す。
 
-Admin user list の登録順 sort は `users.registered_at, id` を基準にする。public response の `createdAt` / `updatedAt` / `lastLoginAt` は互換維持のため残すが、それぞれ `users.registered_at` / `users.modified_at` / `users.last_logged_in_at` から組み立てる。`updatedAt` は profile / role / logical deletion の変更時刻であり、login activity では更新しない。login activity は `lastLoginAt` で表現する。
+Admin user list の登録順 sort は `users.registered_at, id` を基準にする。public response の `created_at` / `updated_at` / `last_login_at` はそれぞれ `users.registered_at` / `users.modified_at` / `users.last_logged_in_at` から Unix timestamp seconds として組み立てる。`updated_at` は profile / role / logical deletion の変更時刻であり、login activity では更新しない。login activity は `last_login_at` で表現する。
 
 User 削除は logical deletion である。`AdminUserUsecase.delete_user()` は `AccountDeletionUsecase` と cleanup 対象を揃える必要がある。user-owned resource を追加した場合は、公開 account deletion と admin deletion の両方の cleanup と coverage test を更新する。
 
@@ -184,8 +186,8 @@ Phase 8 の OAuth/OIDC client は password auth と session auth の既存契約
 - browser binding cookie は authorization start ごとに `oidc_binding_<state_lookup_id>` として発行する。値は random lookup key で、DB には hash だけを保存する。Cookie は `HttpOnly`、`SameSite=Lax`、state TTL と同じ max-age、auth cookie と同じ Secure 判定を使い、callback consume 後または terminal failure 後に削除する。
 - Callback は URL の `state` だけでは完了しない。state row、browser binding cookie、PKCE、nonce、issuer、audience、expiry、signature、safe alg、`email_verified`、purpose 別 expected user/session を検証してから user / identity / session を確定する。
 - Redirect URI は `AUTH_OIDC_REDIRECT_BASE_URL` と provider callback path からだけ作る。request host 由来値を使わないため、Host header injection で authorization code を別 origin に流さない。
-- `purpose=login` callback は成功時に保存済み internal redirect path へ戻り、失敗時は `/login?oidcError=<machine-code>` に戻る。`purpose=account_deletion_reauth` callback は成功時に `oidcReauth=success`、失敗時に `oidcError=<machine-code>` を保存済み redirect path へ merge する。既存 query / fragment は保持する。
-- IdP が callback で `error=access_denied` 等を返した場合も、`state` と browser binding cookie が検証できるなら state row を consume し、`purpose=account_deletion_reauth` は login ではなく保存済み settings path へ `OIDC_PROVIDER_ACCESS_DENIED` を merge して戻す。`state` 自体が無い、または state context を解決できない場合だけ `/login?oidcError=OIDC_STATE_MISMATCH` 等に戻る。
+- `purpose=login` callback は成功時に保存済み internal redirect path へ戻り、失敗時は `/login?oidc_error=<machine-code>` に戻る。`purpose=account_deletion_reauth` callback は成功時に `oidc_reauth=success`、失敗時に `oidc_error=<machine-code>` を保存済み redirect path へ merge する。既存 query / fragment は保持する。
+- IdP が callback で `error=access_denied` 等を返した場合も、`state` と browser binding cookie が検証できるなら state row を consume し、`purpose=account_deletion_reauth` は login ではなく保存済み settings path へ `OIDC_PROVIDER_ACCESS_DENIED` を merge して戻す。`state` 自体が無い、または state context を解決できない場合だけ `/login?oidc_error=OIDC_STATE_MISMATCH` 等に戻る。
 - OIDC redirect query code は `backend/AGENTS.md` の対応表を正とする。新規 code を追加する場合は backend mapping、frontend message、audit event 有無、docs を同時に更新する。
 - token 非保存を正とする。Backend は provider `access_token` / `refresh_token` を保存せず、URL、audit、frontend state にも出さない。保存するのは provider subject と allowlist 済み ID token claims だけである。
 - Trusted verified email は provider 設定で明示された場合だけ自動作成・自動 link に使う。`AUTO_PROVISION=link-only` は新規 user 作成を拒否し、`LINK_MODE=manual | disabled` は自動 link を拒否する。
@@ -193,4 +195,4 @@ Phase 8 の OAuth/OIDC client は password auth と session auth の既存契約
 - Same-user reauth は current session user/session と state の expected user/session、さらに provider subject が指す `auth_identities.user_id` の一致で検証する。別 provider account / 別 user の callback では session を置換せず、`OIDC_REAUTH_SUBJECT_MISMATCH` を settings redirect に載せる。
 - Account deletion 成功時は `auth_identities` を同一 transaction で物理削除する。logical deleted user が provider subject unique index を占有し、同じ provider subject で再登録できない状態を避けるためである。
 - OIDC state pruning は `db-prune-auth --oidc-states-before <ISO8601>` で expired / consumed state を削除する。未消費 active state は削除しない。
-- `ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` の response details は linked providers の public metadata (`providerId`, `displayName`) だけを返す。provider subject、claims、token、raw provider error は返さない。
+- `account_deletion_oidc_reauth_required` の Problem Details `providers` extension は linked providers の public metadata (`provider_id`, `display_name`) だけを返す。provider subject、claims、token、raw provider error は返さない。

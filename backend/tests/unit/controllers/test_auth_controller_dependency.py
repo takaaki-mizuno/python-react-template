@@ -385,7 +385,7 @@ def test_get_csrf_uses_overridden_usecase_and_sets_cookie():
     response = client.get("/api/auth/csrf")
 
     assert response.status_code == 200
-    assert response.json() == {"csrfToken": "issued-csrf-token"}
+    assert response.json() == {"csrf_token": "issued-csrf-token"}
     assert response.cookies.get("csrf_token") == "issued-csrf-token"
     assert usecase.csrf_issued is True
 
@@ -439,7 +439,7 @@ def test_delete_me_uses_account_deletion_usecase_and_clears_cookies():
         "DELETE",
         "/api/auth/me",
         json={
-            "confirmEmail": "user@example.com",
+            "confirm_email": "user@example.com",
             "password": "Password123!",
         },
         headers=_csrf_headers(),
@@ -472,19 +472,19 @@ def test_delete_me_confirmation_mismatch_returns_error_without_clearing_cookies(
     response = client.request(
         "DELETE",
         "/api/auth/me",
-        json={"confirmEmail": "other@example.com"},
+        json={"confirm_email": "other@example.com"},
         headers=_csrf_headers(),
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "ACCOUNT_DELETION_CONFIRMATION_MISMATCH"
+    assert response.json()["code"] == "account_deletion_confirmation_mismatch"
     assert response.headers.get_list("set-cookie") == []
 
 
 def test_delete_me_password_reauth_errors_return_400_envelopes():
     for error, code in [
-        (AccountDeletionReauthRequiredError(), "ACCOUNT_DELETION_REAUTH_REQUIRED"),
-        (AccountDeletionInvalidPasswordError(), "ACCOUNT_DELETION_INVALID_PASSWORD"),
+        (AccountDeletionReauthRequiredError(), "account_deletion_reauth_required"),
+        (AccountDeletionInvalidPasswordError(), "account_deletion_invalid_password"),
     ]:
         account_deletion_usecase = StubAccountDeletionUsecase(error)
         client = _client_with_stub(
@@ -498,21 +498,21 @@ def test_delete_me_password_reauth_errors_return_400_envelopes():
             "DELETE",
             "/api/auth/me",
             json={
-                "confirmEmail": "user@example.com",
+                "confirm_email": "user@example.com",
                 "password": "Password123!",
             },
             headers=_csrf_headers(),
         )
 
         assert response.status_code == 400
-        assert response.json()["error"]["code"] == code
+        assert response.json()["code"] == code
 
 
 def test_delete_me_oidc_reauth_required_returns_provider_details():
     account_deletion_usecase = StubAccountDeletionUsecase(
         AccountDeletionOidcReauthRequiredError([{
-            "providerId": "google",
-            "displayName": "Google",
+            "provider_id": "google",
+            "display_name": "Google",
         }]))
     client = _client_with_stub(
         StubAuthUsecase(auth_context=_authenticated_context()),
@@ -524,17 +524,21 @@ def test_delete_me_oidc_reauth_required_returns_provider_details():
     response = client.request(
         "DELETE",
         "/api/auth/me",
-        json={"confirmEmail": "user@example.com"},
+        json={"confirm_email": "user@example.com"},
         headers=_csrf_headers(),
     )
 
     assert response.status_code == 400
-    assert response.json()["error"] == {
-        "code": "ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED",
-        "message": "OIDC reauthentication is required",
-        "details": [{
-            "providerId": "google",
-            "displayName": "Google",
+    assert response.json() == {
+        "type": "/problems/account_deletion_oidc_reauth_required",
+        "title": "Account deletion OIDC reauthentication required",
+        "status": 400,
+        "detail": "OIDC reauthentication is required",
+        "instance": "/api/auth/me",
+        "code": "account_deletion_oidc_reauth_required",
+        "providers": [{
+            "provider_id": "google",
+            "display_name": "Google",
         }],
     }
 
@@ -552,7 +556,7 @@ def test_delete_me_rate_limit_returns_retry_after_header():
         "DELETE",
         "/api/auth/me",
         json={
-            "confirmEmail": "user@example.com",
+            "confirm_email": "user@example.com",
             "password": "Password123!",
         },
         headers=_csrf_headers(),
@@ -560,7 +564,7 @@ def test_delete_me_rate_limit_returns_retry_after_header():
 
     assert response.status_code == 429
     assert response.headers["Retry-After"] == "3600"
-    assert response.json()["error"]["code"] == "ACCOUNT_DELETION_REAUTH_RATE_LIMITED"
+    assert response.json()["code"] == "account_deletion_reauth_rate_limited"
 
 
 def test_delete_me_without_authenticated_session_returns_unauthorized_before_delete():
@@ -572,12 +576,12 @@ def test_delete_me_without_authenticated_session_returns_unauthorized_before_del
     response = client.request(
         "DELETE",
         "/api/auth/me",
-        json={"confirmEmail": "user@example.com"},
+        json={"confirm_email": "user@example.com"},
         headers=_csrf_headers(),
     )
 
     assert response.status_code == 401
-    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+    assert response.json()["code"] == "unauthorized"
     assert account_deletion_usecase.delete_account_called is False
 
 
@@ -598,9 +602,9 @@ def test_oidc_providers_returns_public_provider_metadata_only():
 
     assert response.status_code == 200
     assert response.json() == {
-        "providers": [{
-            "providerId": "google",
-            "displayName": "Google",
+        "data": [{
+            "provider_id": "google",
+            "display_name": "Google",
         }]
     }
     assert "client-secret" not in response.text
@@ -612,7 +616,7 @@ def test_oidc_start_redirects_to_provider_and_sets_browser_binding_cookie():
     client = _client_with_stub(StubAuthUsecase(), oauth_oidc_usecase=oidc_usecase)
 
     response = client.get(
-        "/api/auth/oidc/google/start?redirect=/app&languageCode=en",
+        "/api/auth/oidc/google/start?redirect=/app&language_code=en",
         follow_redirects=False,
     )
 
@@ -633,7 +637,7 @@ def test_oidc_start_invalid_language_falls_back_to_default_language():
     client = _client_with_stub(StubAuthUsecase(), oauth_oidc_usecase=oidc_usecase)
 
     response = client.get(
-        "/api/auth/oidc/google/start?languageCode=fr",
+        "/api/auth/oidc/google/start?language_code=fr",
         follow_redirects=False,
     )
 
@@ -651,7 +655,7 @@ def test_oidc_start_rate_limit_redirects_to_login_error():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == ("/login?oidcError=OIDC_AUTHORIZATION_RATE_LIMITED")
+    assert response.headers["location"] == ("/login?oidc_error=OIDC_AUTHORIZATION_RATE_LIMITED")
 
 
 def test_oidc_start_provider_unavailable_redirects_to_login_error():
@@ -664,7 +668,7 @@ def test_oidc_start_provider_unavailable_redirects_to_login_error():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/login?oidcError=OIDC_PROVIDER_UNAVAILABLE"
+    assert response.headers["location"] == "/login?oidc_error=OIDC_PROVIDER_UNAVAILABLE"
 
 
 def test_oidc_start_metadata_error_redirects_to_login_error():
@@ -677,7 +681,7 @@ def test_oidc_start_metadata_error_redirects_to_login_error():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/login?oidcError=OIDC_PROVIDER_METADATA_INVALID"
+    assert response.headers["location"] == "/login?oidc_error=OIDC_PROVIDER_METADATA_INVALID"
 
 
 def test_oidc_reauth_requires_session_and_starts_reauth_flow():
@@ -715,7 +719,7 @@ def test_oidc_reauth_rate_limit_redirects_to_settings_error():
 
     assert response.status_code == 303
     assert response.headers["location"] == (
-        "/app/settings?oidcError=OIDC_AUTHORIZATION_RATE_LIMITED")
+        "/app/settings?oidc_error=OIDC_AUTHORIZATION_RATE_LIMITED")
 
 
 def test_oidc_reauth_without_session_redirects_to_login_instead_of_json():
@@ -727,7 +731,7 @@ def test_oidc_reauth_without_session_redirects_to_login_instead_of_json():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == ("/login?oidcError=OIDC_REAUTH_AUTHENTICATION_REQUIRED")
+    assert response.headers["location"] == ("/login?oidc_error=OIDC_REAUTH_AUTHENTICATION_REQUIRED")
     assert "application/json" not in response.headers.get("content-type", "")
 
 
@@ -746,7 +750,7 @@ def test_oidc_reauth_provider_unavailable_redirects_to_settings_error():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == ("/app/settings?oidcError=OIDC_PROVIDER_UNAVAILABLE")
+    assert response.headers["location"] == ("/app/settings?oidc_error=OIDC_PROVIDER_UNAVAILABLE")
 
 
 def test_oidc_callback_provider_error_redirects_and_clears_binding_cookie():
@@ -762,7 +766,7 @@ def test_oidc_callback_provider_error_redirects_and_clears_binding_cookie():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/login?oidcError=OIDC_PROVIDER_ACCESS_DENIED"
+    assert response.headers["location"] == "/login?oidc_error=OIDC_PROVIDER_ACCESS_DENIED"
     assert "user+denied" not in response.headers["location"]
     assert "user denied" not in response.headers["location"]
     assert logger.infos == [(
@@ -805,7 +809,7 @@ def test_oidc_callback_provider_error_for_reauth_merges_settings_error_and_clear
 
     assert response.status_code == 303
     assert response.headers["location"] == (
-        "/app/settings?tab=danger&oidcError=OIDC_PROVIDER_ACCESS_DENIED#delete")
+        "/app/settings?tab=danger&oidc_error=OIDC_PROVIDER_ACCESS_DENIED#delete")
     assert isinstance(
         oidc_usecase.error_callback_calls[0]["provider_error"],
         OidcProviderAccessDeniedError,
@@ -857,7 +861,7 @@ def test_oidc_callback_reauth_success_keeps_session_and_merges_success_query():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/app/settings?tab=danger&oidcReauth=success#delete"
+    assert response.headers["location"] == "/app/settings?tab=danger&oidc_reauth=success#delete"
     assert response.cookies.get("session_token") is None
     assert response.cookies.get("csrf_token") == "issued-csrf-token"
     assert auth_usecase.csrf_issued is True
@@ -888,7 +892,7 @@ def test_oidc_callback_reauth_failure_merges_error_query_without_raw_error():
 
     assert response.status_code == 303
     assert response.headers[
-        "location"] == "/app/settings?tab=danger&oidcError=OIDC_REAUTH_STALE#delete"
+        "location"] == "/app/settings?tab=danger&oidc_error=OIDC_REAUTH_STALE#delete"
     assert "secret-code" not in response.headers["location"]
     assert "raw provider text" not in response.headers["location"]
 
@@ -904,7 +908,7 @@ def test_oidc_callback_login_failure_redirects_to_login_error():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/login?oidcError=OIDC_REAUTH_STALE"
+    assert response.headers["location"] == "/login?oidc_error=OIDC_REAUTH_STALE"
 
 
 def test_oidc_callback_unknown_exception_is_logged_and_redirected():
@@ -920,7 +924,7 @@ def test_oidc_callback_unknown_exception_is_logged_and_redirected():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/login?oidcError=OIDC_UNEXPECTED_ERROR"
+    assert response.headers["location"] == "/login?oidc_error=OIDC_UNEXPECTED_ERROR"
     assert logger.exceptions
     assert logger.exceptions[0][0] == "Unexpected OIDC callback failure"
 
@@ -937,7 +941,7 @@ def test_get_me_without_authenticated_session_returns_unauthorized_envelope():
     response = client.get("/api/auth/me")
 
     assert response.status_code == 401
-    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+    assert response.json()["code"] == "unauthorized"
 
 
 def test_get_me_returns_language_code():
@@ -948,7 +952,7 @@ def test_get_me_returns_language_code():
     response = client.get("/api/auth/me")
 
     assert response.status_code == 200
-    assert response.json()["languageCode"] == "en"
+    assert response.json()["language_code"] == "en"
 
 
 def test_patch_me_updates_language_with_fields_set():
@@ -959,12 +963,12 @@ def test_patch_me_updates_language_with_fields_set():
 
     response = client.patch(
         "/api/auth/me",
-        json={"languageCode": "en"},
+        json={"language_code": "en"},
         headers=_csrf_headers(),
     )
 
     assert response.status_code == 200
-    assert response.json()["languageCode"] == "en"
+    assert response.json()["language_code"] == "en"
     assert usecase.updated_changes == AuthUserUpdateChanges(
         language_code="en",
         fields_set=frozenset({"language_code"}),
@@ -985,7 +989,7 @@ def test_register_duplicate_email_returns_error_envelope():
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "EMAIL_ALREADY_REGISTERED"
+    assert response.json()["code"] == "email_already_registered"
 
 
 def test_register_rate_limit_preserves_retry_after_header():
@@ -1003,7 +1007,7 @@ def test_register_rate_limit_preserves_retry_after_header():
 
     assert response.status_code == 429
     assert response.headers["Retry-After"] == "900"
-    assert response.json()["error"]["code"] == "REGISTER_RATE_LIMITED"
+    assert response.json()["code"] == "register_rate_limited"
 
 
 def test_register_rate_limit_uses_error_retry_after_when_present():
@@ -1037,7 +1041,7 @@ def test_register_weak_password_returns_error_envelope():
     )
 
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "WEAK_PASSWORD"
+    assert response.json()["code"] == "weak_password"
 
 
 def test_login_invalid_credentials_returns_error_envelope():
@@ -1054,7 +1058,7 @@ def test_login_invalid_credentials_returns_error_envelope():
     )
 
     assert response.status_code == 401
-    assert response.json()["error"]["code"] == "INVALID_CREDENTIALS"
+    assert response.json()["code"] == "invalid_credentials"
 
 
 def test_login_rate_limit_preserves_retry_after_header():
@@ -1072,4 +1076,4 @@ def test_login_rate_limit_preserves_retry_after_header():
 
     assert response.status_code == 429
     assert response.headers["Retry-After"] == "900"
-    assert response.json()["error"]["code"] == "LOGIN_RATE_LIMITED"
+    assert response.json()["code"] == "login_rate_limited"

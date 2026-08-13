@@ -63,7 +63,7 @@ test('logout 成功時は表示中userを null にして auth 以外の cache �
   const user = {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
-    languageCode: 'en',
+    language_code: 'en',
     roles: [],
     permissions: [],
   }
@@ -90,7 +90,7 @@ test('logout 成功時は表示中userを null にして auth 以外の cache �
       }
       if (input === '/api/auth/csrf') {
         return Promise.resolve(
-          new Response(JSON.stringify({ csrfToken: 'csrf-123' }), {
+          new Response(JSON.stringify({ csrf_token: 'csrf-123' }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }),
@@ -140,7 +140,7 @@ test('未ログイン状態から auth cache が更新されると user を返�
   const nextUser = {
     id: '00000000-0000-0000-0000-000000000002',
     email: 'next@example.com',
-    languageCode: 'ja',
+    language_code: 'ja',
     roles: [],
     permissions: [],
   }

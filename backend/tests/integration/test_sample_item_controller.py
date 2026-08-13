@@ -6,11 +6,11 @@ pytestmark = pytest.mark.integration
 
 
 def _assert_error_code(response, code: str) -> None:
-    assert response.json()["error"]["code"] == code
+    assert response.json()["code"] == code
 
 
 def _register(client, email: str) -> None:
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     response = client.post(
         "/api/auth/register",
         json={
@@ -23,7 +23,7 @@ def _register(client, email: str) -> None:
 
 
 def _csrf(client) -> str:
-    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrfToken"]
+    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrf_token"]
 
 
 def _create_item(client, title: str, description: str | None = None):
@@ -43,32 +43,32 @@ def test_sample_items_require_authentication(client) -> None:
     response = client.get("/api/samples")
 
     assert response.status_code == 401
-    _assert_error_code(response, "UNAUTHORIZED")
+    _assert_error_code(response, "unauthorized")
 
 
-def test_sample_item_create_list_pagination_and_get_use_camel_case(client) -> None:
+def test_sample_item_create_list_pagination_and_get_use_snake_case(client) -> None:
     _register(client, "sample-a@example.com")
     first = _create_item(client, "First", "First description")
     _create_item(client, "Second", "Second description")
 
     assert UUID(first["id"])
-    assert first["isCompleted"] is False
-    assert "createdAt" in first
-    assert "updatedAt" in first
-    assert "is_completed" not in first
+    assert first["is_completed"] is False
+    assert "created_at" in first
+    assert "updated_at" in first
+    assert "isCompleted" not in first
 
     list_response = client.get("/api/samples")
     assert list_response.status_code == 200
-    assert [item["title"] for item in list_response.json()["items"]] == ["Second", "First"]
+    assert [item["title"] for item in list_response.json()["data"]] == ["Second", "First"]
 
     first_page = client.get("/api/samples?limit=1")
     assert first_page.status_code == 200
-    assert first_page.json()["items"][0]["title"] == "Second"
-    assert first_page.json()["nextCursor"]
+    assert first_page.json()["data"][0]["title"] == "Second"
+    assert first_page.json()["next_cursor"]
 
-    second_page = client.get(f"/api/samples?limit=1&cursor={first_page.json()['nextCursor']}")
+    second_page = client.get(f"/api/samples?limit=1&cursor={first_page.json()['next_cursor']}")
     assert second_page.status_code == 200
-    assert second_page.json()["items"][0]["title"] == "First"
+    assert second_page.json()["data"][0]["title"] == "First"
 
     get_response = client.get(f"/api/samples/{first['id']}")
     assert get_response.status_code == 200
@@ -83,14 +83,14 @@ def test_sample_item_patch_semantics_and_validation(client) -> None:
         f"/api/samples/{first['id']}",
         json={
             "title": "Updated",
-            "isCompleted": True,
+            "is_completed": True,
         },
         headers={"X-CSRF-Token": _csrf(client)},
     )
     assert patch_response.status_code == 200
     assert patch_response.json()["title"] == "Updated"
     assert patch_response.json()["description"] == "First description"
-    assert patch_response.json()["isCompleted"] is True
+    assert patch_response.json()["is_completed"] is True
 
     noop_response = client.patch(
         f"/api/samples/{first['id']}",
@@ -124,7 +124,7 @@ def test_sample_item_patch_semantics_and_validation(client) -> None:
 
     null_completed_response = client.patch(
         f"/api/samples/{first['id']}",
-        json={"isCompleted": None},
+        json={"is_completed": None},
         headers={"X-CSRF-Token": _csrf(client)},
     )
     assert null_completed_response.status_code == 422
@@ -148,7 +148,7 @@ def test_sample_item_delete_returns_204_and_then_404(client) -> None:
     assert delete_response.status_code == 204
     missing_response = client.get(f"/api/samples/{first['id']}")
     assert missing_response.status_code == 404
-    _assert_error_code(missing_response, "SAMPLE_ITEM_NOT_FOUND")
+    _assert_error_code(missing_response, "sample_item_not_found")
 
 
 def test_sample_item_owner_scope_returns_404_for_other_users_items(client) -> None:
@@ -175,7 +175,7 @@ def test_sample_item_owner_scope_returns_404_for_other_users_items(client) -> No
 
     owner_b_list = client.get("/api/samples")
     assert owner_b_list.status_code == 200
-    assert owner_b_list.json()["items"] == []
+    assert owner_b_list.json()["data"] == []
 
 
 def test_sample_item_post_requires_csrf_header(client) -> None:
@@ -190,4 +190,4 @@ def test_sample_item_post_requires_csrf_header(client) -> None:
     )
 
     assert response.status_code == 403
-    _assert_error_code(response, "CSRF_VALIDATION_FAILED")
+    _assert_error_code(response, "csrf_validation_failed")

@@ -15,11 +15,11 @@ Admin CRUD is a permission-gated management workflow. Backend authorization is t
 2. Put domain dataclasses and response/request schemas in `backend/app/models/`.
 3. Put persistence interface in `backend/app/interfaces/services/` and implementation in `backend/app/services/`.
 4. Put orchestration in `backend/app/usecases/`; transaction boundaries belong in the usecase via `UnitOfWorkInterface.transaction()`.
-5. Put HTTP mapping in `backend/app/controllers/`; controllers translate domain errors into `ErrorResponse`.
+5. Put HTTP mapping in `backend/app/controllers/`; controllers translate domain errors into RFC 9457 Problem Details via `api_error()`.
 6. Register DI bindings in `backend/app/bootstrap/modules.py` and routers in `backend/app/bootstrap/route.py`.
 7. Protect every admin endpoint with `require_permission("admin:access")` unless a plan explicitly introduces a narrower permission.
-8. For admin list APIs, prefer `offset` / `limit`, `total`, camelCase query names, and reusable `AdminOffsetPageRequest` / `AdminOffsetPageResult`.
-9. When Python field names differ from public query names, declare FastAPI aliases explicitly, for example `Query(default=None, alias="isActive")`.
+8. For admin list APIs, prefer `offset` / `limit`, `count`, snake_case query names, and reusable `AdminOffsetPageRequest` / `AdminOffsetPageResult`.
+9. Keep public API request/response JSON and query names snake_case. Do not add camelCase compatibility aliases unless a plan explicitly documents a migration bridge.
 10. Use offset pagination for admin search/filter lists. Keep cursor pagination for user-facing feeds where stable infinite scroll matters.
 11. Production admin lockout recovery uses `authz-grant-role --email <email> --role admin`; `seed-admin` is local/development only.
 12. Keep role / permission catalog code-managed in `backend/app/config/authorization.py`; never add DB catalog tables for a CRUD.
@@ -38,9 +38,9 @@ Admin CRUD is a permission-gated management workflow. Backend authorization is t
 ## User CRUD Specifics
 
 - `/admin/users` is guarded by `admin:access`; Backend API is `/api/admin/users`.
-- User delete is logical deletion. Deleted users are hidden from admin CRUD and return `USER_NOT_FOUND`.
-- User edit sends user fields and roles in one `PATCH /api/admin/users/{userId}` request to avoid partial success.
-- Password changes and `isActive=false` revoke sessions. Email-only changes do not.
+- User delete is logical deletion. Deleted users are hidden from admin CRUD and return `user_not_found`.
+- User edit sends user fields and roles in one `PATCH /api/admin/users/{user_id}` request to avoid partial success.
+- Password changes and `is_active=false` revoke sessions. Email-only changes do not.
 - Role audit detail should be built with `role_audit_detail()`. When `source` is `None`, omit the key instead of writing `"source": null`.
 - User-owned resources must be cleaned up in both `AccountDeletionUsecase` and `AdminUserUsecase.delete_user()`.
 - Do not force every resource through a generic repository base class. Prefer domain lifecycle, audit, and transaction clarity over premature inheritance.

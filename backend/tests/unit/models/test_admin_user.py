@@ -51,22 +51,22 @@ def test_admin_user_domain_models_keep_user_and_authorization_values() -> None:
     assert changes.fields_set == frozenset({"email", "is_active", "roles"})
 
 
-def test_admin_user_response_serializes_camel_case_and_permissions_only_on_detail() -> None:
+def test_admin_user_response_serializes_snake_case_unix_timestamp_seconds() -> None:
     user = _user()
     list_item = AdminUserListItemResponse.from_record(AdminUserRecord(user=user, roles=("admin", )))
     detail = AdminUserResponse.from_detail(
         AdminUserDetail(user=user, roles=("admin", ), permissions=("admin:access", )))
 
-    assert list_item.model_dump(by_alias=True) == {
-        "id": user.id,
+    assert list_item.model_dump(mode="json") == {
+        "id": str(user.id),
         "email": "admin@example.com",
-        "isActive": True,
-        "createdAt": datetime(2026, 1, 1, tzinfo=UTC),
-        "updatedAt": datetime(2026, 1, 2, tzinfo=UTC),
-        "lastLoginAt": datetime(2026, 1, 3, tzinfo=UTC),
+        "is_active": True,
+        "created_at": 1767225600,
+        "updated_at": 1767312000,
+        "last_login_at": 1767398400,
         "roles": ["admin"],
     }
-    assert detail.model_dump(by_alias=True)["permissions"] == ["admin:access"]
+    assert detail.model_dump(mode="json")["permissions"] == ["admin:access"]
 
 
 def test_admin_user_requests_reject_extra_fields() -> None:
@@ -79,7 +79,7 @@ def test_admin_user_requests_reject_extra_fields() -> None:
 
 
 def test_admin_user_update_rejects_null_non_nullable_patch_fields() -> None:
-    for field_name in ("email", "password", "isActive", "roles"):
+    for field_name in ("email", "password", "is_active", "roles"):
         with pytest.raises(ValidationError):
             AdminUserUpdateRequest.model_validate({field_name: None})
 
@@ -90,8 +90,8 @@ def test_admin_user_update_keeps_empty_patch_fields_set() -> None:
     assert request.model_fields_set == set()
 
 
-def test_admin_user_update_accepts_roles_and_camel_case_status() -> None:
-    request = AdminUserUpdateRequest.model_validate({"isActive": False, "roles": ["admin"]})
+def test_admin_user_update_accepts_roles_and_snake_case_status() -> None:
+    request = AdminUserUpdateRequest.model_validate({"is_active": False, "roles": ["admin"]})
 
     assert request.is_active is False
     assert request.roles == ["admin"]

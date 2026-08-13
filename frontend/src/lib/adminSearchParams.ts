@@ -1,7 +1,7 @@
 export type AdminUserSearchParams = {
   offset: number
-  search?: string
-  isActive?: boolean
+  query?: string
+  is_active?: boolean
   role?: string
 }
 
@@ -12,8 +12,8 @@ export function parseAdminUserSearchParams(
 ): AdminUserSearchParams {
   return {
     offset: parseOffset(search.offset),
-    search: parseNonEmptyString(search.search),
-    isActive: parseBoolean(search.isActive),
+    query: parseNonEmptyString(search.query),
+    is_active: parseBoolean(search.is_active),
     role: parseNonEmptyString(search.role),
   }
 }
@@ -24,11 +24,11 @@ export function serializeAdminUserSearchParams(
   const serialized: Record<string, string> = {
     offset: String(Math.max(0, params.offset)),
   }
-  if (params.search) {
-    serialized.search = params.search
+  if (params.query) {
+    serialized.query = params.query
   }
-  if (params.isActive !== undefined) {
-    serialized.isActive = String(params.isActive)
+  if (params.is_active !== undefined) {
+    serialized.is_active = String(params.is_active)
   }
   if (params.role) {
     serialized.role = params.role

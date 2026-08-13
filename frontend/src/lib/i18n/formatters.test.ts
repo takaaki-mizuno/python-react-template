@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'vitest'
 
-import { formatDateTime } from './formatters'
+import { formatUnixTimestampSeconds } from './formatters'
 
 describe('formatters', () => {
-  test('formatDateTime uses the language-specific locale', () => {
-    const value = '2026-08-11T09:30:00Z'
+  test('formatUnixTimestampSeconds uses the language-specific locale', () => {
+    const value = 1786440600
 
-    expect(formatDateTime(value, 'ja')).toContain('2026')
-    expect(formatDateTime(value, 'en')).toMatch(/2026|Aug/)
-    expect(formatDateTime(value, 'ja')).not.toBe(formatDateTime(value, 'en'))
+    expect(formatUnixTimestampSeconds(value, 'ja')).toContain('2026')
+    expect(formatUnixTimestampSeconds(value, 'en')).toMatch(/2026|Aug/)
+    expect(formatUnixTimestampSeconds(value, 'ja')).not.toBe(
+      formatUnixTimestampSeconds(value, 'en'),
+    )
   })
 })

@@ -17,11 +17,11 @@ from app.models.authorization_errors import AuthorizationUserNotFoundError, Role
 from app.models.authorization_schemas import (PermissionResponse, RoleListResponse, RoleResponse,
                                               UserRoleListResponse, UserRoleReplaceRequest,
                                               UserRoleReplaceResponse)
-from app.models.error import ErrorResponse
+from app.models.error import problem_response_openapi
 
-ErrorResponses = dict[int | str, dict[str, Any]]
-ERROR_RESPONSE: dict[str, Any] = {"model": ErrorResponse}
-ADMIN_ERROR_RESPONSES: ErrorResponses = {
+ProblemResponses = dict[int | str, dict[str, Any]]
+ERROR_RESPONSE: dict[str, Any] = problem_response_openapi()
+ADMIN_ERROR_RESPONSES: ProblemResponses = {
     401: ERROR_RESPONSE,
     403: ERROR_RESPONSE,
     404: ERROR_RESPONSE,
@@ -42,7 +42,7 @@ async def list_roles(
     roles = await usecase.list_roles()
     permissions = await usecase.list_permissions()
     return RoleListResponse(
-        roles=[_role_response(role) for role in roles],
+        data=[_role_response(role) for role in roles],
         permissions=[_permission_response(permission) for permission in permissions],
     )
 
@@ -90,11 +90,9 @@ async def replace_user_roles(
     except RoleNotFoundError as error:
         raise api_error(
             422,
-            "ROLE_NOT_FOUND",
+            "role_not_found",
             "Role not found",
-            details=[{
-                "roleCodes": sorted(error.role_codes)
-            }],
+            extensions={"role_codes": sorted(error.role_codes)},
         ) from error
     return _user_role_replace_response(result)
 
@@ -135,4 +133,4 @@ def _user_role_replace_response(result: UserRoleReplacementResult) -> UserRoleRe
 
 
 def _user_not_found_error() -> HTTPException:
-    return api_error(404, "USER_NOT_FOUND", "User not found")
+    return api_error(404, "user_not_found", "User not found")

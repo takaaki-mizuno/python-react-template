@@ -16,12 +16,12 @@ afterEach(() => {
   document.cookie = 'csrf_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
 })
 
-test('fetchAdminUsers は query を camelCase で serialize する', async () => {
+test('fetchAdminUsers は query を snake_case で serialize する', async () => {
   const fetchMock = vi.fn().mockResolvedValue(
     new Response(
       JSON.stringify({
-        items: [],
-        total: 0,
+        data: [],
+        count: 0,
         offset: 20,
         limit: 20,
       }),
@@ -33,13 +33,13 @@ test('fetchAdminUsers は query を camelCase で serialize する', async () =>
   await fetchAdminUsers({
     offset: 20,
     limit: 20,
-    search: 'admin',
-    isActive: false,
+    query: 'admin',
+    is_active: false,
     role: 'admin',
   })
 
   expect(fetchMock).toHaveBeenCalledWith(
-    '/api/admin/users?offset=20&limit=20&search=admin&isActive=false&role=admin',
+    '/api/admin/users?offset=20&limit=20&query=admin&is_active=false&role=admin',
     expect.objectContaining({ credentials: 'include' }),
   )
 })
@@ -59,7 +59,7 @@ test('admin user unsafe requests は apiClient の CSRF header を使う', async
   await createAdminUser({
     email: 'admin@example.com',
     password: 'Password@123!',
-    isActive: true,
+    is_active: true,
     roles: ['admin'],
   })
   await updateAdminUser('user-1', { roles: ['admin'] })
@@ -94,7 +94,7 @@ test('fetchAdminUser と fetchAdminRoles は既存 admin API を読む', async (
     .mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          roles: [{ code: 'admin', displayName: 'Admin', permissions: [] }],
+          data: [{ code: 'admin', display_name: 'Admin', permissions: [] }],
           permissions: [],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -108,7 +108,7 @@ test('fetchAdminUser と fetchAdminRoles は既存 admin API を読む', async (
   expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users/user-1')
   expect(fetchMock.mock.calls[1][0]).toBe('/api/admin/roles')
   expect(roles).toEqual([
-    { code: 'admin', displayName: 'Admin', permissions: [] },
+    { code: 'admin', display_name: 'Admin', permissions: [] },
   ])
 })
 
@@ -116,10 +116,10 @@ function adminUser() {
   return {
     id: 'user-1',
     email: 'admin@example.com',
-    isActive: true,
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-    lastLoginAt: null,
+    is_active: true,
+    created_at: 1767225600,
+    updated_at: 1767225600,
+    last_login_at: null,
     roles: ['admin'],
     permissions: ['admin:access'],
   }

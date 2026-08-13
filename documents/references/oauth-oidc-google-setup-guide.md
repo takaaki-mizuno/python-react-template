@@ -309,16 +309,16 @@ curl -i http://localhost:8000/api/auth/oidc/providers
 
 ```json
 {
-  "providers": [
+  "data": [
     {
-      "providerId": "google",
-      "displayName": "Google"
+      "provider_id": "google",
+      "display_name": "Google"
     }
   ]
 }
 ```
 
-`providers` が空配列の場合:
+`data` が空配列の場合:
 
 - `AUTH_OIDC_ENABLED_PROVIDERS=google` が Backend process に入っていません。
 - Docker Compose なら `backend/.env` を保存後、Backend container を再作成してください。
@@ -374,7 +374,7 @@ OAuth-only user は password を持たないため、アカウント削除時に
 3. アカウント削除を実行します。
 4. `ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` により、Google reauth button が表示されます。
 5. Google で再認証します。
-6. `/app/settings?oidcReauth=success` に戻ることを確認します。
+6. `/app/settings?oidc_reauth=success` に戻ることを確認します。
 7. 再度アカウント削除を実行します。
 
 `AUTH_OIDC_REAUTH_FRESHNESS_SECONDS=300` の場合、reauth から 5 分以内だけ fresh とみなします。

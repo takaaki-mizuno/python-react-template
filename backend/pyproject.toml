@@ -17,6 +17,7 @@ dependencies = [
     "pwdlib[argon2]>=0.3.0",
     "pydantic-settings>=2.14.2",
     "python-dotenv>=1.2.1",
+    "redis>=8.1.0",
     "sqlalchemy>=2.0.45",
     "sqlmodel>=0.0.31",
     "typer>=0.21.1",
@@ -42,6 +43,8 @@ pythonpath = [
 ]
 markers = [
     "integration: PostgreSQL-backed API and persistence tests",
+    "redis_rate_limiter: Redis-backed auth rate limiter integration tests",
+    "auth_tables: integration tests that require auth table cleanup even with redis_rate_limiter",
 ]
 
 [tool.isort]

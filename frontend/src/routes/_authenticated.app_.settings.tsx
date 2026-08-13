@@ -44,7 +44,7 @@ const SettingsPage = () => {
   const accountDeletion = useAccountDeletion()
   const queryFeedback = accountDeletionQueryFeedback(search, authT)
   const queryFeedbackKey = queryFeedback
-    ? `${search.oidcError ?? ''}:${search.oidcReauth ?? ''}`
+    ? `${search.oidc_error ?? ''}:${search.oidc_reauth ?? ''}`
     : null
   const displayedQueryFeedback =
     queryFeedbackKey === dismissedQueryFeedbackKey ? null : queryFeedback
@@ -118,12 +118,12 @@ const SettingsPage = () => {
 export const Route = createFileRoute('/_authenticated/app_/settings')({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { oidcError?: string; oidcReauth?: string } => ({
-    ...(typeof search.oidcError === 'string'
-      ? { oidcError: search.oidcError }
+  ): { oidc_error?: string; oidc_reauth?: string } => ({
+    ...(typeof search.oidc_error === 'string'
+      ? { oidc_error: search.oidc_error }
       : {}),
-    ...(typeof search.oidcReauth === 'string'
-      ? { oidcReauth: search.oidcReauth }
+    ...(typeof search.oidc_reauth === 'string'
+      ? { oidc_reauth: search.oidc_reauth }
       : {}),
   }),
   component: SettingsPage,
@@ -131,18 +131,18 @@ export const Route = createFileRoute('/_authenticated/app_/settings')({
 
 function accountDeletionQueryFeedback(
   search: {
-    oidcError?: string
-    oidcReauth?: string
+    oidc_error?: string
+    oidc_reauth?: string
   },
   t: TFunction<'auth'>,
 ): AccountDeletionErrorFeedback | null {
-  if (search.oidcReauth === 'success') {
+  if (search.oidc_reauth === 'success') {
     return {
       message: t('accountDeletion.reauthSuccess'),
       invalidField: null,
     }
   }
-  if (!search.oidcError) {
+  if (!search.oidc_error) {
     return null
   }
   const messages: Record<string, string> = {
@@ -154,7 +154,7 @@ function accountDeletionQueryFeedback(
     OIDC_IDENTITY_UNAVAILABLE: t('accountDeletion.identityUnavailable'),
   }
   return {
-    message: messages[search.oidcError] ?? t('accountDeletion.reauthFailed'),
+    message: messages[search.oidc_error] ?? t('accountDeletion.reauthFailed'),
     invalidField: null,
   }
 }
@@ -167,7 +167,7 @@ function toAccountDeletionErrorFeedback(
   if (validationField) {
     return {
       message:
-        validationField === 'confirmEmail'
+        validationField === 'confirm_email'
           ? t('accountDeletion.emailRequired')
           : t('accountDeletion.passwordRequired'),
       invalidField: validationField,
@@ -185,15 +185,15 @@ function toAccountDeletionErrorFeedback(
   return {
     message: toUserMessage(error, {
       code: {
-        ACCOUNT_DELETION_CONFIRMATION_MISMATCH: t(
+        account_deletion_confirmation_mismatch: t(
           'accountDeletion.emailMismatch',
         ),
-        ACCOUNT_DELETION_REAUTH_REQUIRED: t(
+        account_deletion_reauth_required: t(
           'accountDeletion.passwordReauthRequired',
         ),
-        ACCOUNT_DELETION_INVALID_PASSWORD: t('accountDeletion.invalidPassword'),
-        ACCOUNT_DELETION_REAUTH_RATE_LIMITED: t('accountDeletion.rateLimited'),
-        ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED:
+        account_deletion_invalid_password: t('accountDeletion.invalidPassword'),
+        account_deletion_reauth_rate_limited: t('accountDeletion.rateLimited'),
+        account_deletion_oidc_reauth_required:
           accountDeletionOidcReauthProviders(error).length > 0
             ? t('accountDeletion.oidcReauthRequired')
             : t('accountDeletion.noReauthProvider'),
@@ -213,7 +213,7 @@ function accountDeletionRetryAfterMessage(
   if (
     !(error instanceof ApiError) ||
     error.status !== 429 ||
-    error.code !== 'ACCOUNT_DELETION_REAUTH_RATE_LIMITED' ||
+    error.code !== 'account_deletion_reauth_rate_limited' ||
     error.retryAfterSeconds === null
   ) {
     return null
@@ -243,9 +243,9 @@ function accountDeletionValidationField(
   if (!(error instanceof ApiError) || error.status !== 422) {
     return null
   }
-  for (const detail of error.details) {
+  for (const detail of error.errors) {
     const field = validationDetailField(detail)
-    if (field === 'confirmEmail' || field === 'password') {
+    if (field === 'confirm_email' || field === 'password') {
       return field
     }
   }
@@ -256,12 +256,12 @@ function validationDetailField(detail: unknown): string | null {
   if (typeof detail !== 'object' || detail === null || Array.isArray(detail)) {
     return null
   }
-  const loc = (detail as { loc?: unknown }).loc
-  if (!Array.isArray(loc)) {
-    return null
+  const pointer = (detail as { pointer?: unknown }).pointer
+  if (typeof pointer === 'string') {
+    return pointer.split('/').at(-1) ?? null
   }
-  const field = loc.at(-1)
-  return typeof field === 'string' ? field : null
+  const parameter = (detail as { parameter?: unknown }).parameter
+  return typeof parameter === 'string' ? parameter : null
 }
 
 function accountDeletionInvalidField(
@@ -270,12 +270,12 @@ function accountDeletionInvalidField(
   if (!(error instanceof ApiError)) {
     return null
   }
-  if (error.code === 'ACCOUNT_DELETION_CONFIRMATION_MISMATCH') {
-    return 'confirmEmail'
+  if (error.code === 'account_deletion_confirmation_mismatch') {
+    return 'confirm_email'
   }
   if (
-    error.code === 'ACCOUNT_DELETION_REAUTH_REQUIRED' ||
-    error.code === 'ACCOUNT_DELETION_INVALID_PASSWORD'
+    error.code === 'account_deletion_reauth_required' ||
+    error.code === 'account_deletion_invalid_password'
   ) {
     return 'password'
   }

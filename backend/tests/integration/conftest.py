@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
@@ -15,35 +16,60 @@ from tests.integration.helpers import require_test_database_url
 
 
 async def wait_for_database(database_url: str) -> None:
+    engine = create_async_engine(database_url, future=True, poolclass=NullPool)
+    try:
+        await wait_for_database_engine(engine)
+        return
+    finally:
+        await engine.dispose()
+
+
+async def wait_for_database_engine(engine: AsyncEngine) -> None:
     for _ in range(20):
-        engine = create_async_engine(database_url, future=True, poolclass=NullPool)
         try:
             async with engine.connect() as connection:
                 await connection.execute(text("select 1"))
             return
         except Exception:
             await asyncio.sleep(1)
-        finally:
-            await engine.dispose()
     raise RuntimeError("PostgreSQL did not become ready for auth integration tests")
 
 
 @pytest_asyncio.fixture
 async def async_engine() -> AsyncIterator[AsyncEngine]:
     database_url = require_test_database_url()
-    await wait_for_database(database_url)
     engine = create_async_engine(database_url, future=True, pool_pre_ping=True, poolclass=NullPool)
-    yield engine
-    await engine.dispose()
+    try:
+        await wait_for_database_engine(engine)
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def force_memory_rate_limiter_backend(monkeypatch, request) -> None:
+    if request.node.get_closest_marker("redis_rate_limiter") is None:
+        monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "memory")
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def clean_auth_tables(async_engine: AsyncEngine) -> AsyncIterator[None]:
-    async with async_engine.begin() as connection:
+async def clean_auth_tables(request) -> AsyncIterator[None]:
+    if (request.node.get_closest_marker("redis_rate_limiter") is not None
+            and request.node.get_closest_marker("auth_tables") is None):
+        yield
+        return
+
+    database_url = require_test_database_url()
+    engine = create_async_engine(database_url, future=True, pool_pre_ping=True, poolclass=NullPool)
+    await wait_for_database_engine(engine)
+    async with engine.begin() as connection:
         await _truncate_auth_tables(connection)
-    yield
-    async with async_engine.begin() as connection:
-        await _truncate_auth_tables(connection)
+    try:
+        yield
+    finally:
+        async with engine.begin() as connection:
+            await _truncate_auth_tables(connection)
+        await engine.dispose()
 
 
 async def _truncate_auth_tables(connection) -> None:
@@ -89,4 +115,11 @@ def client(monkeypatch) -> Iterator[TestClient]:
         try:
             yield test_client
         finally:
-            app.state.injector.get(LoginRateLimiterInterface).reset()
+            limiter = app.state.injector.get(LoginRateLimiterInterface)
+            reset = getattr(limiter, "reset_for_tests", None)
+            if reset is None:
+                raise AssertionError("Login rate limiter must provide reset_for_tests()")
+            result = reset()
+            if inspect.isawaitable(result):
+                raise AssertionError("Integration client fixture requires sync reset_for_tests(); "
+                                     "Redis limiter must use Redis-specific async tests")

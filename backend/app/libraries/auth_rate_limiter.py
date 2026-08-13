@@ -38,7 +38,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         self._oidc_authorization_ip_buckets: OrderedDict[str, deque[float]] = OrderedDict()
         self._cap_warning_scopes: set[str] = set()
 
-    def is_allowed(self, ip_address: str, normalized_email: str) -> bool:
+    async def is_allowed(self, ip_address: str, normalized_email: str) -> bool:
         now = self._clock()
         email_ip_bucket = self._get_existing_bucket(
             self._email_ip_buckets,
@@ -59,7 +59,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
                 and len(ip_bucket) < self._max_failures_per_ip
                 and len(email_bucket) < self._max_failures_per_email)
 
-    def is_account_deletion_reauth_allowed(
+    async def is_account_deletion_reauth_allowed(
         self,
         ip_address: str,
         normalized_email: str,
@@ -77,7 +77,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         return (len(email_ip_bucket) < self._max_failures_per_email_ip
                 and len(ip_bucket) < self._max_failures_per_ip)
 
-    def record_failure(
+    async def record_failure(
         self,
         ip_address: str,
         normalized_email: str,
@@ -108,10 +108,10 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
             if email_bucket is not None:
                 email_bucket.append(now)
 
-    def record_success(self, ip_address: str, normalized_email: str) -> None:
+    async def record_success(self, ip_address: str, normalized_email: str) -> None:
         self._email_ip_buckets.pop(self._email_ip_key(ip_address, normalized_email), None)
 
-    def is_registration_allowed(self, ip_address: str) -> bool:
+    async def is_registration_allowed(self, ip_address: str) -> bool:
         now = self._clock()
         bucket = self._get_existing_bucket(
             self._registration_ip_buckets,
@@ -121,7 +121,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         )
         return len(bucket) < self._max_registrations_per_ip
 
-    def record_registration(self, ip_address: str) -> None:
+    async def record_registration(self, ip_address: str) -> None:
         now = self._clock()
         bucket = self._get_or_create_bucket(
             self._registration_ip_buckets,
@@ -133,7 +133,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         if bucket is not None:
             bucket.append(now)
 
-    def is_oidc_authorization_allowed(self, ip_address: str) -> bool:
+    async def is_oidc_authorization_allowed(self, ip_address: str) -> bool:
         now = self._clock()
         bucket = self._get_existing_bucket(
             self._oidc_authorization_ip_buckets,
@@ -143,7 +143,7 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         )
         return len(bucket) < self._max_oidc_authorizations_per_ip
 
-    def record_oidc_authorization(self, ip_address: str) -> None:
+    async def record_oidc_authorization(self, ip_address: str) -> None:
         now = self._clock()
         bucket = self._get_or_create_bucket(
             self._oidc_authorization_ip_buckets,
@@ -155,7 +155,10 @@ class InMemoryLoginRateLimiter(LoginRateLimiterInterface):
         if bucket is not None:
             bucket.append(now)
 
-    def reset(self) -> None:
+    async def aclose(self) -> None:
+        return None
+
+    def reset_for_tests(self) -> None:
         self._email_ip_buckets.clear()
         self._ip_buckets.clear()
         self._email_buckets.clear()

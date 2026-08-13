@@ -17,11 +17,11 @@ from app.models.admin_user_schemas import (AdminUserCreateRequest, AdminUserList
 from app.models.auth_context import AuthenticatedSessionContext
 from app.models.auth_errors import EmailAlreadyRegisteredError, UserNotFoundError, WeakPasswordError
 from app.models.authorization_errors import RoleNotFoundError
-from app.models.error import ErrorResponse
+from app.models.error import problem_response_openapi
 
-ErrorResponses = dict[int | str, dict[str, Any]]
-ERROR_RESPONSE: dict[str, Any] = {"model": ErrorResponse}
-ADMIN_USER_ERROR_RESPONSES: ErrorResponses = {
+ProblemResponses = dict[int | str, dict[str, Any]]
+ERROR_RESPONSE: dict[str, Any] = problem_response_openapi()
+ADMIN_USER_ERROR_RESPONSES: ProblemResponses = {
     401: ERROR_RESPONSE,
     403: ERROR_RESPONSE,
     404: ERROR_RESPONSE,
@@ -40,9 +40,9 @@ async def list_admin_users(
     request: Request,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    search: str | None = Query(default=None, max_length=320),
+    query: str | None = Query(default=None, max_length=320),
     role: str | None = Query(default=None, max_length=64),
-    is_active: bool | None = Query(default=None, alias="isActive"),
+    is_active: bool | None = Query(default=None),
     _auth_context: AuthenticatedSessionContext = Depends(require_admin_access),
     usecase: AdminUserUsecaseInterface = Depends(get_admin_user_usecase),
 ) -> AdminUserListResponse:
@@ -50,7 +50,7 @@ async def list_admin_users(
     try:
         result = await usecase.list_users(
             AdminUserListQuery(
-                search=normalize_admin_search(search),
+                search=normalize_admin_search(query),
                 is_active=is_active,
                 role=role,
             ),
@@ -58,12 +58,12 @@ async def list_admin_users(
             limit=limit,
         )
     except ValueError as error:
-        raise api_error(422, "INVALID_ADMIN_USER_QUERY", str(error)) from error
+        raise api_error(422, "invalid_admin_user_query", "Invalid admin user query") from error
     except RoleNotFoundError as error:
         raise _role_not_found_error(error) from error
     return AdminUserListResponse(
-        items=[AdminUserListItemResponse.from_record(record) for record in result.items],
-        total=result.total,
+        data=[AdminUserListItemResponse.from_record(record) for record in result.items],
+        count=result.total,
         offset=result.offset,
         limit=result.limit,
     )
@@ -78,6 +78,7 @@ async def list_admin_users(
 async def create_admin_user(
         payload: AdminUserCreateRequest,
         request: Request,
+        response: Response,
         auth_context: AuthenticatedSessionContext = Depends(require_admin_access),
         auth_settings: AuthSettings = Depends(get_auth_settings),
         usecase: AdminUserUsecaseInterface = Depends(get_admin_user_usecase),
@@ -93,11 +94,12 @@ async def create_admin_user(
             user_agent=get_user_agent(request),
         )
     except EmailAlreadyRegisteredError as error:
-        raise api_error(409, "EMAIL_ALREADY_REGISTERED", "Email already registered") from error
+        raise api_error(409, "email_already_registered", "Email already registered") from error
     except WeakPasswordError as error:
-        raise api_error(422, "WEAK_PASSWORD", str(error)) from error
+        raise api_error(422, "weak_password", "Password does not meet requirements") from error
     except RoleNotFoundError as error:
         raise _role_not_found_error(error) from error
+    response.headers["Location"] = f"/api/admin/users/{detail.user.id}"
     return AdminUserResponse.from_detail(detail)
 
 
@@ -141,9 +143,9 @@ async def update_admin_user(
     except UserNotFoundError as error:
         raise _user_not_found_error() from error
     except EmailAlreadyRegisteredError as error:
-        raise api_error(409, "EMAIL_ALREADY_REGISTERED", "Email already registered") from error
+        raise api_error(409, "email_already_registered", "Email already registered") from error
     except WeakPasswordError as error:
-        raise api_error(422, "WEAK_PASSWORD", str(error)) from error
+        raise api_error(422, "weak_password", "Password does not meet requirements") from error
     except RoleNotFoundError as error:
         raise _role_not_found_error(error) from error
     return AdminUserResponse.from_detail(detail)
@@ -170,15 +172,13 @@ async def delete_admin_user(
 
 
 def _user_not_found_error() -> HTTPException:
-    return api_error(404, "USER_NOT_FOUND", "User not found")
+    return api_error(404, "user_not_found", "User not found")
 
 
 def _role_not_found_error(error: RoleNotFoundError) -> HTTPException:
     return api_error(
         422,
-        "ROLE_NOT_FOUND",
+        "role_not_found",
         "Role not found",
-        details=[{
-            "roleCodes": sorted(error.role_codes)
-        }],
+        extensions={"role_codes": sorted(error.role_codes)},
     )

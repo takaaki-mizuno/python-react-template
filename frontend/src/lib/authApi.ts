@@ -8,7 +8,7 @@ import type { LanguageCode } from './i18n/languages'
 export type AuthUser = {
   id: string
   email: string
-  languageCode: LanguageCode
+  language_code: LanguageCode
   roles: Array<string>
   permissions: Array<string>
 }
@@ -21,25 +21,25 @@ export type LoginPayload = {
 export type RegisterPayload = {
   email: string
   password: string
-  languageCode: LanguageCode
+  language_code: LanguageCode
 }
 
 export type UpdateCurrentUserPayload = {
-  languageCode: LanguageCode
+  language_code: LanguageCode
 }
 
 export type DeleteAccountPayload = {
-  confirmEmail: string
+  confirm_email: string
   password?: string
 }
 
 export type OidcProvider = {
-  providerId: string
-  displayName: string
+  provider_id: string
+  display_name: string
 }
 
 type OidcProvidersResponse = {
-  providers: Array<OidcProvider>
+  data: Array<OidcProvider>
 }
 
 export async function fetchCurrentUserOrNull(options?: {
@@ -89,7 +89,7 @@ export async function fetchOidcProviders(): Promise<Array<OidcProvider>> {
   const response = await apiClient.get<OidcProvidersResponse>(
     '/api/auth/oidc/providers',
   )
-  return Array.isArray(response.providers) ? response.providers : []
+  return Array.isArray(response.data) ? response.data : []
 }
 
 export function startOidcLogin(
@@ -117,7 +117,7 @@ function oidcStartUrl(
 ) {
   const params = new URLSearchParams({ redirect })
   if (languageCode && action === 'start') {
-    params.set('languageCode', languageCode)
+    params.set('language_code', languageCode)
   }
   return `/api/auth/oidc/${encodeURIComponent(providerId)}/${action}?${params.toString()}`
 }

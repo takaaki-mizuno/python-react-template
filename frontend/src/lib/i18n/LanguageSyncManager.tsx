@@ -22,12 +22,12 @@ export function LanguageSyncManager() {
   }, [])
 
   useEffect(() => {
-    const nextLanguage = resolveLanguage(pathname, user?.languageCode ?? null)
+    const nextLanguage = resolveLanguage(pathname, user?.language_code ?? null)
     if (i18n.language !== nextLanguage) {
       void i18n.changeLanguage(nextLanguage)
     }
     writeLastResolvedLanguage(nextLanguage)
-  }, [pathname, publicPreferenceVersion, user?.languageCode])
+  }, [pathname, publicPreferenceVersion, user?.language_code])
 
   return null
 }

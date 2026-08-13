@@ -24,7 +24,7 @@ export function OidcProviderButton({
       type="button"
       variant="outline"
     >
-      {t('actions.continueWithProvider', { provider: provider.displayName })}
+      {t('actions.continueWithProvider', { provider: provider.display_name })}
     </Button>
   )
 }

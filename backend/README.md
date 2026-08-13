@@ -79,6 +79,44 @@ docker compose down -v
 docker compose up -d postgres backend
 ```
 
+## Redis rate limiter
+
+認証 rate limiter は既定で in-memory 実装を使う。ローカルで login / register / OIDC / account deletion の基本動作を確認するだけなら追加設定は不要である。
+
+複数 worker / instance 間で試行回数を共有する検証では、Redis service を起動して `backend/.env` を切り替える。
+
+```env
+AUTH_RATE_LIMIT_BACKEND=redis
+AUTH_RATE_LIMIT_REDIS_URL=redis://redis:6379/0
+AUTH_RATE_LIMIT_REDIS_UNAVAILABLE_POLICY=fail_closed
+AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS=0.25
+AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS=0.25
+AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS=0.8
+AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_FAILURES=5
+AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_COOLDOWN_SECONDS=10
+AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS=100
+```
+
+```bash
+docker compose up -d redis postgres backend frontend
+docker compose up -d --force-recreate backend
+```
+
+Compose 内の backend からは `redis://redis:6379/0` を使う。host 側で Redis integration test を実行する場合は公開 port を使う。
+
+```bash
+TEST_REDIS_URL="redis://localhost:${REDIS_PORT:-6379}/1" \
+  uv run pytest tests/integration/test_redis_rate_limiter.py -q
+```
+
+`AUTH_RATE_LIMIT_BACKEND` や Redis timeout / deadline / connection pool 設定は起動時に読み込まれるため、変更後は backend process/container を再起動する。
+
+Redis 障害時の既定は `fail_closed` で、通常ユーザーの login も 429 になり得る。availability を優先する環境では `fail_open` を明示できるが、障害中は rate limit が一時的に効かない。どちらの場合も `auth_rate_limiter.redis_unavailable` log code で通常の bucket 到達と区別する。
+
+Redis connection pool は `AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS` で worker ごとに上限を持ち、枯渇時は operation deadline の半分だけ接続取得を待つ。pool 枯渇は circuit breaker の連続失敗には数えず、同じ process では warning log を 1 秒に 1 回へ抑制する。既定 deadline 0.8 秒では、breaker が開く前の worst-case latency は login 失敗で最大 1.6 秒、register の一部 failure path で最大 2.4 秒である。同時 in-flight request が多いほど、この待ち時間を受ける request 数も増える。
+
+production では rate limit 専用 Redis instance / DB、全 key の TTL、容量監視、`maxmemory-policy volatile-ttl` を推奨する。`allkeys-lru` は攻撃中の key を evict し得るため推奨しない。容量監視なしの `noeviction` は write failure と fail-closed の組み合わせで認証停止につながる。
+
 ## Sample CRUD
 
 `/api/samples` は新規 resource 実装のコピー元になる user-owned CRUD sample。

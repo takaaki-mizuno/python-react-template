@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from logging import Logger, getLogger
 
+import redis.asyncio as redis
 from injector import Binder, Module, provider, singleton
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -26,6 +27,7 @@ from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsec
 from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
 from app.libraries.database_engine import build_engine_and_session_factory
 from app.libraries.password_hasher import PasswordHashExecutor
+from app.libraries.redis_login_rate_limiter import RedisLoginRateLimiter
 from app.services.admin_user_repository import AdminUserRepository
 from app.services.auth_repository import AuthRepository
 from app.services.authorization_repository import AuthorizationRepository
@@ -106,6 +108,38 @@ class AuthModule(Module):
         settings: AuthSettings,
         oidc_settings: OidcSettings,
     ) -> LoginRateLimiterInterface:
+        if settings.AUTH_RATE_LIMIT_BACKEND == "redis":
+            pool_timeout_seconds = max(
+                0.05,
+                settings.AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS / 2,
+            )
+            redis_pool = redis.BlockingConnectionPool.from_url(
+                settings.AUTH_RATE_LIMIT_REDIS_URL,
+                socket_timeout=settings.AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS,
+                socket_connect_timeout=(
+                    settings.AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS),
+                max_connections=settings.AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS,
+                timeout=pool_timeout_seconds,
+            )
+            redis_client = redis.Redis.from_pool(redis_pool)
+            return RedisLoginRateLimiter(
+                window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+                registration_window_seconds=settings.AUTH_RATE_LIMIT_REGISTRATION_WINDOW_SECONDS,
+                max_failures_per_email_ip=settings.AUTH_RATE_LIMIT_FAILURES_PER_EMAIL_IP,
+                max_failures_per_ip=settings.AUTH_RATE_LIMIT_FAILURES_PER_IP,
+                max_failures_per_email=settings.AUTH_RATE_LIMIT_FAILURES_PER_EMAIL,
+                max_registrations_per_ip=settings.AUTH_RATE_LIMIT_REGISTRATIONS_PER_IP,
+                max_oidc_authorizations_per_ip=(
+                    oidc_settings.AUTH_OIDC_AUTHORIZATION_STARTS_PER_IP),
+                redis_client=redis_client,
+                key_prefix=settings.AUTH_RATE_LIMIT_REDIS_KEY_PREFIX,
+                unavailable_policy=settings.AUTH_RATE_LIMIT_REDIS_UNAVAILABLE_POLICY,
+                operation_deadline_seconds=(
+                    settings.AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS),
+                circuit_breaker_failures=settings.AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_FAILURES,
+                circuit_breaker_cooldown_seconds=(
+                    settings.AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_COOLDOWN_SECONDS),
+            )
         return InMemoryLoginRateLimiter(
             window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
             registration_window_seconds=settings.AUTH_RATE_LIMIT_REGISTRATION_WINDOW_SECONDS,

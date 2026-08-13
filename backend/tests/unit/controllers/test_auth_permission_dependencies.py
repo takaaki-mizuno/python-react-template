@@ -32,7 +32,7 @@ def test_require_permission_rejects_context_without_permission() -> None:
     response = client.get("/protected")
 
     assert response.status_code == 403
-    assert response.json()["error"]["code"] == "PERMISSION_DENIED"
+    assert response.json()["code"] == "permission_denied"
 
 
 def test_require_any_permission_allows_any_matching_permission() -> None:

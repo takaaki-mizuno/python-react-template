@@ -21,13 +21,54 @@ def test_setup_routes_starts_without_static_directory(tmp_path):
     assert response.json() == {"success": True, "message": "ok"}
 
 
-def test_healthz_documents_error_envelope_for_not_found(tmp_path):
+def test_healthz_documents_problem_details_for_not_found(tmp_path):
     client = _client_with_static(tmp_path / "missing-static")
 
-    responses = client.get("/openapi.json").json()["paths"]["/api/healthz"]["get"]["responses"]
+    spec = client.get("/openapi.json").json()
+    responses = spec["paths"]["/api/healthz"]["get"]["responses"]
 
-    assert responses["404"]["content"]["application/json"]["schema"][
-        "$ref"] == "#/components/schemas/ErrorResponse"
+    assert "ProblemDetails" in spec["components"]["schemas"]
+    assert "ProblemError" in spec["components"]["schemas"]
+    assert responses["404"]["content"]["application/problem+json"]["schema"][
+        "$ref"] == "#/components/schemas/ProblemDetails"
+    assert "application/json" not in responses["404"].get("content", {})
+
+
+def test_openapi_documents_problem_details_for_validation_errors(tmp_path):
+    client = _client_with_static(tmp_path / "missing-static")
+
+    paths = client.get("/openapi.json").json()["paths"]
+    endpoints = [
+        ("/api/auth/me", "patch"),
+        ("/api/auth/oidc/{provider_id}/start", "get"),
+        ("/api/auth/oidc/{provider_id}/reauth", "get"),
+        ("/api/auth/oidc/{provider_id}/callback", "get"),
+    ]
+
+    for path, method in endpoints:
+        response = paths[path][method]["responses"]["422"]
+        assert response["content"]["application/problem+json"]["schema"][
+            "$ref"] == "#/components/schemas/ProblemDetails"
+        assert "application/json" not in response.get("content", {})
+
+
+def test_root_healthz_route_is_available_before_static_mount(tmp_path):
+    (tmp_path / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
+    client = _client_with_static(tmp_path)
+
+    response = client.get("/healthz", headers={"accept": "text/html"})
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "message": "ok"}
+
+
+def test_openapi_datetime_response_fields_are_unix_timestamp_integers(tmp_path):
+    client = _client_with_static(tmp_path / "missing-static")
+
+    schemas = client.get("/openapi.json").json()["components"]["schemas"]
+
+    assert schemas["AdminUserResponse"]["properties"]["created_at"]["type"] == "integer"
+    assert schemas["SampleItemResponse"]["properties"]["created_at"]["type"] == "integer"
 
 
 def test_admin_users_route_is_included_in_openapi(tmp_path):

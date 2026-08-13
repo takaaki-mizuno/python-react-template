@@ -37,17 +37,17 @@ def test_sample_item_table_metadata() -> None:
     assert isinstance(table.c.registered_at.type, UnixTimestampMillis)
 
 
-def test_sample_item_request_validation_and_aliases() -> None:
+def test_sample_item_request_validation_and_snake_case() -> None:
     create_request = SampleItemCreateRequest(title="Write tests", description=None)
     assert create_request.model_dump(by_alias=True) == {
         "title": "Write tests",
         "description": None,
     }
 
-    update_request = SampleItemUpdateRequest(isCompleted=True)
+    update_request = SampleItemUpdateRequest(is_completed=True)
     assert update_request.is_completed is True
-    assert update_request.model_dump(by_alias=True, exclude_unset=True) == {
-        "isCompleted": True,
+    assert update_request.model_dump(exclude_unset=True) == {
+        "is_completed": True,
     }
 
 
@@ -60,7 +60,7 @@ def test_sample_item_update_distinguishes_omitted_field_from_null() -> None:
     assert explicit_null.model_fields_set == {"description"}
 
 
-@pytest.mark.parametrize("payload", [{"title": None}, {"isCompleted": None}])
+@pytest.mark.parametrize("payload", [{"title": None}, {"is_completed": None}])
 def test_sample_item_update_rejects_null_for_non_nullable_fields(payload) -> None:
     with pytest.raises(ValidationError):
         SampleItemUpdateRequest.model_validate(payload)
@@ -71,7 +71,7 @@ def test_sample_item_requests_reject_unknown_fields() -> None:
         SampleItemUpdateRequest.model_validate({"tittle": "typo"})
 
 
-def test_sample_item_response_serializes_camel_case() -> None:
+def test_sample_item_response_serializes_snake_case_unix_timestamp_seconds() -> None:
     item_id = uuid4()
     owner_user_id = uuid4()
     registered_at = datetime(2026, 8, 2, 1, 2, 3, tzinfo=UTC)
@@ -92,11 +92,11 @@ def test_sample_item_response_serializes_camel_case() -> None:
 
     response = SampleItemResponse.from_item(item)
 
-    assert response.model_dump(mode="json", by_alias=True) == {
+    assert response.model_dump(mode="json") == {
         "id": str(item_id),
         "title": "Write docs",
         "description": "Use this sample as the template.",
-        "isCompleted": True,
-        "createdAt": "2026-08-02T01:02:03Z",
-        "updatedAt": "2026-08-02T04:05:06Z",
+        "is_completed": True,
+        "created_at": 1785632523,
+        "updated_at": 1785643506,
     }

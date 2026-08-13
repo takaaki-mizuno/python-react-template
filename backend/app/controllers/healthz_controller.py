@@ -1,14 +1,12 @@
 from fastapi import APIRouter
 
-from app.models.error import ErrorResponse
+from app.models.error import problem_response_openapi
 from app.models.status import Status
 
 router = APIRouter(
     tags=["health"],
     responses={
-        404: {
-            "model": ErrorResponse
-        },
+        404: problem_response_openapi(),
     },
 )
 

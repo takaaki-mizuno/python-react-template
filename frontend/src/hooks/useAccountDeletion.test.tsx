@@ -28,7 +28,7 @@ test('account deletion 成功時は logout と同じ cache policy を適用す�
   queryClient.setQueryData(queryKeys.auth.me, {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
-    languageCode: 'en',
+    language_code: 'en',
     roles: [],
     permissions: [],
   })
@@ -41,7 +41,7 @@ test('account deletion 成功時は logout と同じ cache policy を適用す�
 
   await act(async () => {
     await result.current.mutateAsync({
-      confirmEmail: 'user@example.com',
+      confirm_email: 'user@example.com',
       password: 'Password123!',
     })
   })

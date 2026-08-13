@@ -14,7 +14,7 @@ import { AuthFormFeedback } from '@/components/molecules/AuthFormFeedback'
 import { AuthTextField } from '@/components/molecules/AuthTextField'
 import { OidcProviderButton } from '@/components/molecules/OidcProviderButton'
 
-export type AccountDeletionInvalidField = 'confirmEmail' | 'password'
+export type AccountDeletionInvalidField = 'confirm_email' | 'password'
 
 export type AccountDeletionPanelProps = {
   currentEmail: string
@@ -24,7 +24,7 @@ export type AccountDeletionPanelProps = {
   linkedProviders?: Array<AccountDeletionOidcReauthProvider>
   onFieldChange?: (field: AccountDeletionInvalidField) => void
   onReauth?: (providerId: string) => void
-  onSubmit: (payload: { confirmEmail: string; password?: string }) => void
+  onSubmit: (payload: { confirm_email: string; password?: string }) => void
 }
 
 export function AccountDeletionPanel({
@@ -45,7 +45,7 @@ export function AccountDeletionPanel({
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     onSubmit({
-      confirmEmail,
+      confirm_email: confirmEmail,
       password: password === '' ? undefined : password,
     })
   }
@@ -65,11 +65,11 @@ export function AccountDeletionPanel({
             describedBy={errorMessage ? errorId : undefined}
             disabled={isPending}
             id="account-delete-confirm-email"
-            invalid={invalidField === 'confirmEmail'}
+            invalid={invalidField === 'confirm_email'}
             label={t('accountDeletion.confirmEmailLabel')}
             onChange={(value) => {
               setConfirmEmail(value)
-              onFieldChange?.('confirmEmail')
+              onFieldChange?.('confirm_email')
             }}
             type="email"
             value={confirmEmail}
@@ -93,9 +93,9 @@ export function AccountDeletionPanel({
             <div className="grid gap-3">
               {linkedProviders.map((provider) => (
                 <OidcProviderButton
-                  key={provider.providerId}
+                  key={provider.provider_id}
                   isDisabled={isPending}
-                  onClick={() => onReauth?.(provider.providerId)}
+                  onClick={() => onReauth?.(provider.provider_id)}
                   provider={provider}
                 />
               ))}

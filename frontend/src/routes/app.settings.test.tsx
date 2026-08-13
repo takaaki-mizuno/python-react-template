@@ -28,7 +28,11 @@ test('未認証で /app/settings を開くと login へ redirect する', async 
     vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          error: { code: 'UNAUTHORIZED', message: 'Unauthorized' },
+          type: '/problems/unauthorized',
+          title: 'Unauthorized',
+          status: 401,
+          detail: 'Unauthorized',
+          code: 'unauthorized',
         }),
         {
           status: 401,
@@ -66,7 +70,7 @@ test('/app/settings で account deletion に成功すると cache を消して p
         authUserResponse({
           id: '00000000-0000-0000-0000-000000000001',
           email: 'user@example.com',
-          languageCode: 'en',
+          language_code: 'en',
         }),
       )
     })
@@ -102,7 +106,7 @@ test('/app/settings で account deletion に成功すると cache を消して p
   )
   expect(deleteCall?.[1]?.body).toBe(
     JSON.stringify({
-      confirmEmail: 'user@example.com',
+      confirm_email: 'user@example.com',
       password: 'Password123!',
     }),
   )
@@ -112,31 +116,31 @@ test('/app/settings で account deletion に成功すると cache を消して p
 test.each([
   [
     400,
-    'ACCOUNT_DELETION_CONFIRMATION_MISMATCH',
+    'account_deletion_confirmation_mismatch',
     '入力されたメールアドレスが現在のアカウントと一致しません。',
-    'confirmEmail',
+    'confirm_email',
   ],
   [
     400,
-    'ACCOUNT_DELETION_REAUTH_REQUIRED',
+    'account_deletion_reauth_required',
     'アカウント削除には現在のパスワード入力が必要です。',
     'password',
   ],
   [
     400,
-    'ACCOUNT_DELETION_INVALID_PASSWORD',
+    'account_deletion_invalid_password',
     '現在のパスワードが一致しません。',
     'password',
   ],
   [
     429,
-    'ACCOUNT_DELETION_REAUTH_RATE_LIMITED',
+    'account_deletion_reauth_rate_limited',
     '確認の試行回数が多すぎます。時間をおいて再度お試しください。',
     null,
   ],
   [
     403,
-    'CSRF_VALIDATION_FAILED',
+    'csrf_validation_failed',
     'セッションの確認に失敗しました。ページを再読み込みして、もう一度お試しください。',
     null,
   ],
@@ -179,7 +183,7 @@ test.each([
       screen
         .getByLabelText('メールアドレスを入力して削除を確認')
         .getAttribute('aria-invalid'),
-    ).toBe(invalidField === 'confirmEmail' ? 'true' : null)
+    ).toBe(invalidField === 'confirm_email' ? 'true' : null)
     expect(
       screen.getByLabelText('現在のパスワード').getAttribute('aria-invalid'),
     ).toBe(invalidField === 'password' ? 'true' : null)
@@ -197,7 +201,7 @@ test('/app/settings は Retry-After 付き account deletion 429 を retry-aware 
     vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       if (input === '/api/auth/me' && init?.method === 'DELETE') {
         return Promise.resolve(
-          apiErrorResponse(429, 'ACCOUNT_DELETION_REAUTH_RATE_LIMITED', {
+          apiErrorResponse(429, 'account_deletion_reauth_rate_limited', {
             'Retry-After': '900',
           }),
         )
@@ -248,9 +252,14 @@ test('/app/settings は OIDC reauth required details から reauth button を表
     vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       if (input === '/api/auth/me' && init?.method === 'DELETE') {
         return Promise.resolve(
-          apiErrorResponse(400, 'ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED', {}, [
-            { providerId: 'google', displayName: 'Google' },
-          ]),
+          apiErrorResponse(
+            400,
+            'account_deletion_oidc_reauth_required',
+            {},
+            {
+              providers: [{ provider_id: 'google', display_name: 'Google' }],
+            },
+          ),
         )
       }
 
@@ -283,9 +292,9 @@ test('/app/settings は linked providers が空なら reauth button を出さな
         return Promise.resolve(
           apiErrorResponse(
             400,
-            'ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED',
+            'account_deletion_oidc_reauth_required',
             {},
-            [],
+            { providers: [] },
           ),
         )
       }
@@ -314,7 +323,7 @@ test('/app/settings は OIDC reauth callback result query を message にする'
   )
 
   renderWithRouter({
-    initialEntries: ['/app/settings?oidcError=OIDC_REAUTH_STALE'],
+    initialEntries: ['/app/settings?oidc_error=OIDC_REAUTH_STALE'],
   })
 
   expect((await screen.findByRole('alert')).textContent).toBe(
@@ -344,7 +353,7 @@ test.each([
     )
 
     renderWithRouter({
-      initialEntries: [`/app/settings?oidcError=${code}`],
+      initialEntries: [`/app/settings?oidc_error=${code}`],
     })
 
     expect((await screen.findByRole('alert')).textContent).toBe(message)
@@ -358,7 +367,7 @@ test('/app/settings は OIDC reauth success query を message にする', async 
   )
 
   renderWithRouter({
-    initialEntries: ['/app/settings?oidcReauth=success'],
+    initialEntries: ['/app/settings?oidc_reauth=success'],
   })
 
   expect((await screen.findByRole('alert')).textContent).toBe(
@@ -373,7 +382,7 @@ test('/app/settings はフォーム編集後に OIDC query message を再表示�
   )
 
   renderWithRouter({
-    initialEntries: ['/app/settings?oidcReauth=success'],
+    initialEntries: ['/app/settings?oidc_reauth=success'],
   })
 
   expect((await screen.findByRole('alert')).textContent).toBe(
@@ -408,7 +417,7 @@ test('/app/settings は OIDC reauth 後の full-page load で最新 user を読�
   vi.stubGlobal('fetch', fetchMock)
 
   renderWithRouter({
-    initialEntries: ['/app/settings?oidcReauth=success'],
+    initialEntries: ['/app/settings?oidc_reauth=success'],
   })
 
   expect(
@@ -428,14 +437,14 @@ test('/app/settings は OIDC reauth 後の full-page load で最新 user を読�
       expect.objectContaining({
         method: 'DELETE',
         body: JSON.stringify({
-          confirmEmail: 'fresh@example.com',
+          confirm_email: 'fresh@example.com',
         }),
       }),
     )
   })
 })
 
-test('/app/settings は空の confirmEmail 由来の 422 を field-specific message にする', async () => {
+test('/app/settings は空の confirm_email 由来の 422 を field-specific message にする', async () => {
   document.cookie = 'csrf_token=csrf-123; path=/'
   vi.stubGlobal(
     'fetch',
@@ -444,10 +453,17 @@ test('/app/settings は空の confirmEmail 由来の 422 を field-specific mess
         return Promise.resolve(
           new Response(
             JSON.stringify({
-              detail: [
+              type: '/problems/validation_error',
+              title: 'Validation error',
+              status: 422,
+              detail: 'Request validation failed.',
+              code: 'validation_error',
+              errors: [
                 {
-                  loc: ['body', 'confirmEmail'],
-                  msg: 'Field required',
+                  location: 'body',
+                  pointer: '#/confirm_email',
+                  detail: 'Field required',
+                  code: 'missing',
                 },
               ],
             }),
@@ -487,7 +503,7 @@ test('/app/settings は invalid field 編集時に stale field error を消す',
     vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       if (input === '/api/auth/me' && init?.method === 'DELETE') {
         return Promise.resolve(
-          apiErrorResponse(400, 'ACCOUNT_DELETION_INVALID_PASSWORD'),
+          apiErrorResponse(400, 'account_deletion_invalid_password'),
         )
       }
 
@@ -529,7 +545,7 @@ test('/app/settings は form-level error を field 編集で消さない', async
     vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       if (input === '/api/auth/me' && init?.method === 'DELETE') {
         return Promise.resolve(
-          apiErrorResponse(429, 'ACCOUNT_DELETION_REAUTH_RATE_LIMITED'),
+          apiErrorResponse(429, 'account_deletion_reauth_rate_limited'),
         )
       }
 
@@ -598,7 +614,7 @@ function authUserResponse(
   user: {
     email: string
     id: string
-    languageCode?: LanguageCode
+    language_code?: LanguageCode
   } = {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
@@ -621,19 +637,20 @@ function apiErrorResponse(
   status: number,
   code: string,
   headers?: Record<string, string>,
-  details: Array<unknown> = [],
+  extensions: Record<string, unknown> = {},
 ) {
   return new Response(
     JSON.stringify({
-      error: {
-        code,
-        message: code,
-        details,
-      },
+      type: `/problems/${code}`,
+      title: code,
+      status,
+      detail: code,
+      code,
+      ...extensions,
     }),
     {
       status,
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: { 'Content-Type': 'application/problem+json', ...headers },
     },
   )
 }

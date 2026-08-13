@@ -74,14 +74,14 @@ def test_post_api_requires_csrf_cookie_and_header():
     response = _client().post("/api/protected")
 
     assert response.status_code == 403
-    assert response.json()["error"]["code"] == "CSRF_VALIDATION_FAILED"
+    assert response.json()["code"] == "csrf_validation_failed"
 
 
 def test_post_api_requires_csrf_under_root_path():
     response = _client(root_path="/backend").post("/backend/api/protected")
 
     assert response.status_code == 403
-    assert response.json()["error"]["code"] == "CSRF_VALIDATION_FAILED"
+    assert response.json()["code"] == "csrf_validation_failed"
 
 
 @pytest.mark.asyncio
@@ -230,7 +230,7 @@ def test_middleware_returns_error_envelope_for_unexpected_exception():
     response = client.post("/api/protected", headers={"X-CSRF-Token": "csrf-token"})
 
     assert response.status_code == 500
-    assert response.json()["error"]["code"] == "INTERNAL_SERVER_ERROR"
+    assert response.json()["code"] == "internal_server_error"
 
 
 def test_unknown_unsafe_api_path_is_rejected_before_routing():

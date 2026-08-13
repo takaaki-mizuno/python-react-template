@@ -6,13 +6,14 @@
 
 ## 起動できるもの
 
-このリポジトリは次の 3 つを同時に起動します。
+このリポジトリは次の 3 つを同時に起動します。Redis は認証 rate limit の共有 store 検証用に用意されていますが、通常起動では必須ではありません。
 
 | 名前 | 役割 | デフォルト URL / Port |
 |---|---|---|
 | Frontend | React + Vite の画面 | http://localhost:3000 |
 | Backend | FastAPI API サーバ | http://localhost:8000 |
 | PostgreSQL | アプリ用 DB | localhost:5432 |
+| Redis | 認証 rate limit の共有 store 検証用 | localhost:6379 |
 
 Backend の疎通確認は次の URL で行います。
 
@@ -97,6 +98,27 @@ docker compose up -d --build postgres backend frontend
 3. `uv run python manage.py serve --host 0.0.0.0 --port 8000 --reload`
 
 つまり、通常の初回起動では依存関係の同期、DB migration、FastAPI 起動までまとめて行われます。
+
+認証 rate limiter は既定で in-memory です。ログイン、ユーザー登録、OIDC 開始、アカウント削除再認証の通常確認ではこのままで構いません。複数 worker / instance 間で試行回数が共有されることを確認したい場合だけ Redis を起動し、`backend/.env` を切り替えます。
+
+```env
+AUTH_RATE_LIMIT_BACKEND=redis
+AUTH_RATE_LIMIT_REDIS_URL=redis://redis:6379/0
+```
+
+```bash
+docker compose up -d redis postgres backend frontend
+```
+
+host 側から Redis integration test を実行する場合は、Compose 内の service 名ではなく公開 port を使います。
+
+```bash
+(
+  cd backend
+  TEST_REDIS_URL="redis://localhost:${REDIS_PORT:-6379}/1" \
+    uv run pytest tests/integration/test_redis_rate_limiter.py -q
+)
+```
 
 ## 4. 起動状態を確認する
 
@@ -193,6 +215,7 @@ docker compose up -d --build postgres backend frontend
 - Frontend: `3000`
 - Backend: `8000`
 - PostgreSQL: `5432`
+- Redis: `6379`
 
 すでに使われている場合は、ルートの `.env` を編集して port を変えます。
 
@@ -202,6 +225,7 @@ docker compose up -d --build postgres backend frontend
 FRONTEND_PORT=3001
 BACKEND_PORT=8001
 POSTGRES_PORT=5433
+REDIS_PORT=6380
 ```
 
 変更後に起動します。

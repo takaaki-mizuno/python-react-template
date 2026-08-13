@@ -11,7 +11,7 @@ test('OidcProviderButton は provider display name を表示し click handler �
   render(
     <OidcProviderButton
       onClick={onClick}
-      provider={{ providerId: 'google', displayName: 'Google' }}
+      provider={{ provider_id: 'google', display_name: 'Google' }}
     />,
   )
   fireEvent.click(screen.getByRole('button', { name: 'Googleで続行' }))

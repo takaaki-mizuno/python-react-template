@@ -3,9 +3,12 @@ import i18n from './i18n/i18n'
 export class ApiError extends Error {
   status: number
   body: unknown
+  type: string | null
+  title: string | null
   code: string | null
   detail: string | null
-  details: Array<unknown>
+  instance: string | null
+  errors: Array<unknown>
   retryAfterSeconds: number | null
 
   constructor(status: number, body: unknown, headers: Headers | null = null) {
@@ -13,16 +16,19 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
     this.body = body
+    this.type = extractStringMember(body, 'type')
+    this.title = extractStringMember(body, 'title')
     this.code = extractErrorCode(body)
     this.detail = extractErrorDetail(body)
-    this.details = extractErrorDetails(body)
+    this.instance = extractStringMember(body, 'instance')
+    this.errors = extractErrorDetails(body)
     this.retryAfterSeconds = extractRetryAfterSeconds(headers)
   }
 }
 
 export type AccountDeletionOidcReauthProvider = {
-  providerId: string
-  displayName: string
+  provider_id: string
+  display_name: string
 }
 
 type UserMessageOptions = {
@@ -42,7 +48,7 @@ type BuiltInErrorMessageKey =
   | 'apiError.fallback'
 
 const builtInCodeMessageKeys: Record<string, BuiltInErrorMessageKey> = {
-  CSRF_VALIDATION_FAILED: 'apiError.csrf',
+  csrf_validation_failed: 'apiError.csrf',
 }
 
 const builtInStatusMessageKeys: Partial<
@@ -100,72 +106,51 @@ export function accountDeletionOidcReauthProviders(
 ): Array<AccountDeletionOidcReauthProvider> {
   if (
     !(error instanceof ApiError) ||
-    error.code !== 'ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED'
+    error.code !== 'account_deletion_oidc_reauth_required'
   ) {
     return []
   }
 
-  return error.details.flatMap((detail) => {
-    if (!isRecord(detail)) {
+  if (!isRecord(error.body) || !Array.isArray(error.body.providers)) {
+    return []
+  }
+
+  return error.body.providers.flatMap((provider) => {
+    if (!isRecord(provider)) {
       return []
     }
-    const { providerId, displayName } = detail
-    if (typeof providerId !== 'string' || typeof displayName !== 'string') {
+    const { provider_id, display_name } = provider
+    if (typeof provider_id !== 'string' || typeof display_name !== 'string') {
       return []
     }
-    return [{ providerId, displayName }]
+    return [{ provider_id, display_name }]
   })
 }
 
 function extractErrorCode(body: unknown): string | null {
-  const envelope = extractErrorEnvelope(body)
-  const code = envelope?.code
+  const code = extractStringMember(body, 'code')
 
   return typeof code === 'string' ? code : null
 }
 
 function extractErrorDetail(body: unknown): string | null {
-  const envelope = extractErrorEnvelope(body)
-  const envelopeMessage = envelope?.message
-
-  if (typeof envelopeMessage === 'string') {
-    return envelopeMessage
-  }
-
-  if (!isRecord(body)) {
-    return null
-  }
-
-  const detail = body.detail
-  if (typeof detail === 'string') {
-    return detail
-  }
-
-  const message = body.message
-  return typeof message === 'string' ? message : null
+  return extractStringMember(body, 'detail')
 }
 
 function extractErrorDetails(body: unknown): Array<unknown> {
-  const envelope = extractErrorEnvelope(body)
-  const details = envelope?.details
-
-  if (Array.isArray(details)) {
-    return details
-  }
-
   if (!isRecord(body)) {
     return []
   }
 
-  return Array.isArray(body.detail) ? body.detail : []
+  return Array.isArray(body.errors) ? body.errors : []
 }
 
-function extractErrorEnvelope(body: unknown): Record<string, unknown> | null {
-  if (!isRecord(body) || !isRecord(body.error)) {
+function extractStringMember(body: unknown, key: string): string | null {
+  if (!isRecord(body)) {
     return null
   }
-
-  return body.error
+  const value = body[key]
+  return typeof value === 'string' ? value : null
 }
 
 function extractRetryAfterSeconds(headers: Headers | null): number | null {

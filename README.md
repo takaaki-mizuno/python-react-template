@@ -1,6 +1,6 @@
 # python-react-template
 
-FastAPI backend、React + Vite frontend、PostgreSQL 17を同居させたモノレポです。frontendのbuild成果物は`backend/static/`へ出力され、backendから静的配信できます。
+FastAPI backend、React + Vite frontend、PostgreSQL 17を同居させたモノレポです。frontendのbuild成果物は`backend/static/`へ出力され、backendから静的配信できます。Docker Compose には認証 rate limit の共有 store 検証用 Redis も含まれますが、既定起動では必須ではありません。
 
 認証機能はPostgreSQLを正とし、Alembicで`users`、`auth_sessions`、`auth_audit_logs`を管理します。
 
@@ -49,6 +49,31 @@ portを上書きした場合はアクセス先も同じ値へ読み替えてく�
 FRONTEND_PORT=3001 BACKEND_PORT=8001 POSTGRES_PORT=5433 \
   docker compose up -d --build
 ```
+
+### Redis rate limiter を有効にする
+
+通常のローカル開発は `AUTH_RATE_LIMIT_BACKEND=memory` のままで十分です。複数 worker / 複数 instance 間でログイン試行回数を共有する挙動を検証するときだけ Redis を起動して backend を切り替えます。
+
+`backend/.env` を次のように設定します。
+
+```env
+AUTH_RATE_LIMIT_BACKEND=redis
+AUTH_RATE_LIMIT_REDIS_URL=redis://redis:6379/0
+```
+
+Compose 内の backend からは service 名 `redis` を使います。host 側 pytest から Redis integration を実行する場合は公開 port を使うため、URL が異なります。
+
+```bash
+docker compose up -d redis postgres backend frontend
+
+(
+  cd backend
+  TEST_REDIS_URL="redis://localhost:${REDIS_PORT:-6379}/1" \
+    uv run pytest tests/integration/test_redis_rate_limiter.py -q
+)
+```
+
+`AUTH_RATE_LIMIT_BACKEND` などの認証設定は backend 起動時に読み込まれます。変更後は backend process/container を再起動してください。
 
 ### 管理者ユーザーを作成する
 
@@ -348,7 +373,7 @@ docker compose up -d --build postgres backend frontend
 
 ## 環境変数
 
-- ルート`.env`: Composeの`FRONTEND_PORT`、`BACKEND_PORT`、`POSTGRES_PORT`
+- ルート`.env`: Composeの`FRONTEND_PORT`、`BACKEND_PORT`、`POSTGRES_PORT`、`REDIS_PORT`
 - `backend/.env`: `ENVIRONMENT`、runtime/test DB URL、pool設定、認証session TTL、rate limit設定
 - frontend: 必要に応じて`frontend/.env.local`や`frontend/.env.development`をViteの標準ルールどおり使用。ブラウザへ露出する値には`VITE_`接頭辞が必要
 
@@ -359,6 +384,26 @@ docker compose up -d --force-recreate backend
 ```
 
 Docker Compose内ではfrontendの`/api` proxyが`http://backend:8000`を向き、backendは`postgres:5432/app`へ接続します。local Compose用の`app/app`認証情報を本番環境で使用しないでください。
+
+認証 rate limiter は既定で in-memory です。複数 worker / instance で試行回数を共有する環境では、次の Redis 設定を明示します。
+
+```env
+AUTH_RATE_LIMIT_BACKEND=redis
+AUTH_RATE_LIMIT_REDIS_URL=redis://redis:6379/0
+AUTH_RATE_LIMIT_REDIS_UNAVAILABLE_POLICY=fail_closed
+AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS=0.25
+AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS=0.25
+AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS=0.8
+AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_FAILURES=5
+AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_COOLDOWN_SECONDS=10
+AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS=100
+```
+
+`fail_closed` では Redis 障害時に正規 login も 429 になり得ます。`fail_open` は認証 availability を優先しますが、障害中は rate limit を一時的に失います。どちらも server log の `auth_rate_limiter.redis_unavailable` で通常の bucket 到達と区別します。
+
+Redis connection pool は `AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS` で worker ごとに上限を持ち、枯渇時は operation deadline の半分だけ接続取得を待ちます。pool 枯渇は circuit breaker の連続失敗には数えず、同じ process では warning log を 1 秒に 1 回へ抑制します。既定 deadline 0.8 秒では、breaker が開く前の worst-case latency は login 失敗で最大 1.6 秒、register の一部 failure path で最大 2.4 秒です。同時 in-flight request が多いほど、この待ち時間を受ける request 数も増えます。
+
+Redis mode では rate limit key が TTL を持つ前提です。production では rate limit 専用 Redis instance / DB、容量監視、`maxmemory-policy volatile-ttl` を推奨します。`allkeys-lru` は攻撃中の rate limit key が evict されて防御が弱くなる可能性があり、容量監視なしの `noeviction` は write failure と fail-closed が重なって認証停止に直結し得ます。
 
 ## OAuth/OIDC login
 

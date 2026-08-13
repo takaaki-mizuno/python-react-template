@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 
 def _csrf(client) -> str:
-    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrfToken"]
+    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrf_token"]
 
 
 def _register(client, email: str):
@@ -32,7 +32,7 @@ def _register(client, email: str):
 
 
 def _assert_error_code(response, code: str) -> None:
-    assert response.json()["error"]["code"] == code
+    assert response.json()["code"] == code
 
 
 async def _grant_admin(async_session, user_id: str) -> None:
@@ -54,7 +54,7 @@ async def test_admin_users_requires_admin_permission(client, async_session) -> N
     response = client.get("/api/admin/users")
 
     assert response.status_code == 403
-    _assert_error_code(response, "PERMISSION_DENIED")
+    _assert_error_code(response, "permission_denied")
 
 
 async def test_admin_users_create_list_get_patch_and_delete(client, async_session) -> None:
@@ -67,7 +67,7 @@ async def test_admin_users_create_list_get_patch_and_delete(client, async_sessio
         json={
             "email": "Created-Admin-CRUD@Example.com",
             "password": "Password@123!",
-            "isActive": True,
+            "is_active": True,
             "roles": ["admin"],
         },
         headers={"X-CSRF-Token": _csrf(client)},
@@ -81,18 +81,18 @@ async def test_admin_users_create_list_get_patch_and_delete(client, async_sessio
     list_response = client.get(
         "/api/admin/users",
         params={
-            "search": "created-admin-crud",
+            "query": "created-admin-crud",
             "role": "admin",
-            "isActive": "true",
+            "is_active": "true",
             "offset": "0",
             "limit": "20",
         },
     )
     assert list_response.status_code == 200
     list_body = list_response.json()
-    assert list_body["total"] == 1
-    assert any(item["id"] == created["id"] for item in list_body["items"])
-    assert "permissions" not in list_body["items"][0]
+    assert list_body["count"] == 1
+    assert any(item["id"] == created["id"] for item in list_body["data"])
+    assert "permissions" not in list_body["data"][0]
 
     get_response = client.get(f"/api/admin/users/{created['id']}")
     assert get_response.status_code == 200
@@ -102,14 +102,14 @@ async def test_admin_users_create_list_get_patch_and_delete(client, async_sessio
         f"/api/admin/users/{created['id']}",
         json={
             "email": "patched-admin-crud@example.com",
-            "isActive": False,
+            "is_active": False,
             "roles": [],
         },
         headers={"X-CSRF-Token": _csrf(client)},
     )
     assert patch_response.status_code == 200
     assert patch_response.json()["email"] == "patched-admin-crud@example.com"
-    assert patch_response.json()["isActive"] is False
+    assert patch_response.json()["is_active"] is False
     assert patch_response.json()["roles"] == []
 
     delete_response = client.delete(
@@ -119,7 +119,7 @@ async def test_admin_users_create_list_get_patch_and_delete(client, async_sessio
     assert delete_response.status_code == 204
     missing_response = client.get(f"/api/admin/users/{created['id']}")
     assert missing_response.status_code == 404
-    _assert_error_code(missing_response, "USER_NOT_FOUND")
+    _assert_error_code(missing_response, "user_not_found")
 
     deleted_at = (await async_session.execute(
         text("SELECT deleted_at FROM users WHERE id = :user_id"),
@@ -154,7 +154,7 @@ async def test_admin_users_list_paginates_case_insensitive_search_and_excludes_d
     first_page_response = client.get(
         "/api/admin/users",
         params={
-            "search": "PAGE-FILTER",
+            "query": "PAGE-FILTER",
             "offset": "0",
             "limit": "1",
         },
@@ -162,7 +162,7 @@ async def test_admin_users_list_paginates_case_insensitive_search_and_excludes_d
     second_page_response = client.get(
         "/api/admin/users",
         params={
-            "search": "PAGE-FILTER",
+            "query": "PAGE-FILTER",
             "offset": "1",
             "limit": "1",
         },
@@ -172,17 +172,17 @@ async def test_admin_users_list_paginates_case_insensitive_search_and_excludes_d
     assert second_page_response.status_code == 200
     first_page = first_page_response.json()
     second_page = second_page_response.json()
-    assert first_page["total"] == 3
-    assert second_page["total"] == 3
+    assert first_page["count"] == 3
+    assert second_page["count"] == 3
     assert first_page["offset"] == 0
     assert second_page["offset"] == 1
     assert first_page["limit"] == 1
     assert second_page["limit"] == 1
-    assert len(first_page["items"]) == 1
-    assert len(second_page["items"]) == 1
+    assert len(first_page["data"]) == 1
+    assert len(second_page["data"]) == 1
     kept_user_ids = {str(user.id) for user in kept_users}
-    first_page_ids = {item["id"] for item in first_page["items"]}
-    second_page_ids = {item["id"] for item in second_page["items"]}
+    first_page_ids = {item["id"] for item in first_page["data"]}
+    second_page_ids = {item["id"] for item in second_page["data"]}
     assert first_page_ids <= kept_user_ids
     assert second_page_ids <= kept_user_ids
     assert first_page_ids.isdisjoint(second_page_ids)
@@ -205,7 +205,7 @@ async def test_admin_user_create_duplicate_email_returns_409(client, async_sessi
     )
 
     assert response.status_code == 409
-    _assert_error_code(response, "EMAIL_ALREADY_REGISTERED")
+    _assert_error_code(response, "email_already_registered")
 
 
 async def test_admin_user_patch_password_revokes_target_sessions(client, async_session) -> None:
@@ -287,7 +287,7 @@ async def test_admin_user_create_requires_csrf(client, async_session) -> None:
     )
 
     assert response.status_code == 403
-    _assert_error_code(response, "CSRF_VALIDATION_FAILED")
+    _assert_error_code(response, "csrf_validation_failed")
 
 
 async def test_admin_user_patch_roles_is_atomic_for_unknown_role(client, async_session) -> None:
@@ -309,5 +309,5 @@ async def test_admin_user_patch_roles_is_atomic_for_unknown_role(client, async_s
         {"user_id": target.id},
     )).scalar_one()
     assert response.status_code == 422
-    _assert_error_code(response, "ROLE_NOT_FOUND")
+    _assert_error_code(response, "role_not_found")
     assert refreshed_email == "atomic-admin-crud@example.com"

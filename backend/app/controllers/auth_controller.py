@@ -28,8 +28,9 @@ from app.models.auth_errors import (AccountDeletionConfirmationMismatchError,
                                     InvalidCredentialsError, RateLimitExceededError,
                                     WeakPasswordError)
 from app.models.auth_schemas import (AccountDeletionRequest, AuthUserResponse, CsrfTokenResponse,
-                                     LoginRequest, RegisterRequest, UpdateAuthUserRequest)
-from app.models.error import ErrorResponse
+                                     LoginRequest, OidcProviderListResponse, OidcProviderResponse,
+                                     RegisterRequest, UpdateAuthUserRequest)
+from app.models.error import problem_response_openapi
 from app.models.language import DEFAULT_LANGUAGE_CODE, is_supported_language_code
 # yapf: disable
 from app.models.oidc_errors import (OidcAuthorizationRateLimitedError,
@@ -49,62 +50,37 @@ from app.models.user import AuthUserUpdateChanges
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-ErrorResponses = dict[int | str, dict[str, Any]]
+ProblemResponses = dict[int | str, dict[str, Any]]
 
-ME_ERROR_RESPONSES: ErrorResponses = {
-    401: {
-        "model": ErrorResponse
-    },
+ME_ERROR_RESPONSES: ProblemResponses = {
+    401: problem_response_openapi(),
+    403: problem_response_openapi(),
+    422: problem_response_openapi(),
 }
-REGISTER_ERROR_RESPONSES: ErrorResponses = {
-    403: {
-        "model": ErrorResponse
-    },
-    409: {
-        "model": ErrorResponse
-    },
-    422: {
-        "model": ErrorResponse
-    },
-    429: {
-        "model": ErrorResponse
-    },
+OIDC_REDIRECT_ERROR_RESPONSES: ProblemResponses = {
+    422: problem_response_openapi(),
 }
-LOGIN_ERROR_RESPONSES: ErrorResponses = {
-    401: {
-        "model": ErrorResponse
-    },
-    403: {
-        "model": ErrorResponse
-    },
-    422: {
-        "model": ErrorResponse
-    },
-    429: {
-        "model": ErrorResponse
-    },
+REGISTER_ERROR_RESPONSES: ProblemResponses = {
+    403: problem_response_openapi(),
+    409: problem_response_openapi(),
+    422: problem_response_openapi(),
+    429: problem_response_openapi(),
 }
-LOGOUT_ERROR_RESPONSES: ErrorResponses = {
-    403: {
-        "model": ErrorResponse
-    },
+LOGIN_ERROR_RESPONSES: ProblemResponses = {
+    401: problem_response_openapi(),
+    403: problem_response_openapi(),
+    422: problem_response_openapi(),
+    429: problem_response_openapi(),
 }
-DELETE_ACCOUNT_ERROR_RESPONSES: ErrorResponses = {
-    400: {
-        "model": ErrorResponse
-    },
-    401: {
-        "model": ErrorResponse
-    },
-    403: {
-        "model": ErrorResponse
-    },
-    422: {
-        "model": ErrorResponse
-    },
-    429: {
-        "model": ErrorResponse
-    },
+LOGOUT_ERROR_RESPONSES: ProblemResponses = {
+    403: problem_response_openapi(),
+}
+DELETE_ACCOUNT_ERROR_RESPONSES: ProblemResponses = {
+    400: problem_response_openapi(),
+    401: problem_response_openapi(),
+    403: problem_response_openapi(),
+    422: problem_response_openapi(),
+    429: problem_response_openapi(),
 }
 
 
@@ -250,8 +226,8 @@ def oidc_start_failure_redirect(redirect_path: str, error: Exception) -> Redirec
     return RedirectResponse(
         merge_redirect_query(
             redirect_path,
-            oidcError=oidc_error_code_for_exception(error),
-            oidcReauth=None,
+            oidc_error=oidc_error_code_for_exception(error),
+            oidc_reauth=None,
         ),
         status_code=303,
     )
@@ -322,14 +298,14 @@ def oidc_callback_failure_redirect(
     if purpose == "account_deletion_reauth":
         target = merge_redirect_query(
             redirect_path,
-            oidcError=error_code,
-            oidcReauth=None,
+            oidc_error=error_code,
+            oidc_reauth=None,
         )
     else:
         target = merge_redirect_query(
             "/login",
-            oidcError=error_code,
-            oidcReauth=None,
+            oidc_error=error_code,
+            oidc_reauth=None,
         )
     response = oidc_redirect(target)
     if binding_cookie_name is not None:
@@ -337,26 +313,26 @@ def oidc_callback_failure_redirect(
     return response
 
 
-@router.get("/oidc/providers")
+@router.get("/oidc/providers", response_model=OidcProviderListResponse)
 async def list_oidc_providers(
         response: Response,
         oidc_settings: OidcSettings = Depends(get_oidc_settings),
-) -> dict[str, list[dict[str, str]]]:
+) -> OidcProviderListResponse:
     response.headers["Cache-Control"] = "no-store"
-    return {
-        "providers": [{
-            "providerId": provider.provider_id,
-            "displayName": provider.display_name,
-        } for provider in oidc_settings.providers]
-    }
+    return OidcProviderListResponse(data=[
+        OidcProviderResponse(
+            provider_id=provider.provider_id,
+            display_name=provider.display_name,
+        ) for provider in oidc_settings.providers
+    ])
 
 
-@router.get("/oidc/{provider_id}/start")
+@router.get("/oidc/{provider_id}/start", responses=OIDC_REDIRECT_ERROR_RESPONSES)
 async def start_oidc_login(
         provider_id: str,
         request: Request,
         redirect: str | None = None,
-        language_code_param: str | None = Query(default=None, alias="languageCode"),
+        language_code_param: str | None = Query(default=None, alias="language_code"),
         auth_settings: AuthSettings = Depends(get_auth_settings),
         usecase: OAuthOidcUsecaseInterface = Depends(get_oauth_oidc_usecase),
         logger: Logger = Depends(get_logger),
@@ -389,7 +365,7 @@ async def start_oidc_login(
     return response
 
 
-@router.get("/oidc/{provider_id}/reauth")
+@router.get("/oidc/{provider_id}/reauth", responses=OIDC_REDIRECT_ERROR_RESPONSES)
 async def start_oidc_reauth(
         provider_id: str,
         request: Request,
@@ -433,7 +409,7 @@ async def start_oidc_reauth(
     return response
 
 
-@router.get("/oidc/{provider_id}/callback")
+@router.get("/oidc/{provider_id}/callback", responses=OIDC_REDIRECT_ERROR_RESPONSES)
 async def complete_oidc_callback(
         provider_id: str,
         request: Request,
@@ -523,8 +499,8 @@ async def complete_oidc_callback(
         response = oidc_redirect(
             merge_redirect_query(
                 result.redirect_path,
-                oidcError=None,
-                oidcReauth=None,
+                oidc_error=None,
+                oidc_reauth=None,
             ))
         set_session_cookie(
             response,
@@ -545,8 +521,8 @@ async def complete_oidc_callback(
         response = oidc_redirect(
             merge_redirect_query(
                 result.redirect_path,
-                oidcError=None,
-                oidcReauth="success",
+                oidc_error=None,
+                oidc_reauth="success",
             ))
         set_csrf_cookie(
             response,
@@ -571,7 +547,7 @@ async def get_csrf(
     if existing_csrf_token:
         session_token = request.cookies.get(session_cookie_name(auth_settings))
         if not session_token:
-            return CsrfTokenResponse(csrfToken=existing_csrf_token)
+            return CsrfTokenResponse(csrf_token=existing_csrf_token)
 
         csrf_status = await usecase.validate_session_csrf(
             session_token=session_token,
@@ -583,7 +559,7 @@ async def get_csrf(
                 SessionCsrfStatus.VALID,
                 SessionCsrfStatus.NO_SESSION,
         }:
-            return CsrfTokenResponse(csrfToken=existing_csrf_token)
+            return CsrfTokenResponse(csrf_token=existing_csrf_token)
 
     csrf_token = await usecase.issue_csrf_token(session_token=request.cookies.get(
         session_cookie_name(auth_settings)), )
@@ -593,7 +569,7 @@ async def get_csrf(
         secure=is_secure_request(request, auth_settings),
         max_age_seconds=auth_settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS,
     )
-    return CsrfTokenResponse(csrfToken=csrf_token)
+    return CsrfTokenResponse(csrf_token=csrf_token)
 
 
 @router.get("/me", response_model=AuthUserResponse, responses=ME_ERROR_RESPONSES)
@@ -648,32 +624,32 @@ async def delete_me(
     except AccountDeletionConfirmationMismatchError as error:
         raise api_error(
             400,
-            "ACCOUNT_DELETION_CONFIRMATION_MISMATCH",
+            "account_deletion_confirmation_mismatch",
             "Account deletion confirmation did not match",
         ) from error
     except AccountDeletionReauthRequiredError as error:
         raise api_error(
             400,
-            "ACCOUNT_DELETION_REAUTH_REQUIRED",
+            "account_deletion_reauth_required",
             "Password confirmation is required",
         ) from error
     except AccountDeletionInvalidPasswordError as error:
         raise api_error(
             400,
-            "ACCOUNT_DELETION_INVALID_PASSWORD",
+            "account_deletion_invalid_password",
             "Password confirmation failed",
         ) from error
     except AccountDeletionOidcReauthRequiredError as error:
         raise api_error(
             400,
-            "ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED",
+            "account_deletion_oidc_reauth_required",
             "OIDC reauthentication is required",
-            details=error.linked_providers,
+            extensions={"providers": error.linked_providers},
         ) from error
     except RateLimitExceededError as error:
         raise api_error(
             429,
-            "ACCOUNT_DELETION_REAUTH_RATE_LIMITED",
+            "account_deletion_reauth_rate_limited",
             "Too many account deletion confirmation attempts",
             headers={
                 "Retry-After":
@@ -713,13 +689,13 @@ async def register(
     except EmailAlreadyRegisteredError as error:
         raise api_error(
             409,
-            "EMAIL_ALREADY_REGISTERED",
+            "email_already_registered",
             "Email already registered",
         ) from error
     except RateLimitExceededError as error:
         raise api_error(
             429,
-            "REGISTER_RATE_LIMITED",
+            "register_rate_limited",
             "Too many register attempts",
             headers={
                 "Retry-After":
@@ -727,7 +703,7 @@ async def register(
             },
         ) from error
     except WeakPasswordError as error:
-        raise api_error(422, "WEAK_PASSWORD", str(error)) from error
+        raise api_error(422, "weak_password", "Password does not meet requirements") from error
 
     secure = is_secure_request(request, auth_settings)
     set_session_cookie(
@@ -767,11 +743,15 @@ async def login(
             user_agent=get_user_agent(request),
         )
     except InvalidCredentialsError as error:
-        raise api_error(401, "INVALID_CREDENTIALS", "Unauthorized") from error
+        raise api_error(
+            401,
+            "invalid_credentials",
+            "The email or password is incorrect.",
+        ) from error
     except RateLimitExceededError as error:
         raise api_error(
             429,
-            "LOGIN_RATE_LIMITED",
+            "login_rate_limited",
             "Too many login attempts",
             headers={
                 "Retry-After":

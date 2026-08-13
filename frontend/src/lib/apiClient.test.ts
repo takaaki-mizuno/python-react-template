@@ -53,7 +53,7 @@ test('OIDC callback 後の unsafe request は現在の csrf_token cookie を読�
 
   await apiClient.delete('/api/auth/me', {
     body: {
-      confirmEmail: 'user@example.com',
+      confirm_email: 'user@example.com',
     },
   })
 
@@ -100,7 +100,7 @@ test('csrf_token cookie がない unsafe request では csrf を 1 回 bootstrap
   expect(fetchMock).toHaveBeenCalledTimes(2)
 })
 
-test('CSRF_VALIDATION_FAILED の 403 は csrf 再取得後に 1 回だけ retry する', async () => {
+test('csrf_validation_failed の 403 は csrf 再取得後に 1 回だけ retry する', async () => {
   document.cookie = 'csrf_token=stale-token; path=/'
   const fetchMock = vi
     .fn()
@@ -108,10 +108,11 @@ test('CSRF_VALIDATION_FAILED の 403 は csrf 再取得後に 1 回だけ retry 
       Promise.resolve(
         new Response(
           JSON.stringify({
-            error: {
-              code: 'CSRF_VALIDATION_FAILED',
-              message: 'CSRF validation failed',
-            },
+            type: '/problems/csrf_validation_failed',
+            title: 'CSRF validation failed',
+            status: 403,
+            detail: 'CSRF validation failed',
+            code: 'csrf_validation_failed',
           }),
           {
             status: 403,
@@ -196,10 +197,11 @@ test('古い csrf bootstrap の完了は強制再取得中の bootstrap を解�
         return Promise.resolve(
           new Response(
             JSON.stringify({
-              error: {
-                code: 'CSRF_VALIDATION_FAILED',
-                message: 'CSRF validation failed',
-              },
+              type: '/problems/csrf_validation_failed',
+              title: 'CSRF validation failed',
+              status: 403,
+              detail: 'CSRF validation failed',
+              code: 'csrf_validation_failed',
             }),
             {
               status: 403,
@@ -238,10 +240,11 @@ test('古い csrf bootstrap の完了は強制再取得中の bootstrap を解�
 test('CSRF retry 後も 403 の場合は ApiError を投げる', async () => {
   document.cookie = 'csrf_token=stale-token; path=/'
   const csrfFailureBody = {
-    error: {
-      code: 'CSRF_VALIDATION_FAILED',
-      message: 'CSRF validation failed',
-    },
+    type: '/problems/csrf_validation_failed',
+    title: 'CSRF validation failed',
+    status: 403,
+    detail: 'CSRF validation failed',
+    code: 'csrf_validation_failed',
   }
   const fetchMock = vi
     .fn()
@@ -266,7 +269,7 @@ test('CSRF retry 後も 403 の場合は ApiError を投げる', async () => {
   await expect(apiClient.post('/api/auth/login', { body: {} })).rejects.toEqual(
     expect.objectContaining({
       status: 403,
-      code: 'CSRF_VALIDATION_FAILED',
+      code: 'csrf_validation_failed',
     }),
   )
   expect(fetchMock).toHaveBeenCalledTimes(3)
@@ -297,7 +300,11 @@ test('429 response の Retry-After header を ApiError へ渡す', async () => {
     vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          error: { code: 'RATE_LIMITED', message: 'Too Many Requests' },
+          type: '/problems/rate_limited',
+          title: 'Rate limited',
+          status: 429,
+          detail: 'Too Many Requests',
+          code: 'rate_limited',
         }),
         {
           status: 429,
@@ -324,7 +331,11 @@ test('Retry-After header が不正な場合は retryAfterSeconds を null にす
     vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          error: { code: 'RATE_LIMITED', message: 'Too Many Requests' },
+          type: '/problems/rate_limited',
+          title: 'Rate limited',
+          status: 429,
+          detail: 'Too Many Requests',
+          code: 'rate_limited',
         }),
         {
           status: 429,

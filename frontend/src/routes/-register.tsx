@@ -44,9 +44,9 @@ export function RegisterPage({
       setErrorMessage(
         toUserMessage(error, {
           code: {
-            EMAIL_ALREADY_REGISTERED: t('feedback.emailAlreadyRegistered'),
-            REGISTER_RATE_LIMITED: t('feedback.registerRateLimited'),
-            WEAK_PASSWORD: t('feedback.weakPassword'),
+            email_already_registered: t('feedback.emailAlreadyRegistered'),
+            register_rate_limited: t('feedback.registerRateLimited'),
+            weak_password: t('feedback.weakPassword'),
           },
           status: { 422: t('feedback.checkInput') },
           fallback: t('feedback.registerFailed'),
@@ -62,7 +62,7 @@ export function RegisterPage({
         isPending={register.isPending}
         onSubmit={(values) => {
           setErrorMessage(null)
-          register.mutate({ ...values, languageCode: locale })
+          register.mutate({ ...values, language_code: locale })
         }}
       />
       {providers.data && providers.data.length > 0 ? (
@@ -76,11 +76,11 @@ export function RegisterPage({
           </div>
           {providers.data.map((provider) => (
             <OidcProviderButton
-              key={provider.providerId}
+              key={provider.provider_id}
               isDisabled={providers.isFetching}
               onClick={() =>
                 startOidcLogin(
-                  provider.providerId,
+                  provider.provider_id,
                   redirectHref,
                   undefined,
                   locale,

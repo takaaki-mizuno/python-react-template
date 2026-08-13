@@ -146,6 +146,16 @@ def test_auth_settings_rejects_non_positive_password_hash_concurrency(monkeypatc
 def test_auth_settings_rate_limit_failure_defaults():
     settings = _settings()
 
+    assert settings.AUTH_RATE_LIMIT_BACKEND == "memory"
+    assert settings.AUTH_RATE_LIMIT_REDIS_URL == ""
+    assert settings.AUTH_RATE_LIMIT_REDIS_KEY_PREFIX == "auth:rate_limit"
+    assert settings.AUTH_RATE_LIMIT_REDIS_UNAVAILABLE_POLICY == "fail_closed"
+    assert settings.AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS == 0.25
+    assert settings.AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS == 0.25
+    assert settings.AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS == 0.8
+    assert settings.AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_FAILURES == 5
+    assert settings.AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_COOLDOWN_SECONDS == 10
+    assert settings.AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS == 100
     assert settings.AUTH_RATE_LIMIT_FAILURES_PER_EMAIL_IP == 5
     assert settings.AUTH_RATE_LIMIT_FAILURES_PER_IP == 20
     assert settings.AUTH_RATE_LIMIT_FAILURES_PER_EMAIL == 20
@@ -161,6 +171,109 @@ def test_auth_settings_rejects_non_positive_rate_limit_values(monkeypatch):
         _settings()
     except ValidationError as error:
         assert "value must be at least 1" in str(error)
+    else:
+        raise AssertionError("Expected settings validation to fail")
+
+
+def test_auth_settings_requires_redis_url_when_backend_is_redis(monkeypatch):
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "redis")
+
+    try:
+        _settings()
+    except ValidationError as error:
+        assert "AUTH_RATE_LIMIT_REDIS_URL is required when AUTH_RATE_LIMIT_BACKEND=redis" in str(
+            error)
+    else:
+        raise AssertionError("Expected settings validation to fail")
+
+
+def test_auth_settings_reads_redis_rate_limit_settings_from_env(monkeypatch):
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_URL", "redis://localhost:6379/1")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_KEY_PREFIX", "test:auth:rate_limit")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_UNAVAILABLE_POLICY", "fail_open")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS", "0.4")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS", "0.2")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS", "1.0")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_FAILURES", "7")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "15")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS", "25")
+
+    settings = _settings()
+
+    assert settings.AUTH_RATE_LIMIT_BACKEND == "redis"
+    assert settings.AUTH_RATE_LIMIT_REDIS_URL == "redis://localhost:6379/1"
+    assert settings.AUTH_RATE_LIMIT_REDIS_KEY_PREFIX == "test:auth:rate_limit"
+    assert settings.AUTH_RATE_LIMIT_REDIS_UNAVAILABLE_POLICY == "fail_open"
+    assert settings.AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS == 0.4
+    assert settings.AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS == 0.2
+    assert settings.AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS == 1.0
+    assert settings.AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_FAILURES == 7
+    assert settings.AUTH_RATE_LIMIT_REDIS_CIRCUIT_BREAKER_COOLDOWN_SECONDS == 15
+    assert settings.AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS == 25
+
+
+@pytest.mark.parametrize(
+    ("env_name", "env_value"),
+    [
+        ("AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS", "0.049"),
+        ("AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS", "0.049"),
+        ("AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS", "0.049"),
+    ],
+)
+def test_auth_settings_rejects_invalid_redis_timeout_or_deadline(
+    monkeypatch,
+    env_name: str,
+    env_value: str,
+):
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_URL", "redis://localhost:6379/1")
+    monkeypatch.setenv(env_name, env_value)
+
+    try:
+        _settings()
+    except ValidationError as error:
+        assert "must be at least 0.05" in str(error)
+    else:
+        raise AssertionError("Expected settings validation to fail")
+
+
+def test_auth_settings_rejects_redis_deadline_shorter_than_connect_plus_two_socket_timeouts(
+    monkeypatch, ):
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_URL", "redis://localhost:6379/1")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS", "1.0")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS", "0.25")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS", "0.6")
+
+    try:
+        _settings()
+    except ValidationError as error:
+        assert "AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS must be at least" in str(error)
+    else:
+        raise AssertionError("Expected settings validation to fail")
+
+
+def test_auth_settings_rejects_invalid_redis_max_connections(monkeypatch):
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS", "0")
+
+    try:
+        _settings()
+    except ValidationError as error:
+        assert "AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS must be at least 1" in str(error)
+    else:
+        raise AssertionError("Expected settings validation to fail")
+
+
+@pytest.mark.parametrize("prefix",
+                         ["", "   ", "auth:*", "auth:?x", "auth:[x]", ":::", "auth:\nrate"])
+def test_auth_settings_rejects_invalid_redis_key_prefix(monkeypatch, prefix: str):
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_KEY_PREFIX", prefix)
+
+    try:
+        _settings()
+    except ValidationError as error:
+        assert "AUTH_RATE_LIMIT_REDIS_KEY_PREFIX" in str(error)
     else:
         raise AssertionError("Expected settings validation to fail")
 

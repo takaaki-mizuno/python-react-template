@@ -114,6 +114,9 @@ components/
   - `QueryClient` は `main.tsx` で Provider に設定することを推奨。
 - ルート単位での初期データは TanStack Router の `loader` を併用可。
 - API 呼び出しの共通処理は `lib/` または `hooks/` に集約する。
+- Backend API の JSON key は `snake_case` を正とし、API boundary の TypeScript 型も `snake_case` のまま定義する。
+- Backend error は RFC 9457 Problem Details (`application/problem+json`) で返る。`ApiError` は `type` / `title` / `status` / `detail` / `instance` / `code` / `errors` を読む。旧 `{ error: ... }` envelope fallback は追加しない。
+- API 由来の日時は Unix timestamp seconds として扱い、表示には `formatUnixTimestampSeconds()` を使う。
 
 ## 5.1 Auth / Permission Guard
 
@@ -128,7 +131,7 @@ components/
 ## 5.2 Admin CRUD
 
 - Admin API client は `src/lib/<feature>Api.ts` に置き、HTTP query は `URLSearchParams` で組み立てる。
-- Admin 一覧の route search は `offset` を必須の内部状態とし、`search`、`isActive`、`role` は未指定時に省略する。
+- Admin 一覧の route search は `offset` を必須の内部状態とし、`query`、`is_active`、`role` は未指定時に省略する。
 - Reusable UI は `molecules` に置く。検索 toolbar、data table、offset pagination、confirm dialog は user 固有の副作用を持たせない。
 - Feature screen は `organisms/<Feature>/` に置く。React Query、mutation、error message、form state はこの層で扱う。
 - Admin 画面は表中心の業務 UI にし、landing page 的な hero や card の入れ子を避ける。

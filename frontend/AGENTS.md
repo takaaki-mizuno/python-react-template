@@ -98,6 +98,9 @@ npm install -D <pkg>   # devDependencies
 ## API / Auth UI
 
 - API error の画面表示は `src/lib/apiError.ts` の `toUserMessage()` を使い、各画面で `ApiError.body` を直接 parse しない
+- Backend error response は RFC 9457 Problem Details (`application/problem+json`) であり、`ApiError` は `type` / `title` / `status` / `detail` / `instance` / `code` / `errors` を読む。旧 `{ error: ... }` envelope fallback は追加しない
+- API boundary の TypeScript 型は Backend wire format と同じ `snake_case` を使う。UI 内部で別名にする場合は API client 境界で明示変換する
+- API 由来の日時は Unix timestamp seconds として扱い、表示には `formatUnixTimestampSeconds()` を使う。JavaScript milliseconds と混同しない
 - unsafe request は `src/lib/apiClient.ts` を使い、個別 component / route から `/api/auth/csrf` を直接 fetch しない
 - `AuthUser.roles` / `AuthUser.permissions` は UI 表示制御と route guard 用であり、セキュリティ境界ではない。権限が必要な Backend endpoint は必ず Backend 側の permission dependency で守る
 - permission 判定は `src/lib/permissions.ts` を使う。protected route では `_authenticated` parent の `requireAuth()` が `/api/auth/me` を server-confirming fetch した後、子 route の permission guard は `ensureQueryData(currentUserQueryOptions())` で同じ cache を読む
@@ -115,7 +118,7 @@ npm install -D <pkg>   # devDependencies
 - 翻訳本文の正は `src/lib/i18n/locales/{ja,en}/*.json`。`src/lib/i18n/resources.ts` は JSON import と集約だけを行い、翻訳本文を直書きしない
 - 新規 UI 文言は component / route に直書きせず、用途に応じて `common` / `auth` / `landing` / `app` / `admin` namespace に追加する。日本語と英語の JSON key 構造は `src/lib/i18n/resources.test.ts` で一致させる
 - current language の書き手は `src/lib/i18n/LanguageSyncManager.tsx` に集約する。mutation handler や login/register handler から `i18n.changeLanguage()` を直接呼ばない
-- public route は `/ja/...` / `/en/...` の URL locale を優先し、authenticated route は `/app` / `/admin` のように locale prefix を持たず `AuthUser.languageCode` を優先する
+- public route は `/ja/...` / `/en/...` の URL locale を優先し、authenticated route は `/app` / `/admin` のように locale prefix を持たず `AuthUser.language_code` を優先する
 - React component 外の翻訳は `src/lib/i18n/i18n.ts` の i18n instance を使う。`src/lib/apiError.ts` のような pure utility で `useTranslation()` を呼ばない
 - 日付・数値など locale 依存 format は `src/lib/i18n/formatters.ts` に集約し、画面で `Intl.DateTimeFormat('ja-JP')` などを直書きしない
 - 新しい言語を追加する場合は、backend の `SUPPORTED_LANGUAGE_CODES`、`users.language_code` CHECK、`auth_oidc_authorization_states.language_code` CHECK、frontend の `languageOptions`、locale JSON、formatter locale map、translation key parity test を同じ変更で更新する
@@ -145,13 +148,13 @@ npm install -D <pkg>   # devDependencies
 
 ## Phase 8 OAuth/OIDC UI 規約
 
-- OAuth/OIDC login button は login/register の既存 password form と併置する。provider list は backend の `/api/auth/oidc/providers` から読み、`providerId` と `displayName` だけを使う。provider 未設定、loading、error の場合は password form だけを表示し、実装説明文を画面に出さない。
-- OIDC 開始は JSON API ではなく full-page redirect helper を使う。login は `/api/auth/oidc/{providerId}/start?redirect=...`、account deletion reauth は `/api/auth/oidc/{providerId}/reauth?redirect=/app/settings` へ遷移する。redirect は `URLSearchParams` で percent-encode し、query / hash を壊さない。
+- OAuth/OIDC login button は login/register の既存 password form と併置する。provider list は backend の `/api/auth/oidc/providers` から読み、`provider_id` と `display_name` だけを使う。provider 未設定、loading、error の場合は password form だけを表示し、実装説明文を画面に出さない。
+- OIDC 開始は JSON API ではなく full-page redirect helper を使う。login は `/api/auth/oidc/{provider_id}/start?redirect=...`、account deletion reauth は `/api/auth/oidc/{provider_id}/reauth?redirect=/app/settings` へ遷移する。redirect は `URLSearchParams` で percent-encode し、query / hash を壊さない。
 - Frontend callback route は作らない。backend callback が authorization code を交換し、session cookie / CSRF cookie を発行し、保存済み internal redirect path への最終 redirect まで完結する。SPA route、frontend state、browser history に authorization code、ID token、`access_token`、`refresh_token` を置かない。
-- Login callback failure は `/login?oidcError=<machine-code>` を form-level message に変換する。`OIDC_IDENTITY_LINK_REQUIRED`、`OIDC_IDENTITY_LINK_DISABLED`、`OIDC_EMAIL_NOT_VERIFIED`、`OIDC_PROVISIONING_DISABLED` は user-facing message を持たせる。`ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` は DELETE `/api/auth/me` の JSON error code であり、login callback query には使わない。
+- Login callback failure は `/login?oidc_error=<machine-code>` を form-level message に変換する。`OIDC_IDENTITY_LINK_REQUIRED`、`OIDC_IDENTITY_LINK_DISABLED`、`OIDC_EMAIL_NOT_VERIFIED`、`OIDC_PROVISIONING_DISABLED` は user-facing message を持たせる。`account_deletion_oidc_reauth_required` は DELETE `/api/auth/me` の JSON error code であり、login callback query には使わない。
 - Login page は `OIDC_AUTHORIZATION_RATE_LIMITED`、`OIDC_PROVIDER_UNAVAILABLE`、`OIDC_PROVIDER_METADATA_INVALID`、`OIDC_PROVIDER_ACCESS_DENIED`、`OIDC_IDENTITY_UNAVAILABLE`、`OIDC_REAUTH_AUTHENTICATION_REQUIRED` も専用 message を持つ。未知の OIDC query code は generic OAuth/OIDC failure message にする。
-- Account deletion が `ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` を返した場合、`error.details` の linked providers (`providerId`, `displayName`) から reauth button を表示する。field に紐づかない error なので confirm email / password input を invalid にしない。
+- Account deletion が `account_deletion_oidc_reauth_required` を返した場合、Problem Details `errors` の linked providers (`provider_id`, `display_name`) から reauth button を表示する。field に紐づかない error なので confirm email / password input を invalid にしない。
 - linked providers が空配列の場合は reauth button を表示せず、再認証できる provider がないため support/admin deletion が必要である form-level message を表示する。
-- Account deletion reauth callback result は settings page の form-level feedback として扱う。`oidcReauth=success` は success message、`OIDC_REAUTH_SUBJECT_MISMATCH`、`OIDC_REAUTH_STALE`、`OIDC_REAUTH_AUTH_TIME_REQUIRED`、`OIDC_PROVIDER_ACCESS_DENIED`、`OIDC_PROVIDER_UNAVAILABLE`、`OIDC_IDENTITY_UNAVAILABLE` は account deletion 用 error message にする。login page へ遷移させない。
+- Account deletion reauth callback result は settings page の form-level feedback として扱う。`oidc_reauth=success` は success message、`OIDC_REAUTH_SUBJECT_MISMATCH`、`OIDC_REAUTH_STALE`、`OIDC_REAUTH_AUTH_TIME_REQUIRED`、`OIDC_PROVIDER_ACCESS_DENIED`、`OIDC_PROVIDER_UNAVAILABLE`、`OIDC_IDENTITY_UNAVAILABLE` は account deletion 用 error message にする。login page へ遷移させない。
 - OIDC callback 後の unsafe request は現在の `csrf_token` cookie から `X-CSRF-Token` を読む。個別 route/component から `/api/auth/csrf` を直接 fetch せず、必ず `apiClient` を使う。
 - Reauth callback 後は full-page load と `queryKeys.auth.me` の initial fetch で現在 user を読む。stale user cache を前提に account deletion submit を進めない。

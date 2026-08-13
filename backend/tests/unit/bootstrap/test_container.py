@@ -1,6 +1,7 @@
 from logging import Logger
 
 import pytest
+from injector import Injector
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -8,6 +9,7 @@ from app.bootstrap import container as container_module
 from app.config import Config
 from app.config.auth import AuthSettings
 from app.config.oidc import OidcProviderSettings, OidcSettings
+from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.admin_user_repository_interface import AdminUserRepositoryInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.oidc_provider_client_interface import OidcProviderClientInterface
@@ -17,7 +19,9 @@ from app.interfaces.usecases.admin_user_usecase_interface import AdminUserUsecas
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.interfaces.usecases.oauth_oidc_usecase_interface import OAuthOidcUsecaseInterface
 from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsecaseInterface
+from app.libraries.auth_rate_limiter import InMemoryLoginRateLimiter
 from app.libraries.password_hasher import PasswordHashExecutor
+from app.libraries.redis_login_rate_limiter import RedisLoginRateLimiter
 
 
 def test_build_container_binds_module_provider_singletons(monkeypatch):
@@ -85,3 +89,77 @@ async def test_build_container_resolves_real_async_engine():
         assert isinstance(engine, AsyncEngine)
     finally:
         await engine.dispose()
+
+
+def test_build_container_binds_memory_rate_limiter_by_default(monkeypatch):
+    from app.bootstrap import modules
+
+    settings = AuthSettings(_env_file=None)
+    oidc_settings = OidcSettings()
+
+    monkeypatch.setattr(modules, "get_auth_settings", lambda: settings)
+    monkeypatch.setattr(modules, "get_oidc_settings", lambda: oidc_settings)
+    injector = Injector(modules=[
+        modules.CoreModule(),
+        modules.AuthModule(),
+    ])
+
+    rate_limiter = injector.get(LoginRateLimiterInterface)
+
+    assert isinstance(rate_limiter, InMemoryLoginRateLimiter)
+
+
+def test_build_container_binds_redis_rate_limiter_when_configured(monkeypatch):
+    from app.bootstrap import modules
+
+    created_pools = []
+    created_clients = []
+
+    class BlockingConnectionPoolFactory:
+
+        @staticmethod
+        def from_url(url: str, **kwargs):
+            pool = object()
+            created_pools.append((url, kwargs, pool))
+            return pool
+
+    class RedisFactory:
+
+        @staticmethod
+        def from_pool(pool):
+            created_clients.append(pool)
+            return object()
+
+    settings = AuthSettings(
+        _env_file=None,
+        AUTH_RATE_LIMIT_BACKEND="redis",
+        AUTH_RATE_LIMIT_REDIS_URL="redis://localhost:6379/1",
+        AUTH_RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS=0.3,
+        AUTH_RATE_LIMIT_REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS=0.2,
+        AUTH_RATE_LIMIT_REDIS_OPERATION_DEADLINE_SECONDS=0.8,
+        AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS=25,
+    )
+    oidc_settings = OidcSettings()
+    monkeypatch.setattr(modules, "get_auth_settings", lambda: settings)
+    monkeypatch.setattr(modules, "get_oidc_settings", lambda: oidc_settings)
+    monkeypatch.setattr(modules.redis, "Redis", RedisFactory)
+    monkeypatch.setattr(modules.redis, "BlockingConnectionPool", BlockingConnectionPoolFactory)
+
+    injector = Injector(modules=[
+        modules.CoreModule(),
+        modules.AuthModule(),
+    ])
+    rate_limiter = injector.get(LoginRateLimiterInterface)
+
+    assert isinstance(rate_limiter, RedisLoginRateLimiter)
+    assert created_pools == [(
+        "redis://localhost:6379/1",
+        {
+            "socket_timeout": 0.3,
+            "socket_connect_timeout": 0.2,
+            "max_connections": 25,
+            "timeout": 0.4,
+        },
+        created_clients[0],
+    )]
+    assert created_clients == [created_pools[0][2]]

@@ -3,10 +3,10 @@ import { apiClient } from './apiClient'
 export type AdminUserListItem = {
   id: string
   email: string
-  isActive: boolean
-  createdAt: string
-  updatedAt: string
-  lastLoginAt: string | null
+  is_active: boolean
+  created_at: number
+  updated_at: number
+  last_login_at: number | null
   roles: Array<string>
 }
 
@@ -16,7 +16,7 @@ export type AdminUser = AdminUserListItem & {
 
 export type AdminRole = {
   code: string
-  displayName: string
+  display_name: string
   description?: string | null
   permissions: Array<string>
 }
@@ -24,14 +24,14 @@ export type AdminRole = {
 export type AdminUserListParams = {
   offset: number
   limit: number
-  search?: string
-  isActive?: boolean
+  query?: string
+  is_active?: boolean
   role?: string
 }
 
 export type AdminUserListResponse = {
-  items: Array<AdminUserListItem>
-  total: number
+  data: Array<AdminUserListItem>
+  count: number
   offset: number
   limit: number
 }
@@ -39,14 +39,14 @@ export type AdminUserListResponse = {
 export type AdminUserCreatePayload = {
   email: string
   password: string
-  isActive: boolean
+  is_active: boolean
   roles: Array<string>
 }
 
 export type AdminUserUpdatePayload = Partial<AdminUserCreatePayload>
 
 type AdminRoleListResponse = {
-  roles: Array<AdminRole>
+  data: Array<AdminRole>
   permissions: Array<unknown>
 }
 
@@ -56,11 +56,11 @@ export async function fetchAdminUsers(
   const searchParams = new URLSearchParams()
   searchParams.set('offset', String(params.offset))
   searchParams.set('limit', String(params.limit))
-  if (params.search) {
-    searchParams.set('search', params.search)
+  if (params.query) {
+    searchParams.set('query', params.query)
   }
-  if (params.isActive !== undefined) {
-    searchParams.set('isActive', String(params.isActive))
+  if (params.is_active !== undefined) {
+    searchParams.set('is_active', String(params.is_active))
   }
   if (params.role) {
     searchParams.set('role', params.role)
@@ -96,7 +96,7 @@ export async function deleteAdminUser(userId: string): Promise<void> {
 export async function fetchAdminRoles(): Promise<Array<AdminRole>> {
   const response =
     await apiClient.get<AdminRoleListResponse>('/api/admin/roles')
-  return response.roles
+  return response.data
 }
 
 function compactPayload(

@@ -97,7 +97,7 @@ async function request<T>(
       isUnsafeMethod &&
       !hasRetriedCsrf &&
       error.status === 403 &&
-      error.code === 'CSRF_VALIDATION_FAILED'
+      error.code === 'csrf_validation_failed'
     ) {
       await bootstrapCsrfToken({ force: true })
       return request<T>(input, options, true)

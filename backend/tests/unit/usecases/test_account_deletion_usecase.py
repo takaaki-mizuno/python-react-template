@@ -115,11 +115,11 @@ class RateLimiterStub:
         self.failure_records: list[tuple[str, str, bool]] = []
         self.success_records: list[tuple[str, str]] = []
 
-    def is_allowed(self, ip_address: str, normalized_email: str) -> bool:
+    async def is_allowed(self, ip_address: str, normalized_email: str) -> bool:
         self.is_allowed_calls.append((ip_address, normalized_email))
         return self.allowed
 
-    def is_account_deletion_reauth_allowed(
+    async def is_account_deletion_reauth_allowed(
         self,
         ip_address: str,
         normalized_email: str,
@@ -127,7 +127,7 @@ class RateLimiterStub:
         self.account_deletion_allowed_calls.append((ip_address, normalized_email))
         return self.allowed
 
-    def record_failure(
+    async def record_failure(
         self,
         ip_address: str,
         normalized_email: str,
@@ -135,8 +135,11 @@ class RateLimiterStub:
     ) -> None:
         self.failure_records.append((ip_address, normalized_email, include_email_bucket))
 
-    def record_success(self, ip_address: str, normalized_email: str) -> None:
+    async def record_success(self, ip_address: str, normalized_email: str) -> None:
         self.success_records.append((ip_address, normalized_email))
+
+    async def aclose(self) -> None:
+        return None
 
 
 class PasswordHashExecutorStub:
@@ -341,8 +344,8 @@ async def test_oauth_only_user_requires_oidc_reauth_when_auth_time_missing() -> 
         )
 
     assert excinfo.value.linked_providers == [{
-        "providerId": "google",
-        "displayName": "Google",
+        "provider_id": "google",
+        "display_name": "Google",
     }]
     assert unit_of_work.transaction_entries == 0
     assert sample_repository.delete_all_for_owner_calls == []

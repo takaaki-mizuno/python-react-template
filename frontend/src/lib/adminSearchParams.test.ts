@@ -11,29 +11,31 @@ test('admin user search params は invalid offset を 0 に丸める', () => {
 })
 
 test('admin user search params は unknown boolean を undefined にする', () => {
-  expect(parseAdminUserSearchParams({ isActive: 'unknown' }).isActive).toBe(
+  expect(parseAdminUserSearchParams({ is_active: 'unknown' }).is_active).toBe(
     undefined,
   )
-  expect(parseAdminUserSearchParams({ isActive: 'true' }).isActive).toBe(true)
-  expect(parseAdminUserSearchParams({ isActive: 'false' }).isActive).toBe(false)
+  expect(parseAdminUserSearchParams({ is_active: 'true' }).is_active).toBe(true)
+  expect(parseAdminUserSearchParams({ is_active: 'false' }).is_active).toBe(
+    false,
+  )
 })
 
 test('admin user search params は空 search を undefined にする', () => {
-  expect(parseAdminUserSearchParams({ search: '   ' }).search).toBe(undefined)
+  expect(parseAdminUserSearchParams({ query: '   ' }).query).toBe(undefined)
 })
 
 test('admin user search params は role と filter を serialize する', () => {
   expect(
     serializeAdminUserSearchParams({
       offset: 20,
-      search: 'admin',
-      isActive: false,
+      query: 'admin',
+      is_active: false,
       role: 'admin',
     }),
   ).toEqual({
     offset: '20',
-    search: 'admin',
-    isActive: 'false',
+    query: 'admin',
+    is_active: 'false',
     role: 'admin',
   })
 })

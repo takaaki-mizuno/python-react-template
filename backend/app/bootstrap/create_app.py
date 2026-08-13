@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.config import Config
 from app.config.auth import AuthSettings
 from app.config.authorization import authorization_config_errors
+from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.libraries.password_hasher import PasswordHashExecutor
 
 from .container import build_container
@@ -26,18 +27,24 @@ async def lifespan(app: FastAPI):
         app_error = error
         raise
     finally:
+        cleanup_error: Exception | None = None
+        try:
+            await app.state.injector.get(LoginRateLimiterInterface).aclose()
+        except Exception as error:
+            logger.exception("Failed to close rate limiter")
+            cleanup_error = cleanup_error or error
         try:
             await app.state.injector.get(AsyncEngine).dispose()
-        except Exception:
+        except Exception as error:
             logger.exception("Failed to dispose database engine")
-            if app_error is None:
-                raise
+            cleanup_error = cleanup_error or error
         try:
             app.state.injector.get(PasswordHashExecutor).shutdown()
-        except Exception:
+        except Exception as error:
             logger.exception("Failed to shutdown password hash executor")
-            if app_error is None:
-                raise
+            cleanup_error = cleanup_error or error
+        if app_error is None and cleanup_error is not None:
+            raise cleanup_error
 
 
 def create_app() -> FastAPI:

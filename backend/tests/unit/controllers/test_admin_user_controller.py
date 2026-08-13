@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import Response
 from starlette.requests import Request
 
 from app.config.auth import AuthSettings
@@ -73,7 +74,7 @@ async def test_list_admin_users_passes_filters_and_returns_page() -> None:
         _request("GET"),
         offset=10,
         limit=20,
-        search="  Admin  ",
+        query="  Admin  ",
         role="admin",
         is_active=True,
         _auth_context=_context(),
@@ -81,8 +82,8 @@ async def test_list_admin_users_passes_filters_and_returns_page() -> None:
     )
 
     assert usecase.list_calls == [(AdminUserListQuery("Admin", True, "admin"), 10, 20)]
-    assert response.total == 1
-    assert response.items[0].roles == ["admin"]
+    assert response.count == 1
+    assert response.data[0].roles == ["admin"]
 
 
 @pytest.mark.asyncio
@@ -92,7 +93,7 @@ async def test_list_admin_users_rejects_search_over_helper_limit() -> None:
             _request("GET"),
             offset=0,
             limit=20,
-            search="x" * 321,
+            query="x" * 321,
             role=None,
             is_active=None,
             _auth_context=_context(),
@@ -100,7 +101,7 @@ async def test_list_admin_users_rejects_search_over_helper_limit() -> None:
         )
 
     assert error.value.status_code == 422
-    assert error.value.detail["code"] == "INVALID_ADMIN_USER_QUERY"
+    assert error.value.detail["code"] == "invalid_admin_user_query"
 
 
 @pytest.mark.asyncio
@@ -113,12 +114,13 @@ async def test_create_admin_user_maps_duplicate_email_to_409_and_role_to_422() -
                 roles=[],
             ),
             _request("POST"),
+            Response(),
             auth_context=_context(),
             auth_settings=AuthSettings(AUTH_COOKIE_SECURE=False),
             usecase=AdminUserUsecaseStub(),
         )
     assert duplicate.value.status_code == 409
-    assert duplicate.value.detail["code"] == "EMAIL_ALREADY_REGISTERED"
+    assert duplicate.value.detail["code"] == "email_already_registered"
 
     with pytest.raises(Exception) as missing_role:
         await create_admin_user(
@@ -128,12 +130,13 @@ async def test_create_admin_user_maps_duplicate_email_to_409_and_role_to_422() -
                 roles=["missing"],
             ),
             _request("POST"),
+            Response(),
             auth_context=_context(),
             auth_settings=AuthSettings(AUTH_COOKIE_SECURE=False),
             usecase=AdminUserUsecaseStub(),
         )
     assert missing_role.value.status_code == 422
-    assert missing_role.value.detail["code"] == "ROLE_NOT_FOUND"
+    assert missing_role.value.detail["code"] == "role_not_found"
 
 
 @pytest.mark.asyncio
@@ -165,7 +168,7 @@ async def test_get_and_delete_map_missing_user_to_404() -> None:
     with pytest.raises(Exception) as get_error:
         await get_admin_user(uuid4(), _auth_context=_context(), usecase=usecase)
     assert get_error.value.status_code == 404
-    assert get_error.value.detail["code"] == "USER_NOT_FOUND"
+    assert get_error.value.detail["code"] == "user_not_found"
 
     with pytest.raises(Exception) as delete_error:
         await delete_admin_user(
@@ -176,7 +179,7 @@ async def test_get_and_delete_map_missing_user_to_404() -> None:
             usecase=usecase,
         )
     assert delete_error.value.status_code == 404
-    assert delete_error.value.detail["code"] == "USER_NOT_FOUND"
+    assert delete_error.value.detail["code"] == "user_not_found"
 
 
 def _request(method: str) -> Request:

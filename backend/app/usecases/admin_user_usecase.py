@@ -98,9 +98,9 @@ class AdminUserUsecase(AdminUserUsecaseInterface):
                     ip_address=ip_address,
                     user_agent=user_agent,
                     detail_json={
-                        "actorUserId": str(actor_context.user.id),
-                        "targetUserId": str(user.id),
-                        "changedFields": ["email", "password", "isActive", "roles"],
+                        "actor_user_id": str(actor_context.user.id),
+                        "target_user_id": str(user.id),
+                        "changed_fields": ["email", "password", "is_active", "roles"],
                     },
                 ))
             await self._replace_roles_with_audit(
@@ -173,9 +173,9 @@ class AdminUserUsecase(AdminUserUsecaseInterface):
                     ip_address=ip_address,
                     user_agent=user_agent,
                     detail_json={
-                        "actorUserId": str(actor_context.user.id),
-                        "targetUserId": str(user.id),
-                        "changedFields": self._audit_fields(changes.fields_set),
+                        "actor_user_id": str(actor_context.user.id),
+                        "target_user_id": str(user.id),
+                        "changed_fields": self._audit_fields(changes.fields_set),
                     },
                 ))
             return await self._detail_for_user(user)
@@ -211,8 +211,8 @@ class AdminUserUsecase(AdminUserUsecaseInterface):
                     ip_address=ip_address,
                     user_agent=user_agent,
                     detail_json={
-                        "actorUserId": str(actor_context.user.id),
-                        "targetUserId": str(user.id),
+                        "actor_user_id": str(actor_context.user.id),
+                        "target_user_id": str(user.id),
                     },
                 ))
 
@@ -295,7 +295,7 @@ class AdminUserUsecase(AdminUserUsecaseInterface):
         field_names = {
             "email": "email",
             "password": "password",
-            "is_active": "isActive",
+            "is_active": "is_active",
             "roles": "roles",
         }
         return [field_names[field] for field in field_names if field in fields_set]

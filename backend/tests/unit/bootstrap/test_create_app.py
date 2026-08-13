@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.bootstrap import create_app as create_app_module
 from app.config import Config
 from app.config.auth import AuthSettings
+from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.libraries.password_hasher import PasswordHashExecutor
 
 
@@ -29,10 +30,23 @@ class StubPasswordHashExecutor:
         self.shutdown_calls += 1
 
 
+class StubRateLimiter:
+
+    def __init__(self, close_error: Exception | None = None) -> None:
+        self.close_calls = 0
+        self._close_error = close_error
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
+        if self._close_error is not None:
+            raise self._close_error
+
+
 class StubInjector:
 
     def __init__(self, engine: StubEngine, config=None) -> None:
         self._engine = engine
+        self._rate_limiter = StubRateLimiter()
         self._password_hash_executor = StubPasswordHashExecutor()
         self._config = config or SimpleNamespace(
             ENVIRONMENT="local",
@@ -45,6 +59,8 @@ class StubInjector:
         self.requested_interfaces.append(interface)
         if interface is AsyncEngine:
             return self._engine
+        if interface is LoginRateLimiterInterface:
+            return self._rate_limiter
         if interface is PasswordHashExecutor:
             return self._password_hash_executor
         if interface is Config:
@@ -54,18 +70,23 @@ class StubInjector:
         raise AssertionError(f"Unexpected interface: {interface}")
 
 
-def _app_with_config(monkeypatch,
-                     config) -> tuple[StubEngine, StubPasswordHashExecutor, TestClient]:
+def _app_with_config(
+        monkeypatch, config) -> tuple[
+            StubEngine,
+            StubRateLimiter,
+            StubPasswordHashExecutor,
+            TestClient,
+        ]:
     engine = StubEngine()
     injector = StubInjector(engine, config)
     monkeypatch.setattr(create_app_module, "build_container", lambda: injector)
     app = create_app_module.create_app()
-    return engine, injector._password_hash_executor, TestClient(app)
+    return engine, injector._rate_limiter, injector._password_hash_executor, TestClient(app)
 
 
 @pytest.mark.parametrize("environment", ["production", "prod", "Production"])
 def test_production_like_environments_disable_docs(monkeypatch, environment):
-    engine, password_hash_executor, client = _app_with_config(
+    engine, rate_limiter, password_hash_executor, client = _app_with_config(
         monkeypatch,
         SimpleNamespace(ENVIRONMENT=environment, LOG_LEVEL="INFO"),
     )
@@ -76,11 +97,12 @@ def test_production_like_environments_disable_docs(monkeypatch, environment):
         assert client.get("/openapi.json").status_code == 404
 
     assert engine.dispose_calls == 1
+    assert rate_limiter.close_calls == 1
     assert password_hash_executor.shutdown_calls == 1
 
 
 def test_unset_environment_disables_docs_by_default(monkeypatch):
-    engine, password_hash_executor, client = _app_with_config(
+    engine, rate_limiter, password_hash_executor, client = _app_with_config(
         monkeypatch,
         SimpleNamespace(ENVIRONMENT=Config(_env_file=None).ENVIRONMENT, LOG_LEVEL="INFO"),
     )
@@ -91,11 +113,12 @@ def test_unset_environment_disables_docs_by_default(monkeypatch):
         assert client.get("/openapi.json").status_code == 404
 
     assert engine.dispose_calls == 1
+    assert rate_limiter.close_calls == 1
     assert password_hash_executor.shutdown_calls == 1
 
 
 def test_local_environment_enables_docs(monkeypatch):
-    engine, password_hash_executor, client = _app_with_config(
+    engine, rate_limiter, password_hash_executor, client = _app_with_config(
         monkeypatch,
         SimpleNamespace(ENVIRONMENT="local", LOG_LEVEL="INFO"),
     )
@@ -105,13 +128,14 @@ def test_local_environment_enables_docs(monkeypatch):
         assert client.get("/openapi.json").status_code == 200
 
     assert engine.dispose_calls == 1
+    assert rate_limiter.close_calls == 1
     assert password_hash_executor.shutdown_calls == 1
 
 
 def test_create_app_applies_log_level_from_config(monkeypatch):
     logging.getLogger().setLevel(logging.WARNING)
     logging.getLogger("app").setLevel(logging.NOTSET)
-    engine, password_hash_executor, client = _app_with_config(
+    engine, rate_limiter, password_hash_executor, client = _app_with_config(
         monkeypatch,
         SimpleNamespace(ENVIRONMENT="local", LOG_LEVEL="DEBUG"),
     )
@@ -121,6 +145,7 @@ def test_create_app_applies_log_level_from_config(monkeypatch):
 
     assert logging.getLogger().getEffectiveLevel() == logging.WARNING
     assert logging.getLogger("app").getEffectiveLevel() == logging.DEBUG
+    assert rate_limiter.close_calls == 1
     assert engine.dispose_calls == 1
     assert password_hash_executor.shutdown_calls == 1
 
@@ -169,7 +194,7 @@ def test_create_app_fails_fast_when_authorization_config_is_invalid(monkeypatch)
 def test_create_app_falls_back_for_invalid_log_level(monkeypatch, caplog):
     logging.getLogger().setLevel(logging.WARNING)
     logging.getLogger("app").setLevel(logging.NOTSET)
-    engine, password_hash_executor, client = _app_with_config(
+    engine, rate_limiter, password_hash_executor, client = _app_with_config(
         monkeypatch,
         SimpleNamespace(ENVIRONMENT="local", LOG_LEVEL="NOPE"),
     )
@@ -180,12 +205,13 @@ def test_create_app_falls_back_for_invalid_log_level(monkeypatch, caplog):
     assert logging.getLogger().getEffectiveLevel() == logging.WARNING
     assert logging.getLogger("app").getEffectiveLevel() == logging.INFO
     assert "Invalid LOG_LEVEL=NOPE; falling back to INFO" in caplog.text
+    assert rate_limiter.close_calls == 1
     assert engine.dispose_calls == 1
     assert password_hash_executor.shutdown_calls == 1
 
 
 def test_lifespan_disposes_async_engine_on_shutdown(monkeypatch):
-    engine, password_hash_executor, client = _app_with_config(
+    engine, rate_limiter, password_hash_executor, client = _app_with_config(
         monkeypatch,
         SimpleNamespace(ENVIRONMENT="local", LOG_LEVEL="INFO"),
     )
@@ -194,7 +220,25 @@ def test_lifespan_disposes_async_engine_on_shutdown(monkeypatch):
         pass
 
     assert engine.dispose_calls == 1
+    assert rate_limiter.close_calls == 1
     assert password_hash_executor.shutdown_calls == 1
+
+
+def test_lifespan_logs_rate_limiter_close_failure(monkeypatch, caplog):
+    engine = StubEngine()
+    injector = StubInjector(engine)
+    injector._rate_limiter = StubRateLimiter(close_error=RuntimeError("close failed"))
+    monkeypatch.setattr(create_app_module, "build_container", lambda: injector)
+    app = create_app_module.create_app()
+
+    with pytest.raises(RuntimeError,
+                       match="close failed"), caplog.at_level(logging.ERROR), TestClient(app):
+        pass
+
+    assert injector._rate_limiter.close_calls == 1
+    assert engine.dispose_calls == 1
+    assert injector._password_hash_executor.shutdown_calls == 1
+    assert "Failed to close rate limiter" in caplog.text
 
 
 def test_stub_injector_returns_async_engine():

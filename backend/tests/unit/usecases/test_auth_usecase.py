@@ -27,10 +27,10 @@ class AllowingRateLimiter:
         self.allowed = True
         self.registration_allowed = True
 
-    def is_allowed(self, _ip_address: str, _normalized_email: str) -> bool:
+    async def is_allowed(self, _ip_address: str, _normalized_email: str) -> bool:
         return self.allowed
 
-    def record_failure(
+    async def record_failure(
         self,
         ip_address: str,
         normalized_email: str,
@@ -38,16 +38,19 @@ class AllowingRateLimiter:
     ) -> None:
         self.failure_records.append((ip_address, normalized_email, include_email_bucket))
 
-    def record_success(self, ip_address: str, normalized_email: str) -> None:
+    async def record_success(self, ip_address: str, normalized_email: str) -> None:
         self.success_records.append((ip_address, normalized_email))
 
-    def is_registration_allowed(self, _ip_address: str) -> bool:
+    async def is_registration_allowed(self, _ip_address: str) -> bool:
         return self.registration_allowed
 
-    def record_registration(self, ip_address: str) -> None:
+    async def record_registration(self, ip_address: str) -> None:
         self.registration_records.append(ip_address)
 
-    def reset(self) -> None:
+    async def aclose(self) -> None:
+        return None
+
+    def reset_for_tests(self) -> None:
         self.failure_records.clear()
         self.success_records.clear()
         self.registration_records.clear()

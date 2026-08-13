@@ -43,7 +43,7 @@ async def require_current_session(
         user_agent=get_user_agent(request),
     )
     if auth_context is None:
-        raise api_error(401, "UNAUTHORIZED", "Unauthorized")
+        raise api_error(401, "unauthorized", "Unauthorized")
     return auth_context
 
 
@@ -56,7 +56,7 @@ def require_permission(permission_code: str) -> AuthDependency:
         auth_context: AuthenticatedSessionContext = Depends(require_current_session),
     ) -> AuthenticatedSessionContext:
         if permission_code not in auth_context.permissions:
-            raise api_error(403, "PERMISSION_DENIED", "Permission denied")
+            raise api_error(403, "permission_denied", "Permission denied")
         return auth_context
 
     return dependency
@@ -71,7 +71,7 @@ def require_any_permission(permission_codes: Iterable[str]) -> AuthDependency:
         auth_context: AuthenticatedSessionContext = Depends(require_current_session),
     ) -> AuthenticatedSessionContext:
         if not auth_context.permissions.intersection(required_permissions):
-            raise api_error(403, "PERMISSION_DENIED", "Permission denied")
+            raise api_error(403, "permission_denied", "Permission denied")
         return auth_context
 
     return dependency

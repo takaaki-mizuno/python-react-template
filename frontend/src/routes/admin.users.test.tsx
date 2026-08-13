@@ -36,7 +36,7 @@ test('/admin/users は検索 query を一覧 API に反映する', async () => {
     }
     if (input.startsWith('/api/admin/users')) {
       return Promise.resolve(
-        jsonResponse({ items: [], total: 0, offset: 20, limit: 20 }),
+        jsonResponse({ data: [], count: 0, offset: 20, limit: 20 }),
       )
     }
     return Promise.resolve(jsonResponse({}))
@@ -44,7 +44,7 @@ test('/admin/users は検索 query を一覧 API に反映する', async () => {
   vi.stubGlobal('fetch', fetchMock)
 
   renderWithRouter({
-    initialEntries: ['/admin/users?offset=20&search=admin&isActive=false'],
+    initialEntries: ['/admin/users?offset=20&query=admin&is_active=false'],
   })
 
   expect(
@@ -54,7 +54,7 @@ test('/admin/users は検索 query を一覧 API に反映する', async () => {
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes(
-          '/api/admin/users?offset=20&limit=20&search=admin&isActive=false',
+          '/api/admin/users?offset=20&limit=20&query=admin&is_active=false',
         ),
       ),
     ).toBe(true),

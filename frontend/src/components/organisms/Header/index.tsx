@@ -59,7 +59,7 @@ export default function Header({ navigationItems = [] }: HeaderProps) {
     (!user && location.pathname === '/forbidden')
   const currentLanguage = resolveLanguage(
     location.pathname,
-    user?.languageCode ?? null,
+    user?.language_code ?? null,
   )
 
   const handleChangeLanguage = (language: LanguageCode) => {
@@ -80,7 +80,7 @@ export default function Header({ navigationItems = [] }: HeaderProps) {
     }
 
     updateLanguage.mutate(
-      { languageCode: language },
+      { language_code: language },
       {
         onError: (error) =>
           setLanguageError(

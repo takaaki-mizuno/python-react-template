@@ -62,7 +62,7 @@ def test_sample_controller_usecase_and_auth_can_be_overridden_without_db() -> No
     response = client.get("/api/samples")
 
     assert response.status_code == 200
-    assert response.json()["items"][0]["title"] == "Stubbed"
+    assert response.json()["data"][0]["title"] == "Stubbed"
     assert usecase.owner_user_id == user_id
 
 
@@ -79,7 +79,7 @@ def test_sample_controller_maps_not_found_to_error_envelope() -> None:
     response = client.get(f"/api/samples/{uuid4()}")
 
     assert response.status_code == 404
-    assert response.json()["error"]["code"] == "SAMPLE_ITEM_NOT_FOUND"
+    assert response.json()["code"] == "sample_item_not_found"
 
 
 def test_sample_controller_maps_invalid_cursor_to_error_envelope() -> None:
@@ -95,4 +95,4 @@ def test_sample_controller_maps_invalid_cursor_to_error_envelope() -> None:
     response = client.get("/api/samples?cursor=bad")
 
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "SAMPLE_ITEM_INVALID_CURSOR"
+    assert response.json()["code"] == "sample_item_invalid_cursor"

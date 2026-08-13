@@ -5,12 +5,12 @@ const dateTimeLocales: Record<LanguageCode, string> = {
   en: 'en-US',
 }
 
-export function formatDateTime(
-  value: Date | number | string,
+export function formatUnixTimestampSeconds(
+  value: number,
   languageCode: LanguageCode,
 ): string {
   return new Intl.DateTimeFormat(dateTimeLocales[languageCode], {
     dateStyle: 'medium',
     timeStyle: 'short',
-  }).format(new Date(value))
+  }).format(new Date(value * 1000))
 }

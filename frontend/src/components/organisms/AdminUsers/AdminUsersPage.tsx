@@ -38,7 +38,7 @@ import {
   updateAdminUser,
 } from '@/lib/adminUsersApi'
 import { toUserMessage } from '@/lib/apiError'
-import { formatDateTime as formatLocalizedDateTime } from '@/lib/i18n/formatters'
+import { formatUnixTimestampSeconds as formatLocalizedTimestamp } from '@/lib/i18n/formatters'
 import { defaultLanguage, normalizeLanguageCode } from '@/lib/i18n/languages'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -57,7 +57,7 @@ type FormMode =
 const emptyForm: AdminUserFormState = {
   email: '',
   password: '',
-  isActive: true,
+  is_active: true,
   roles: [],
 }
 
@@ -67,7 +67,7 @@ export function AdminUsersPage({
 }: AdminUsersPageProps) {
   const { t, i18n } = useTranslation('admin')
   const queryClient = useQueryClient()
-  const [searchValue, setSearchValue] = useState(filters.search ?? '')
+  const [searchValue, setSearchValue] = useState(filters.query ?? '')
   const [formMode, setFormMode] = useState<FormMode>(null)
   const [form, setForm] = useState<AdminUserFormState>(emptyForm)
   const [formFeedback, setFormFeedback] = useState<string | null>(null)
@@ -80,15 +80,15 @@ export function AdminUsersPage({
     defaultLanguage
 
   useEffect(() => {
-    setSearchValue(filters.search ?? '')
-  }, [filters.search])
+    setSearchValue(filters.query ?? '')
+  }, [filters.query])
 
   const listParams = useMemo<AdminUserListParams>(
     () => ({
       offset: filters.offset,
       limit: PAGE_LIMIT,
-      search: filters.search,
-      isActive: filters.isActive,
+      query: filters.query,
+      is_active: filters.is_active,
       role: filters.role,
     }),
     [filters],
@@ -154,8 +154,8 @@ export function AdminUsersPage({
         key: 'status',
         header: t('users.table.status'),
         render: (user) => (
-          <Badge variant={user.isActive ? 'secondary' : 'outline'}>
-            {user.isActive
+          <Badge variant={user.is_active ? 'secondary' : 'outline'}>
+            {user.is_active
               ? t('users.status.active')
               : t('users.status.inactive')}
           </Badge>
@@ -181,24 +181,24 @@ export function AdminUsersPage({
         ),
       },
       {
-        key: 'lastLoginAt',
+        key: 'last_login_at',
         header: t('users.table.lastLogin'),
         render: (user) =>
-          user.lastLoginAt
-            ? formatLocalizedDateTime(user.lastLoginAt, currentLanguage)
+          user.last_login_at
+            ? formatLocalizedTimestamp(user.last_login_at, currentLanguage)
             : t('users.table.neverLoggedIn'),
       },
       {
-        key: 'createdAt',
+        key: 'created_at',
         header: t('users.table.createdAt'),
         render: (user) =>
-          formatLocalizedDateTime(user.createdAt, currentLanguage),
+          formatLocalizedTimestamp(user.created_at, currentLanguage),
       },
       {
-        key: 'updatedAt',
+        key: 'updated_at',
         header: t('users.table.updatedAt'),
         render: (user) =>
-          formatLocalizedDateTime(user.updatedAt, currentLanguage),
+          formatLocalizedTimestamp(user.updated_at, currentLanguage),
       },
       {
         key: 'actions',
@@ -234,14 +234,14 @@ export function AdminUsersPage({
     [currentLanguage, t],
   )
 
-  const users = usersQuery.data?.items ?? []
-  const total = usersQuery.data?.total ?? 0
+  const users = usersQuery.data?.data ?? []
+  const total = usersQuery.data?.count ?? 0
   const offset = usersQuery.data?.offset ?? filters.offset
   const limit = usersQuery.data?.limit ?? PAGE_LIMIT
   const isFormPending = createMutation.isPending || updateMutation.isPending
   const hasFilter =
-    Boolean(filters.search) ||
-    filters.isActive !== undefined ||
+    Boolean(filters.query) ||
+    filters.is_active !== undefined ||
     Boolean(filters.role)
 
   const updateFilters = (next: Partial<AdminUserSearchParams>) => {
@@ -259,7 +259,7 @@ export function AdminUsersPage({
     setForm({
       email: user.email,
       password: '',
-      isActive: user.isActive,
+      is_active: user.is_active,
       roles: user.roles,
     })
     setFormMode({ type: 'edit', user })
@@ -280,7 +280,7 @@ export function AdminUsersPage({
       createMutation.mutate({
         email: form.email,
         password: form.password,
-        isActive: form.isActive,
+        is_active: form.is_active,
         roles: form.roles,
       })
       return
@@ -314,7 +314,7 @@ export function AdminUsersPage({
           searchValue={searchValue}
           onSearchChange={setSearchValue}
           onSearchSubmit={() =>
-            updateFilters({ search: searchValue.trim() || undefined })
+            updateFilters({ query: searchValue.trim() || undefined })
           }
         >
           <label className="grid gap-1 text-xs font-medium text-muted-foreground">
@@ -323,13 +323,13 @@ export function AdminUsersPage({
               aria-label={t('users.status.filter')}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               value={
-                filters.isActive === undefined
+                filters.is_active === undefined
                   ? 'all'
-                  : String(filters.isActive)
+                  : String(filters.is_active)
               }
               onChange={(event) =>
                 updateFilters({
-                  isActive:
+                  is_active:
                     event.target.value === 'all'
                       ? undefined
                       : event.target.value === 'true',
@@ -354,7 +354,7 @@ export function AdminUsersPage({
               <option value="">{t('users.role.all')}</option>
               {roles.map((role) => (
                 <option key={role.code} value={role.code}>
-                  {role.displayName}
+                  {role.display_name}
                 </option>
               ))}
             </select>
@@ -442,13 +442,13 @@ export function AdminUsersPage({
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input
-                    checked={form.isActive}
+                    checked={form.is_active}
                     className="size-4"
                     type="checkbox"
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
-                        isActive: event.target.checked,
+                        is_active: event.target.checked,
                       }))
                     }
                   />
@@ -472,7 +472,7 @@ export function AdminUsersPage({
                             onChange={() => toggleRole(role)}
                           />
                           <span className="grid gap-0.5">
-                            <span>{role.displayName}</span>
+                            <span>{role.display_name}</span>
                             <span className="text-xs text-muted-foreground">
                               {role.code}
                             </span>
@@ -553,8 +553,8 @@ function compactUpdatePayload(
   if (form.password.trim()) {
     payload.password = form.password
   }
-  if (form.isActive !== original.isActive) {
-    payload.isActive = form.isActive
+  if (form.is_active !== original.is_active) {
+    payload.is_active = form.is_active
   }
   if (!hasSameStringSet(form.roles, original.roles)) {
     payload.roles = form.roles
@@ -582,9 +582,9 @@ function invalidateAdminUserQueries(
 function adminUserErrorMessage(error: unknown, t: TFunction<'admin'>): string {
   return toUserMessage(error, {
     code: {
-      EMAIL_ALREADY_REGISTERED: t('users.errors.emailAlreadyRegistered'),
-      WEAK_PASSWORD: t('users.errors.weakPassword'),
-      ROLE_NOT_FOUND: t('users.errors.roleNotFound'),
+      email_already_registered: t('users.errors.emailAlreadyRegistered'),
+      weak_password: t('users.errors.weakPassword'),
+      role_not_found: t('users.errors.roleNotFound'),
     },
     fallback: t('users.errors.fallback'),
   })

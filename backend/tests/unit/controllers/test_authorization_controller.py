@@ -75,8 +75,8 @@ class AuthorizationUsecaseStub:
 async def test_list_roles_includes_permission_catalog() -> None:
     response = await list_roles(_auth_context=_context(), usecase=AuthorizationUsecaseStub())
 
-    assert [role.code for role in response.roles] == ["admin"]
-    assert response.roles[0].permissions == ["admin:access"]
+    assert [role.code for role in response.data] == ["admin"]
+    assert response.data[0].permissions == ["admin:access"]
     assert [permission.code for permission in response.permissions] == ["admin:access"]
 
 
@@ -95,7 +95,7 @@ async def test_get_user_roles_maps_missing_user_to_404() -> None:
         )
 
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail["code"] == "USER_NOT_FOUND"
+    assert exc_info.value.detail["code"] == "user_not_found"
 
 
 @pytest.mark.asyncio
@@ -111,8 +111,8 @@ async def test_replace_user_roles_maps_missing_role_to_422() -> None:
         )
 
     assert exc_info.value.status_code == 422
-    assert exc_info.value.detail["code"] == "ROLE_NOT_FOUND"
-    assert exc_info.value.detail["details"] == [{"roleCodes": ["missing"]}]
+    assert exc_info.value.detail["code"] == "role_not_found"
+    assert exc_info.value.detail["role_codes"] == ["missing"]
 
 
 def _request() -> Request:

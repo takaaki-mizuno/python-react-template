@@ -14,7 +14,7 @@ pytestmark = pytest.mark.integration
 
 
 def _csrf(client) -> str:
-    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrfToken"]
+    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrf_token"]
 
 
 def _register(client, email: str):
@@ -31,7 +31,7 @@ def _register(client, email: str):
 
 
 def _assert_error_code(response, code: str) -> None:
-    assert response.json()["error"]["code"] == code
+    assert response.json()["code"] == code
 
 
 async def _grant_admin(async_session, user_id: str) -> None:
@@ -53,7 +53,7 @@ async def test_admin_roles_requires_admin_permission(client, async_session):
     response = client.get("/api/admin/roles")
 
     assert response.status_code == 403
-    _assert_error_code(response, "PERMISSION_DENIED")
+    _assert_error_code(response, "permission_denied")
 
 
 async def test_admin_roles_returns_roles_and_permission_catalog(client, async_session):
@@ -68,9 +68,9 @@ async def test_admin_roles_returns_roles_and_permission_catalog(client, async_se
     assert me_response.json()["permissions"] == ["admin:access"]
     assert response.status_code == 200
     body = response.json()
-    assert {role["code"] for role in body["roles"]} == {"admin"}
+    assert {role["code"] for role in body["data"]} == {"admin"}
     assert {permission["code"] for permission in body["permissions"]} >= {"admin:access"}
-    assert body["roles"][0]["permissions"] == ["admin:access"]
+    assert body["data"][0]["permissions"] == ["admin:access"]
 
 
 async def test_admin_can_replace_user_roles_and_writes_audit(client, async_session):
@@ -136,7 +136,7 @@ async def test_admin_replace_user_roles_requires_csrf_token(client, async_sessio
     )
 
     assert response.status_code == 403
-    _assert_error_code(response, "CSRF_VALIDATION_FAILED")
+    _assert_error_code(response, "csrf_validation_failed")
 
 
 async def test_admin_can_replace_inactive_user_roles(client, async_session):
@@ -167,4 +167,4 @@ async def test_admin_user_roles_returns_404_for_deleted_user(client, async_sessi
     response = client.get(f"/api/admin/users/{target_user.id}/roles")
 
     assert response.status_code == 404
-    _assert_error_code(response, "USER_NOT_FOUND")
+    _assert_error_code(response, "user_not_found")

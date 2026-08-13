@@ -8,36 +8,36 @@ from app.bootstrap.error_handlers import api_error
 from app.controllers.auth_dependencies import require_current_session
 from app.interfaces.usecases.sample_item_usecase_interface import SampleItemUsecaseInterface
 from app.models.auth_context import AuthenticatedSessionContext
-from app.models.error import ErrorResponse
+from app.models.error import problem_response_openapi
 from app.models.sample_item import SampleItemUpdateChanges
 from app.models.sample_item_errors import InvalidSampleItemCursorError, SampleItemNotFoundError
 from app.models.sample_item_schemas import (SampleItemCreateRequest, SampleItemListResponse,
                                             SampleItemResponse, SampleItemUpdateRequest)
 
-ErrorResponses = dict[int | str, dict[str, Any]]
-ERROR_RESPONSE: dict[str, Any] = {"model": ErrorResponse}
-LIST_ERROR_RESPONSES: ErrorResponses = {
+ProblemResponses = dict[int | str, dict[str, Any]]
+ERROR_RESPONSE: dict[str, Any] = problem_response_openapi()
+LIST_ERROR_RESPONSES: ProblemResponses = {
     400: ERROR_RESPONSE,
     401: ERROR_RESPONSE,
     422: ERROR_RESPONSE
 }
-CREATE_ERROR_RESPONSES: ErrorResponses = {
+CREATE_ERROR_RESPONSES: ProblemResponses = {
     401: ERROR_RESPONSE,
     403: ERROR_RESPONSE,
     422: ERROR_RESPONSE,
 }
-GET_ITEM_ERROR_RESPONSES: ErrorResponses = {
+GET_ITEM_ERROR_RESPONSES: ProblemResponses = {
     401: ERROR_RESPONSE,
     404: ERROR_RESPONSE,
     422: ERROR_RESPONSE,
 }
-UPDATE_ERROR_RESPONSES: ErrorResponses = {
+UPDATE_ERROR_RESPONSES: ProblemResponses = {
     401: ERROR_RESPONSE,
     403: ERROR_RESPONSE,
     404: ERROR_RESPONSE,
     422: ERROR_RESPONSE,
 }
-DELETE_ERROR_RESPONSES: ErrorResponses = UPDATE_ERROR_RESPONSES
+DELETE_ERROR_RESPONSES: ProblemResponses = UPDATE_ERROR_RESPONSES
 
 get_sample_item_usecase = inject(SampleItemUsecaseInterface)
 
@@ -56,11 +56,11 @@ async def list_sample_items(
     except InvalidSampleItemCursorError as error:
         raise api_error(
             400,
-            "SAMPLE_ITEM_INVALID_CURSOR",
+            "sample_item_invalid_cursor",
             "Invalid sample item cursor",
         ) from error
     return SampleItemListResponse(
-        items=[SampleItemResponse.from_item(item) for item in result.items],
+        data=[SampleItemResponse.from_item(item) for item in result.items],
         next_cursor=result.next_cursor,
     )
 
@@ -73,6 +73,7 @@ async def list_sample_items(
 )
 async def create_sample_item(
         payload: SampleItemCreateRequest,
+        response: Response,
         auth_context: AuthenticatedSessionContext = Depends(require_current_session),
         usecase: SampleItemUsecaseInterface = Depends(get_sample_item_usecase),
 ) -> SampleItemResponse:
@@ -81,6 +82,7 @@ async def create_sample_item(
         title=payload.title,
         description=payload.description,
     )
+    response.headers["Location"] = f"/api/samples/{item.id}"
     return SampleItemResponse.from_item(item)
 
 
@@ -133,6 +135,6 @@ async def delete_sample_item(
 def _not_found_error() -> HTTPException:
     return api_error(
         404,
-        "SAMPLE_ITEM_NOT_FOUND",
+        "sample_item_not_found",
         "Sample item not found",
     )

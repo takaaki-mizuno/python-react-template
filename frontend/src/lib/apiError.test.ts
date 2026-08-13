@@ -9,35 +9,48 @@ import {
 } from './apiError'
 
 describe('ApiError', () => {
-  test('backend error envelope から code/detail/details を取得できる', () => {
+  test('Problem Details から code/detail/errors を取得できる', () => {
     const error = new ApiError(422, {
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: 'Validation failed',
-        details: [{ loc: ['body', 'email'], message: 'Invalid email' }],
-      },
+      type: '/problems/validation_error',
+      title: 'Validation error',
+      status: 422,
+      detail: 'Request validation failed.',
+      instance: '/api/auth/login',
+      code: 'validation_error',
+      errors: [
+        { location: 'body', pointer: '#/email', detail: 'Invalid email' },
+      ],
     })
 
-    expect(error.code).toBe('VALIDATION_ERROR')
-    expect(error.detail).toBe('Validation failed')
-    expect(error.details).toEqual([
-      { loc: ['body', 'email'], message: 'Invalid email' },
+    expect(error.type).toBe('/problems/validation_error')
+    expect(error.title).toBe('Validation error')
+    expect(error.code).toBe('validation_error')
+    expect(error.detail).toBe('Request validation failed.')
+    expect(error.instance).toBe('/api/auth/login')
+    expect(error.errors).toEqual([
+      { location: 'body', pointer: '#/email', detail: 'Invalid email' },
     ])
   })
 
-  test('legacy detail と plain message を扱える', () => {
+  test('Problem Details detail を扱える', () => {
     expect(new ApiError(401, { detail: 'Unauthorized' }).detail).toBe(
       'Unauthorized',
     )
-    expect(new ApiError(500, { message: 'Internal Server Error' }).detail).toBe(
-      'Internal Server Error',
-    )
+    expect(
+      new ApiError(500, { message: 'Internal Server Error' }).detail,
+    ).toBeNull()
   })
 
-  test('legacy FastAPI validation detail array を details として扱える', () => {
-    const detail = [{ loc: ['body', 'confirmEmail'], msg: 'Field required' }]
+  test('Problem Details errors array を errors として扱える', () => {
+    const errors = [
+      {
+        location: 'body',
+        pointer: '#/confirm_email',
+        detail: 'Field required',
+      },
+    ]
 
-    expect(new ApiError(422, { detail }).details).toEqual(detail)
+    expect(new ApiError(422, { errors }).errors).toEqual(errors)
   })
 
   test('numeric Retry-After header を retryAfterSeconds として扱える', () => {
@@ -58,21 +71,22 @@ describe('ApiError', () => {
     expect(new ApiError(500, 'Internal Server Error').detail).toBeNull()
   })
 
-  test('account deletion OIDC reauth provider details を型安全に取り出す', () => {
+  test('account deletion OIDC reauth provider extension を型安全に取り出す', () => {
     const error = new ApiError(400, {
-      error: {
-        code: 'ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED',
-        message: 'OIDC reauth required',
-        details: [
-          { providerId: 'google', displayName: 'Google' },
-          { providerId: 'broken' },
-          { providerSubject: 'secret-subject' },
-        ],
-      },
+      type: '/problems/account_deletion_oidc_reauth_required',
+      title: 'Account deletion OIDC reauthentication required',
+      status: 400,
+      detail: 'OIDC reauth required',
+      code: 'account_deletion_oidc_reauth_required',
+      providers: [
+        { provider_id: 'google', display_name: 'Google' },
+        { provider_id: 'broken' },
+        { providerSubject: 'secret-subject' },
+      ],
     })
 
     expect(accountDeletionOidcReauthProviders(error)).toEqual([
-      { providerId: 'google', displayName: 'Google' },
+      { provider_id: 'google', display_name: 'Google' },
     ])
   })
 })
@@ -80,13 +94,17 @@ describe('ApiError', () => {
 describe('toUserMessage', () => {
   test('code override を最優先する', () => {
     const error = new ApiError(401, {
-      error: { code: 'INVALID_CREDENTIALS', message: 'Unauthorized' },
+      type: '/problems/invalid_credentials',
+      title: 'Invalid credentials',
+      status: 401,
+      detail: 'Unauthorized',
+      code: 'invalid_credentials',
     })
 
     expect(
       toUserMessage(error, {
         code: {
-          INVALID_CREDENTIALS:
+          invalid_credentials:
             'メールアドレスまたはパスワードが正しくありません。',
         },
         status: { 401: 'ログインしてください。' },
@@ -114,14 +132,15 @@ describe('toUserMessage', () => {
     ).toBe('通信できませんでした。')
   })
 
-  test('CSRF_VALIDATION_FAILED の既定文言を返す', () => {
+  test('csrf_validation_failed の既定文言を返す', () => {
     expect(
       toUserMessage(
         new ApiError(403, {
-          error: {
-            code: 'CSRF_VALIDATION_FAILED',
-            message: 'CSRF validation failed',
-          },
+          type: '/problems/csrf_validation_failed',
+          title: 'CSRF validation failed',
+          status: 403,
+          detail: 'CSRF validation failed',
+          code: 'csrf_validation_failed',
         }),
       ),
     ).toBe(

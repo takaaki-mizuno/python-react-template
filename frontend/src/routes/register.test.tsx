@@ -55,12 +55,13 @@ test('register 成功後は redirect 先へ遷移し auth cache を同期する'
   expect(queryClient.getQueryData(queryKeys.auth.me)).toEqual(user)
 })
 
-test('EMAIL_ALREADY_REGISTERED は専用メッセージを表示する', async () => {
+test('email_already_registered は専用メッセージを表示する', async () => {
   setupRegisterError(409, {
-    error: {
-      code: 'EMAIL_ALREADY_REGISTERED',
-      message: 'Email already registered',
-    },
+    type: '/problems/email_already_registered',
+    title: 'Email already registered',
+    status: 409,
+    detail: 'Email already registered',
+    code: 'email_already_registered',
   })
 
   renderWithRouter({
@@ -80,10 +81,11 @@ test('EMAIL_ALREADY_REGISTERED は専用メッセージを表示する', async (
 
 test('VALIDATION_ERROR は入力確認メッセージを表示する', async () => {
   setupRegisterError(422, {
-    error: {
-      code: 'VALIDATION_ERROR',
-      message: 'Validation error',
-    },
+    type: '/problems/validation_error',
+    title: 'Validation error',
+    status: 422,
+    detail: 'Validation error',
+    code: 'validation_error',
   })
 
   renderWithRouter({
@@ -101,12 +103,13 @@ test('VALIDATION_ERROR は入力確認メッセージを表示する', async () 
   )
 })
 
-test('REGISTER_RATE_LIMITED は rate limit メッセージを表示する', async () => {
+test('register_rate_limited は rate limit メッセージを表示する', async () => {
   setupRegisterError(429, {
-    error: {
-      code: 'REGISTER_RATE_LIMITED',
-      message: 'Too many register attempts',
-    },
+    type: '/problems/register_rate_limited',
+    title: 'Register rate limited',
+    status: 429,
+    detail: 'Too many register attempts',
+    code: 'register_rate_limited',
   })
 
   renderWithRouter({
@@ -132,7 +135,7 @@ test('register は OIDC provider button を表示する', async () => {
         return Promise.resolve(
           new Response(
             JSON.stringify({
-              providers: [{ providerId: 'google', displayName: 'Google' }],
+              data: [{ provider_id: 'google', display_name: 'Google' }],
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           ),

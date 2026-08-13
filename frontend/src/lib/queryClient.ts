@@ -56,7 +56,7 @@ function handleAuthError(
     return
   }
 
-  if (error.status === 403 && error.code !== 'CSRF_VALIDATION_FAILED') {
+  if (error.status === 403 && error.code !== 'csrf_validation_failed') {
     handlers.onForbidden?.(error)
   }
 }

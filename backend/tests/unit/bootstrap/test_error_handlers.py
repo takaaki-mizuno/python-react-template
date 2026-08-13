@@ -22,8 +22,8 @@ def _app() -> FastAPI:
         raise HTTPException(
             status_code=409,
             detail={
-                "code": "EMAIL_ALREADY_REGISTERED",
-                "message": "Email already registered",
+                "code": "email_already_registered",
+                "detail": "Email already registered",
             },
         )
 
@@ -31,12 +31,30 @@ def _app() -> FastAPI:
     async def with_details():
         raise api_error(
             400,
-            "DETAIL_CODE",
+            "bad_request",
             "Has details",
-            details=[{
-                "kind": "linked_provider",
-                "providerId": "google",
-            }],
+            extensions={
+                "provider_id": "google",
+            },
+        )
+
+    @app.get("/unknown-code")
+    async def unknown_code():
+        raise api_error(409, "totally_unknown_typo", "Unknown code")
+
+    @app.get("/reserved-extension")
+    async def reserved_extension():
+        raise api_error(
+            400,
+            "bad_request",
+            "Reserved extension",
+            extensions={
+                "type": "evil",
+                "providers": [{
+                    "provider_id": "google",
+                    "display_name": "Google",
+                }],
+            },
         )
 
     @app.get("/custom-cache")
@@ -58,19 +76,21 @@ def _app() -> FastAPI:
     return app
 
 
-def test_http_exception_string_detail_uses_error_envelope():
+def test_http_exception_string_detail_uses_problem_details():
     client = TestClient(_app())
 
     response = client.get("/unauthorized")
 
     assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/problem+json")
     assert response.headers["Cache-Control"] == "no-store"
     assert response.json() == {
-        "error": {
-            "code": "UNAUTHORIZED",
-            "message": "Unauthorized",
-            "details": [],
-        }
+        "type": "/problems/unauthorized",
+        "title": "Unauthorized",
+        "status": 401,
+        "detail": "Unauthorized",
+        "instance": "/unauthorized",
+        "code": "unauthorized",
     }
 
 
@@ -90,44 +110,78 @@ def test_http_exception_dict_detail_preserves_code_and_message():
 
     assert response.status_code == 409
     assert response.json() == {
-        "error": {
-            "code": "EMAIL_ALREADY_REGISTERED",
-            "message": "Email already registered",
-            "details": [],
-        }
+        "type": "/problems/email_already_registered",
+        "title": "Email already registered",
+        "status": 409,
+        "detail": "Email already registered",
+        "instance": "/duplicate",
+        "code": "email_already_registered",
     }
 
 
-def test_api_error_accepts_optional_details_without_breaking_envelope():
+def test_api_error_accepts_optional_extensions_without_breaking_problem_details():
     client = TestClient(_app())
 
     response = client.get("/with-details")
 
     assert response.status_code == 400
     assert response.json() == {
-        "error": {
-            "code": "DETAIL_CODE",
-            "message": "Has details",
-            "details": [{
-                "kind": "linked_provider",
-                "providerId": "google",
-            }],
-        }
+        "type": "/problems/bad_request",
+        "title": "Bad request",
+        "status": 400,
+        "detail": "Has details",
+        "instance": "/with-details",
+        "code": "bad_request",
+        "provider_id": "google",
     }
 
 
-def test_validation_error_uses_error_envelope_with_field_details():
+def test_unknown_problem_code_logs_warning(caplog):
+    client = TestClient(_app())
+
+    with caplog.at_level("WARNING", logger="app.bootstrap.error_handlers"):
+        response = client.get("/unknown-code")
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "conflict"
+    assert "Unknown problem code" in caplog.text
+    assert "totally_unknown_typo" in caplog.text
+
+
+def test_reserved_problem_extension_member_is_dropped_and_logged(caplog):
+    client = TestClient(_app())
+
+    with caplog.at_level("WARNING", logger="app.bootstrap.error_handlers"):
+        response = client.get("/reserved-extension")
+
+    assert response.status_code == 400
+    assert response.json()["type"] == "/problems/bad_request"
+    assert response.json()["providers"] == [{
+        "provider_id": "google",
+        "display_name": "Google",
+    }]
+    assert "evil" not in response.text
+    assert "Reserved Problem Details extension member" in caplog.text
+    assert "type" in caplog.text
+
+
+def test_validation_error_uses_problem_details_with_field_errors():
     client = TestClient(_app())
 
     response = client.post("/payload", json={"name": "x"})
 
     assert response.status_code == 422
     body = response.json()
-    assert body["error"]["code"] == "VALIDATION_ERROR"
-    assert body["error"]["message"] == "Validation failed"
-    assert body["error"]["details"][0]["loc"] == ["body", "name"]
-    assert body["error"]["details"][0]["message"]
-    assert body["error"]["details"][0]["type"]
+    assert body["type"] == "/problems/validation_error"
+    assert body["title"] == "Validation error"
+    assert body["status"] == 422
+    assert body["detail"] == "Request validation failed."
+    assert body["instance"] == "/payload"
+    assert body["code"] == "validation_error"
+    assert body["errors"][0]["location"] == "body"
+    assert body["errors"][0]["pointer"] == "#/name"
+    assert body["errors"][0]["detail"]
+    assert body["errors"][0]["code"]
 
 
 def test_unhandled_exception_hides_internal_message():
@@ -137,9 +191,10 @@ def test_unhandled_exception_hides_internal_message():
 
     assert response.status_code == 500
     assert response.json() == {
-        "error": {
-            "code": "INTERNAL_SERVER_ERROR",
-            "message": "Internal server error",
-            "details": [],
-        }
+        "type": "/problems/internal_server_error",
+        "title": "Internal server error",
+        "status": 500,
+        "detail": "Internal server error",
+        "instance": "/boom",
+        "code": "internal_server_error",
     }

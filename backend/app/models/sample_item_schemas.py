@@ -1,16 +1,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import Field, field_validator
-from pydantic.alias_generators import to_camel
+from pydantic import Field, field_serializer, field_validator
 from sqlmodel import SQLModel
 from sqlmodel.main import SQLModelConfig
 
 from app.models.sample_item import SampleItem
+from app.models.time_serialization import unix_timestamp_seconds
 
 
 class SampleItemSchema(SQLModel):
-    model_config = SQLModelConfig(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+    model_config = SQLModelConfig(extra="forbid")
 
 
 class SampleItemCreateRequest(SampleItemSchema):
@@ -39,6 +39,10 @@ class SampleItemResponse(SampleItemSchema):
     created_at: datetime
     updated_at: datetime
 
+    @field_serializer("created_at", "updated_at", when_used="json")
+    def serialize_datetime(self, value: datetime) -> int:
+        return unix_timestamp_seconds(value)
+
     @classmethod
     def from_item(cls, item: SampleItem) -> "SampleItemResponse":
         return cls(
@@ -52,5 +56,5 @@ class SampleItemResponse(SampleItemSchema):
 
 
 class SampleItemListResponse(SampleItemSchema):
-    items: list[SampleItemResponse]
+    data: list[SampleItemResponse]
     next_cursor: str | None

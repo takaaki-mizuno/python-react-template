@@ -5,7 +5,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.bootstrap.error_handlers import json_error_response
+from app.bootstrap.error_handlers import problem_response
 from app.config.auth import AuthSettings
 from app.interfaces.usecases.auth_usecase_interface import AuthUsecaseInterface
 from app.libraries.auth_cookies import csrf_cookie_name, session_cookie_name
@@ -32,10 +32,11 @@ class CSRFMiddleware:
             error_response = await self._validate(request)
         except Exception:
             logger.exception("CSRF middleware failed")
-            response = json_error_response(
+            response = problem_response(
                 500,
-                "INTERNAL_SERVER_ERROR",
+                "internal_server_error",
                 "Internal server error",
+                request_path=request.url.path,
             )
             await response(scope, receive, send)
             return
@@ -60,13 +61,13 @@ class CSRFMiddleware:
         cookie_token = request.cookies.get(csrf_cookie_name())
         header_token = request.headers.get("X-CSRF-Token")
         if not cookie_token or not header_token:
-            return _csrf_error_response()
+            return _csrf_error_response(request.url.path)
 
         if not secrets.compare_digest(
                 cookie_token.encode("utf-8"),
                 header_token.encode("utf-8"),
         ):
-            return _csrf_error_response()
+            return _csrf_error_response(request.url.path)
 
         settings = request.app.state.injector.get(AuthSettings)
         session_token = request.cookies.get(session_cookie_name(settings))
@@ -81,7 +82,7 @@ class CSRFMiddleware:
             user_agent=get_user_agent(request),
         )
         if csrf_status == SessionCsrfStatus.MISMATCH:
-            return _csrf_error_response()
+            return _csrf_error_response(request.url.path)
         return None
 
     def _settings(self, scope: Scope) -> AuthSettings:
@@ -104,9 +105,10 @@ def _route_path(scope: Scope) -> str:
     return path
 
 
-def _csrf_error_response() -> Response:
-    return json_error_response(
+def _csrf_error_response(request_path: str) -> Response:
+    return problem_response(
         403,
-        "CSRF_VALIDATION_FAILED",
+        "csrf_validation_failed",
         "CSRF validation failed",
+        request_path=request_path,
     )

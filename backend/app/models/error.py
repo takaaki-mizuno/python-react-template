@@ -1,19 +1,39 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class ErrorFieldDetail(BaseModel):
-    loc: list[str | int]
-    message: str
+class ProblemError(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    location: str | None = None
+    pointer: str | None = None
+    parameter: str | None = None
+    detail: str
+    code: str | None = None
+
+
+class ProblemDetails(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     type: str
+    title: str
+    status: int
+    detail: str | None = None
+    instance: str | None = None
+    code: str | None = None
+    errors: list[ProblemError | dict[str, Any]] | None = Field(default=None)
 
 
-class ErrorDetail(BaseModel):
-    code: str
-    message: str
-    details: list[ErrorFieldDetail | dict[str, Any]] = Field(default_factory=list)
+PROBLEM_DETAILS_SCHEMA_REF = {"$ref": "#/components/schemas/ProblemDetails"}
 
 
-class ErrorResponse(BaseModel):
-    error: ErrorDetail
+def problem_response_openapi(description: str = "Problem Details") -> dict[str, Any]:
+    return {
+        "description": description,
+        "content": {
+            "application/problem+json": {
+                "schema": PROBLEM_DETAILS_SCHEMA_REF,
+            },
+        },
+    }

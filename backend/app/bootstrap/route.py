@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
+from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
@@ -13,6 +14,7 @@ from app.controllers.auth_controller import router as auth_router
 from app.controllers.authorization_controller import router as authorization_router
 from app.controllers.healthz_controller import router as healthz_router
 from app.controllers.sample_controller import router as sample_router
+from app.models.error import ProblemDetails
 
 logger = logging.getLogger(__name__)
 API_PREFIX = "/api"
@@ -62,7 +64,9 @@ def setup_routes(
     app: FastAPI,
     static_directory: Path | None = None,
 ) -> FastAPI:
+    app.include_router(healthz_router)
     app = _setup_api_routes(app)
+    _install_openapi_schema(app)
     directory = static_directory or STATIC_DIRECTORY
     index_file = directory / "index.html"
     if not index_file.exists():
@@ -73,6 +77,44 @@ def setup_routes(
         return app
     app.mount("/", SPAStaticFiles(directory=directory, html=True), name="static")
     return app
+
+
+def _install_openapi_schema(app: FastAPI) -> None:
+
+    def custom_openapi() -> dict[str, object]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            openapi_version=app.openapi_version,
+            summary=app.summary,
+            description=app.description,
+            routes=app.routes,
+            tags=app.openapi_tags,
+            servers=app.servers,
+            terms_of_service=app.terms_of_service,
+            contact=app.contact,
+            license_info=app.license_info,
+            separate_input_output_schemas=app.separate_input_output_schemas,
+        )
+        components = schema.setdefault("components", {})
+        schemas = components.setdefault("schemas", {})
+        schemas.update(_problem_details_schemas())
+        app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]
+
+
+def _problem_details_schemas() -> dict[str, object]:
+    problem_details_schema = ProblemDetails.model_json_schema(
+        ref_template="#/components/schemas/{model}")
+    definitions = problem_details_schema.pop("$defs", {})
+    return {
+        "ProblemDetails": problem_details_schema,
+        **definitions,
+    }
 
 
 def _setup_api_routes(app: FastAPI) -> FastAPI:

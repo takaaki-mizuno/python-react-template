@@ -40,7 +40,11 @@ describe('createAppQueryClient', () => {
     const onForbidden = vi.fn()
     const queryClient = createAppQueryClient({ onForbidden })
     const error = new ApiError(403, {
-      error: { code: 'FORBIDDEN', message: 'Forbidden' },
+      type: '/problems/forbidden',
+      title: 'Forbidden',
+      status: 403,
+      detail: 'Forbidden',
+      code: 'forbidden',
     })
 
     await expect(
@@ -57,7 +61,11 @@ describe('createAppQueryClient', () => {
     const onForbidden = vi.fn()
     const queryClient = createAppQueryClient({ onForbidden })
     const error = new ApiError(403, {
-      error: { code: 'PERMISSION_DENIED', message: 'Permission denied' },
+      type: '/problems/permission-denied',
+      title: 'Permission denied',
+      status: 403,
+      detail: 'Permission denied',
+      code: 'permission_denied',
     })
 
     await expect(
@@ -72,7 +80,7 @@ describe('createAppQueryClient', () => {
     expect(onForbidden).toHaveBeenCalledWith(error)
   })
 
-  test('CSRF_VALIDATION_FAILED の 403 では onForbidden を呼ばない', async () => {
+  test('csrf_validation_failed の 403 では onForbidden を呼ばない', async () => {
     const onForbidden = vi.fn()
     const queryClient = createAppQueryClient({ onForbidden })
 
@@ -82,10 +90,11 @@ describe('createAppQueryClient', () => {
         queryFn: () =>
           Promise.reject(
             new ApiError(403, {
-              error: {
-                code: 'CSRF_VALIDATION_FAILED',
-                message: 'CSRF validation failed',
-              },
+              type: '/problems/csrf-validation-failed',
+              title: 'CSRF validation failed',
+              status: 403,
+              detail: 'CSRF validation failed',
+              code: 'csrf_validation_failed',
             }),
           ),
       }),

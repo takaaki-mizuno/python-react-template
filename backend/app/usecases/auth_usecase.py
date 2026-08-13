@@ -119,16 +119,16 @@ class AuthUsecase(AuthUsecaseInterface):
     ):
         normalized_email = email.strip().lower()
         rate_limit_ip = ip_address or "unknown"
-        if not self._auth_rate_limiter.is_allowed(rate_limit_ip, normalized_email):
+        if not await self._auth_rate_limiter.is_allowed(rate_limit_ip, normalized_email):
             raise RateLimitExceededError(self._auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
-        if not self._auth_rate_limiter.is_registration_allowed(rate_limit_ip):
+        if not await self._auth_rate_limiter.is_registration_allowed(rate_limit_ip):
             raise RateLimitExceededError(
                 self._auth_settings.AUTH_RATE_LIMIT_REGISTRATION_WINDOW_SECONDS)
 
         is_valid_password, error_message = validate_password_policy(password)
         if not is_valid_password:
             # Defense-in-depth for callers that bypass the request DTO validator.
-            self._auth_rate_limiter.record_failure(
+            await self._auth_rate_limiter.record_failure(
                 rate_limit_ip,
                 normalized_email,
                 include_email_bucket=False,
@@ -137,7 +137,7 @@ class AuthUsecase(AuthUsecaseInterface):
 
         existing_user = await self._auth_repository.find_user_by_email(normalized_email)
         if existing_user:
-            self._auth_rate_limiter.record_failure(
+            await self._auth_rate_limiter.record_failure(
                 rate_limit_ip,
                 normalized_email,
                 include_email_bucket=False,
@@ -178,7 +178,7 @@ class AuthUsecase(AuthUsecaseInterface):
                         user_agent=user_agent,
                     ))
         except EmailAlreadyRegisteredError:
-            self._auth_rate_limiter.record_failure(
+            await self._auth_rate_limiter.record_failure(
                 rate_limit_ip,
                 normalized_email,
                 include_email_bucket=False,
@@ -192,7 +192,7 @@ class AuthUsecase(AuthUsecaseInterface):
                     user_agent=user_agent,
                 ))
             raise
-        self._auth_rate_limiter.record_registration(rate_limit_ip)
+        await self._auth_rate_limiter.record_registration(rate_limit_ip)
         return IssuedAuthSession(
             user=user,
             session=session,
@@ -237,7 +237,7 @@ class AuthUsecase(AuthUsecaseInterface):
     ) -> IssuedAuthSession:
         normalized_email = email.strip().lower()
         rate_limit_ip = ip_address or "unknown"
-        if not self._auth_rate_limiter.is_allowed(rate_limit_ip, normalized_email):
+        if not await self._auth_rate_limiter.is_allowed(rate_limit_ip, normalized_email):
             raise RateLimitExceededError(self._auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
 
         user = await self._auth_repository.find_user_by_email(normalized_email)
@@ -248,7 +248,7 @@ class AuthUsecase(AuthUsecaseInterface):
             has_password_hash = True
         password_matches = await self._password_hash_executor.verify(password, password_hash)
         if user is None or not user.is_active or not has_password_hash or not password_matches:
-            self._auth_rate_limiter.record_failure(rate_limit_ip, normalized_email)
+            await self._auth_rate_limiter.record_failure(rate_limit_ip, normalized_email)
             await self._auth_repository.create_audit_log(
                 AuthAuditLog(
                     user_id=user.id if user is not None else None,
@@ -278,7 +278,7 @@ class AuthUsecase(AuthUsecaseInterface):
                     ip_address=ip_address,
                     user_agent=user_agent,
                 ))
-        self._auth_rate_limiter.record_success(rate_limit_ip, normalized_email)
+        await self._auth_rate_limiter.record_success(rate_limit_ip, normalized_email)
         authorization = await self._authorization_for_existing_user(user.id)
         return IssuedAuthSession(
             user=user,

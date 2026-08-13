@@ -89,7 +89,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
                 "Current session is required for OIDC reauth")
 
         rate_limit_ip = ip_address or "unknown"
-        if not self._auth_rate_limiter.is_oidc_authorization_allowed(rate_limit_ip):
+        if not await self._auth_rate_limiter.is_oidc_authorization_allowed(rate_limit_ip):
             raise OidcAuthorizationRateLimitedError
 
         state = generate_token()
@@ -128,7 +128,7 @@ class OAuthOidcUsecase(OAuthOidcUsecaseInterface):
                     expires_at=now +
                     timedelta(seconds=self._oidc_settings.AUTH_OIDC_STATE_TTL_SECONDS),
                 ))
-            self._auth_rate_limiter.record_oidc_authorization(rate_limit_ip)
+            await self._auth_rate_limiter.record_oidc_authorization(rate_limit_ip)
 
         return OidcAuthorizationStartResult(
             provider_id=provider.provider_id,

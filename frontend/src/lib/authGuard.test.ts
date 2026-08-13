@@ -104,10 +104,19 @@ describe('authGuard', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: { code: 'UNEXPECTED' } }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            type: '/problems/internal-server-error',
+            title: 'Internal server error',
+            status: 500,
+            detail: 'Internal server error',
+            code: 'internal_server_error',
+          }),
+          {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
       ),
     )
 

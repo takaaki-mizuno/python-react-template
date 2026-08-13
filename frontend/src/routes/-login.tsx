@@ -20,18 +20,18 @@ import { queryKeys } from '@/lib/queryKeys'
 
 export function LoginPage({
   locale,
-  oidcError,
+  oidc_error,
   redirectHref,
 }: {
   locale: LanguageCode
-  oidcError?: string
+  oidc_error?: string
   redirectHref: string
 }) {
   const { t } = useTranslation('auth')
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [errorMessage, setErrorMessage] = useState<string | null>(() =>
-    oidcLoginErrorMessage(oidcError, t),
+    oidcLoginErrorMessage(oidc_error, t),
   )
   const providers = useQuery({
     queryKey: queryKeys.auth.oidcProviders,
@@ -49,8 +49,8 @@ export function LoginPage({
       setErrorMessage(
         toUserMessage(error, {
           code: {
-            INVALID_CREDENTIALS: t('feedback.invalidCredentials'),
-            LOGIN_RATE_LIMITED: t('feedback.loginRateLimited'),
+            invalid_credentials: t('feedback.invalidCredentials'),
+            login_rate_limited: t('feedback.loginRateLimited'),
           },
           status: { 422: t('feedback.checkInput') },
           fallback: t('feedback.loginFailed'),
@@ -80,11 +80,11 @@ export function LoginPage({
           </div>
           {providers.data.map((provider) => (
             <OidcProviderButton
-              key={provider.providerId}
+              key={provider.provider_id}
               isDisabled={providers.isFetching}
               onClick={() =>
                 startOidcLogin(
-                  provider.providerId,
+                  provider.provider_id,
                   redirectHref,
                   undefined,
                   locale,

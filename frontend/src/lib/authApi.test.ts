@@ -15,7 +15,7 @@ afterEach(() => {
   document.cookie = 'csrf_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
 })
 
-test('deleteCurrentAccount は camelCase body で DELETE /api/auth/me を呼ぶ', async () => {
+test('deleteCurrentAccount は snake_case body で DELETE /api/auth/me を呼ぶ', async () => {
   document.cookie = 'csrf_token=csrf-123; path=/'
   const fetchMock = vi
     .fn()
@@ -23,7 +23,7 @@ test('deleteCurrentAccount は camelCase body で DELETE /api/auth/me を呼ぶ'
   vi.stubGlobal('fetch', fetchMock)
 
   await deleteCurrentAccount({
-    confirmEmail: 'user@example.com',
+    confirm_email: 'user@example.com',
     password: 'Password123!',
   })
 
@@ -32,7 +32,7 @@ test('deleteCurrentAccount は camelCase body で DELETE /api/auth/me を呼ぶ'
     expect.objectContaining({
       method: 'DELETE',
       body: JSON.stringify({
-        confirmEmail: 'user@example.com',
+        confirm_email: 'user@example.com',
         password: 'Password123!',
       }),
     }),
@@ -42,13 +42,13 @@ test('deleteCurrentAccount は camelCase body で DELETE /api/auth/me を呼ぶ'
   expect(headers.get('x-csrf-token')).toBe('csrf-123')
 })
 
-test('fetchOidcProviders は providerId と displayName だけを読む', async () => {
+test('fetchOidcProviders は provider_id と display_name だけを読む', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          providers: [{ providerId: 'google', displayName: 'Google' }],
+          data: [{ provider_id: 'google', display_name: 'Google' }],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
@@ -56,7 +56,7 @@ test('fetchOidcProviders は providerId と displayName だけを読む', async 
   )
 
   await expect(fetchOidcProviders()).resolves.toEqual([
-    { providerId: 'google', displayName: 'Google' },
+    { provider_id: 'google', display_name: 'Google' },
   ])
 })
 
@@ -65,7 +65,7 @@ test('updateCurrentUser は PATCH /api/auth/me を呼ぶ', async () => {
   const responseBody = {
     id: '00000000-0000-0000-0000-000000000001',
     email: 'user@example.com',
-    languageCode: 'en',
+    language_code: 'en',
     roles: [],
     permissions: [],
   }
@@ -77,14 +77,14 @@ test('updateCurrentUser は PATCH /api/auth/me を呼ぶ', async () => {
   )
   vi.stubGlobal('fetch', fetchMock)
 
-  await expect(updateCurrentUser({ languageCode: 'en' })).resolves.toEqual(
+  await expect(updateCurrentUser({ language_code: 'en' })).resolves.toEqual(
     responseBody,
   )
 
   expect(fetchMock).toHaveBeenCalledWith(
     '/api/auth/me',
     expect.objectContaining({
-      body: JSON.stringify({ languageCode: 'en' }),
+      body: JSON.stringify({ language_code: 'en' }),
       method: 'PATCH',
     }),
   )
@@ -100,13 +100,13 @@ test('startOidcLogin は redirect を壊さず start endpoint へ遷移する', 
   )
 })
 
-test('startOidcLogin は languageCode を start endpoint の query に含める', () => {
+test('startOidcLogin は language_code を start endpoint の query に含める', () => {
   const assign = vi.fn()
 
   startOidcLogin('google', '/app', assign, 'en')
 
   expect(assign).toHaveBeenCalledWith(
-    '/api/auth/oidc/google/start?redirect=%2Fapp&languageCode=en',
+    '/api/auth/oidc/google/start?redirect=%2Fapp&language_code=en',
   )
 })
 

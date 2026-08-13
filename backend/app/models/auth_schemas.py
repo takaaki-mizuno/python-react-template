@@ -1,7 +1,6 @@
 from uuid import UUID
 
 from pydantic import EmailStr, Field, field_validator
-from pydantic.alias_generators import to_camel
 from sqlmodel import SQLModel
 from sqlmodel.main import SQLModelConfig
 
@@ -9,7 +8,7 @@ from app.models.language import DEFAULT_LANGUAGE_CODE, LanguageCode
 
 
 class AuthSchema(SQLModel):
-    model_config = SQLModelConfig(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+    model_config = SQLModelConfig(extra="forbid")
 
 
 class RegisterRequest(AuthSchema):
@@ -19,7 +18,7 @@ class RegisterRequest(AuthSchema):
     language_code: LanguageCode = DEFAULT_LANGUAGE_CODE
 
 
-class LoginRequest(SQLModel):
+class LoginRequest(AuthSchema):
     email: EmailStr
     password: str = Field(max_length=128)
 
@@ -48,5 +47,14 @@ class AuthUserResponse(AuthSchema):
     permissions: list[str]
 
 
-class CsrfTokenResponse(SQLModel):
-    csrfToken: str
+class CsrfTokenResponse(AuthSchema):
+    csrf_token: str
+
+
+class OidcProviderResponse(AuthSchema):
+    provider_id: str
+    display_name: str
+
+
+class OidcProviderListResponse(AuthSchema):
+    data: list[OidcProviderResponse]

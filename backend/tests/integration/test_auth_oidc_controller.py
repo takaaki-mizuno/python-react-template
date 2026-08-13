@@ -1,3 +1,4 @@
+import inspect
 from datetime import timedelta
 
 import pytest
@@ -50,7 +51,14 @@ def _oidc_client(monkeypatch, *, auto_provision: str = "enabled"):
         try:
             yield test_client, fake_provider
         finally:
-            app.state.injector.get(LoginRateLimiterInterface).reset()
+            limiter = app.state.injector.get(LoginRateLimiterInterface)
+            reset = getattr(limiter, "reset_for_tests", None)
+            if reset is None:
+                raise AssertionError("Login rate limiter must provide reset_for_tests()")
+            result = reset()
+            if inspect.isawaitable(result):
+                raise AssertionError("OIDC controller fixture requires sync reset_for_tests(); "
+                                     "Redis limiter must use Redis-specific async tests")
 
 
 class FakeOidcProviderClient:
@@ -123,7 +131,7 @@ class FakeOidcProviderClient:
 
 
 def _csrf(client) -> str:
-    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrfToken"]
+    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrf_token"]
 
 
 def _start_oidc(client, path: str = "/api/auth/oidc/google/start?redirect=/app"):
@@ -172,7 +180,7 @@ def test_oidc_auto_provision_uses_language_code_from_start_query(oidc_client):
     client, _ = oidc_client
     state, _ = _start_oidc(
         client,
-        "/api/auth/oidc/google/start?redirect=/app&languageCode=en",
+        "/api/auth/oidc/google/start?redirect=/app&language_code=en",
     )
 
     callback_response = _complete_oidc(client, state)
@@ -180,14 +188,14 @@ def test_oidc_auto_provision_uses_language_code_from_start_query(oidc_client):
 
     assert callback_response.status_code == 303
     assert me_response.status_code == 200
-    assert me_response.json()["languageCode"] == "en"
+    assert me_response.json()["language_code"] == "en"
 
 
 def test_oidc_invalid_language_code_falls_back_to_default(oidc_client):
     client, _ = oidc_client
     state, _ = _start_oidc(
         client,
-        "/api/auth/oidc/google/start?redirect=/app&languageCode=fr",
+        "/api/auth/oidc/google/start?redirect=/app&language_code=fr",
     )
 
     callback_response = _complete_oidc(client, state)
@@ -195,7 +203,7 @@ def test_oidc_invalid_language_code_falls_back_to_default(oidc_client):
 
     assert callback_response.status_code == 303
     assert me_response.status_code == 200
-    assert me_response.json()["languageCode"] == "ja"
+    assert me_response.json()["language_code"] == "ja"
 
 
 @pytest.mark.asyncio
@@ -215,7 +223,7 @@ async def test_oidc_start_creates_state_and_is_rate_limited(oidc_client, async_s
 
     assert rate_limited_response.status_code == 303
     assert rate_limited_response.headers["location"] == (
-        "/login?oidcError=OIDC_AUTHORIZATION_RATE_LIMITED")
+        "/login?oidc_error=OIDC_AUTHORIZATION_RATE_LIMITED")
     assert state_count == 20
     assert any(key.startswith("oidc_binding_") for key in client.cookies)
 
@@ -256,7 +264,7 @@ def test_oidc_link_preserves_existing_user_language_code(oidc_client):
         json={
             "email": "user@example.com",
             "password": "Password123!",
-            "languageCode": "en",
+            "language_code": "en",
         },
         headers={"X-CSRF-Token": csrf_token},
     )
@@ -265,7 +273,7 @@ def test_oidc_link_preserves_existing_user_language_code(oidc_client):
     fake_provider.subject = "linked-language-subject"
     state, _ = _start_oidc(
         client,
-        "/api/auth/oidc/google/start?redirect=/app&languageCode=ja",
+        "/api/auth/oidc/google/start?redirect=/app&language_code=ja",
     )
 
     callback_response = _complete_oidc(client, state)
@@ -273,7 +281,7 @@ def test_oidc_link_preserves_existing_user_language_code(oidc_client):
 
     assert callback_response.status_code == 303
     assert me_response.status_code == 200
-    assert me_response.json()["languageCode"] == "en"
+    assert me_response.json()["language_code"] == "en"
 
 
 @pytest.mark.asyncio
@@ -308,7 +316,7 @@ async def test_oidc_link_only_mode_rejects_new_verified_email_without_session(
     user_count = await async_session.scalar(text("SELECT count(*) FROM users"))
 
     assert callback_response.status_code == 303
-    assert callback_response.headers["location"] == ("/login?oidcError=OIDC_PROVISIONING_DISABLED")
+    assert callback_response.headers["location"] == ("/login?oidc_error=OIDC_PROVISIONING_DISABLED")
     assert user_count == 0
     assert client.get("/api/auth/me").status_code == 401
 
@@ -322,7 +330,7 @@ def test_oidc_callback_rejects_missing_browser_binding_without_session(oidc_clie
 
     assert callback_response.status_code == 303
     assert callback_response.headers["location"] == (
-        "/login?oidcError=OIDC_BROWSER_BINDING_MISMATCH")
+        "/login?oidc_error=OIDC_BROWSER_BINDING_MISMATCH")
     assert client.get("/api/auth/me").status_code == 401
 
 
@@ -335,7 +343,7 @@ def test_oidc_callback_rejects_wrong_browser_binding_without_session(oidc_client
 
     assert callback_response.status_code == 303
     assert callback_response.headers["location"] == (
-        "/login?oidcError=OIDC_BROWSER_BINDING_MISMATCH")
+        "/login?oidc_error=OIDC_BROWSER_BINDING_MISMATCH")
     assert client.get("/api/auth/me").status_code == 401
 
 
@@ -350,7 +358,7 @@ def test_oidc_callback_rejects_state_replay_without_new_session(oidc_client):
     replay_response = _complete_oidc(client, state)
 
     assert replay_response.status_code == 303
-    assert replay_response.headers["location"] == "/login?oidcError=OIDC_STATE_MISMATCH"
+    assert replay_response.headers["location"] == "/login?oidc_error=OIDC_STATE_MISMATCH"
     assert client.get("/api/auth/me").status_code == 401
 
 
@@ -364,7 +372,7 @@ async def test_oidc_callback_rejects_expired_state_without_session(oidc_client, 
     callback_response = _complete_oidc(client, state)
 
     assert callback_response.status_code == 303
-    assert callback_response.headers["location"] == "/login?oidcError=OIDC_STATE_MISMATCH"
+    assert callback_response.headers["location"] == "/login?oidc_error=OIDC_STATE_MISMATCH"
     assert client.get("/api/auth/me").status_code == 401
 
 
@@ -376,7 +384,7 @@ def test_oidc_callback_rejects_unverified_email_without_session(oidc_client):
     callback_response = _complete_oidc(client, state)
 
     assert callback_response.status_code == 303
-    assert callback_response.headers["location"] == ("/login?oidcError=OIDC_EMAIL_NOT_VERIFIED")
+    assert callback_response.headers["location"] == ("/login?oidc_error=OIDC_EMAIL_NOT_VERIFIED")
     assert client.get("/api/auth/me").status_code == 401
 
 
@@ -397,7 +405,7 @@ async def test_oidc_callback_failure_does_not_expose_provider_secrets(
 
     assert callback_response.status_code == 303
     assert callback_response.headers["location"] == (
-        "/login?oidcError=OIDC_CLAIMS_VALIDATION_FAILED")
+        "/login?oidc_error=OIDC_CLAIMS_VALIDATION_FAILED")
     assert client.get("/api/auth/me").status_code == 401
     combined_output = f"{callback_response.headers['location']}\n{audit_text}"
     assert "access_token" not in combined_output
@@ -420,7 +428,7 @@ async def test_oidc_account_deletion_removes_identity_and_allows_same_subject_ag
     delete_response = client.request(
         "DELETE",
         "/api/auth/me",
-        json={"confirmEmail": "user@example.com"},
+        json={"confirm_email": "user@example.com"},
         headers={"X-CSRF-Token": csrf_token},
     )
     identity_count_after_delete = await async_session.scalar(
@@ -451,7 +459,7 @@ def test_oidc_reauth_rejects_subject_mismatch_without_replacing_session(oidc_cli
 
     assert callback_response.status_code == 303
     assert callback_response.headers["location"] == (
-        "/app/settings?oidcError=OIDC_REAUTH_SUBJECT_MISMATCH")
+        "/app/settings?oidc_error=OIDC_REAUTH_SUBJECT_MISMATCH")
     assert callback_response.cookies.get("session_token") is None
     assert client.cookies.get("session_token") == original_session_token
     assert client.cookies.get("csrf_token") == csrf_token
@@ -479,7 +487,7 @@ async def test_oidc_reauth_provider_cancel_returns_to_settings_and_records_failu
 
     assert callback_response.status_code == 303
     assert callback_response.headers["location"] == (
-        "/app/settings?tab=danger&oidcError=OIDC_PROVIDER_ACCESS_DENIED#delete")
+        "/app/settings?tab=danger&oidc_error=OIDC_PROVIDER_ACCESS_DENIED#delete")
     assert callback_response.cookies.get(binding_cookie_name) is None
     assert audit_count == 1
     assert consumed_count == 2
@@ -497,15 +505,15 @@ def test_oidc_reauth_rejects_missing_auth_time_and_deletion_stays_blocked(oidc_c
     delete_response = client.request(
         "DELETE",
         "/api/auth/me",
-        json={"confirmEmail": "user@example.com"},
+        json={"confirm_email": "user@example.com"},
         headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
     )
 
     assert callback_response.status_code == 303
     assert callback_response.headers["location"] == (
-        "/app/settings?oidcError=OIDC_REAUTH_AUTH_TIME_REQUIRED")
+        "/app/settings?oidc_error=OIDC_REAUTH_AUTH_TIME_REQUIRED")
     assert delete_response.status_code == 400
-    assert delete_response.json()["error"]["code"] == "ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED"
+    assert delete_response.json()["code"] == "account_deletion_oidc_reauth_required"
 
 
 def test_oidc_reauth_rejects_provider_auth_time_validation_failure(oidc_client):
@@ -519,7 +527,7 @@ def test_oidc_reauth_rejects_provider_auth_time_validation_failure(oidc_client):
     callback_response = _complete_oidc(client, state)
 
     assert callback_response.status_code == 303
-    assert callback_response.headers["location"] == "/app/settings?oidcError=OIDC_REAUTH_STALE"
+    assert callback_response.headers["location"] == "/app/settings?oidc_error=OIDC_REAUTH_STALE"
 
 
 def test_delete_me_rejects_stale_oidc_reauth(oidc_client):
@@ -531,13 +539,13 @@ def test_delete_me_rejects_stale_oidc_reauth(oidc_client):
     response = client.request(
         "DELETE",
         "/api/auth/me",
-        json={"confirmEmail": "user@example.com"},
+        json={"confirm_email": "user@example.com"},
         headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED"
-    assert response.json()["error"]["details"] == [{
-        "providerId": "google",
-        "displayName": "Google",
+    assert response.json()["code"] == "account_deletion_oidc_reauth_required"
+    assert response.json()["providers"] == [{
+        "provider_id": "google",
+        "display_name": "Google",
     }]

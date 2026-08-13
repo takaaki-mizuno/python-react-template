@@ -35,7 +35,7 @@ test('login の 5xx を画面上のエラーとして表示する', async () => 
       }
       if (input === '/api/auth/csrf') {
         return Promise.resolve(
-          new Response(JSON.stringify({ csrfToken: 'csrf-token' }), {
+          new Response(JSON.stringify({ csrf_token: 'csrf-token' }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }),
@@ -100,7 +100,7 @@ test('login 成功後は正規化済み redirect 先へ遷移し auth cache を�
       }
       if (input === '/api/auth/csrf') {
         return Promise.resolve(
-          new Response(JSON.stringify({ csrfToken: 'csrf-token' }), {
+          new Response(JSON.stringify({ csrf_token: 'csrf-token' }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }),
@@ -230,7 +230,7 @@ test('login は OIDC provider button を表示する', async () => {
         return Promise.resolve(
           new Response(
             JSON.stringify({
-              providers: [{ providerId: 'google', displayName: 'Google' }],
+              data: [{ provider_id: 'google', display_name: 'Google' }],
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           ),
@@ -266,7 +266,7 @@ test('login は OIDC callback error を form-level message にする', async () 
   )
 
   renderWithRouter({
-    initialEntries: ['/ja/login?oidcError=OIDC_IDENTITY_LINK_REQUIRED'],
+    initialEntries: ['/ja/login?oidc_error=OIDC_IDENTITY_LINK_REQUIRED'],
   })
 
   expect((await screen.findByRole('alert')).textContent).toBe(
@@ -311,7 +311,7 @@ test.each([
   )
 
   renderWithRouter({
-    initialEntries: [`/ja/login?oidcError=${code}`],
+    initialEntries: [`/ja/login?oidc_error=${code}`],
   })
 
   expect((await screen.findByRole('alert')).textContent).toBe(message)

@@ -91,7 +91,8 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 ## API 設計
 
 - REST 規約に従う。設計時は `.claude/skills/restful-api-design` を参照
-- public API JSON は request / response とも camelCase を正とする。Pydantic `populate_by_name=True` は内部互換であり、docs や curl 例では camelCase だけを書く
+- public API JSON は request / response とも `snake_case` を正とする。Pydantic alias で camelCase 互換を足さない
+- public API の日時 response は Unix timestamp seconds の number を返す。DB 内部 timestamp が milliseconds / `datetime` でも controller DTO serializer で seconds に変換する
 - UseCase は HTTP response DTO を返さない。UseCase は domain model / domain result / domain error を返し、Controller が request DTO と response DTO へ変換する
 - controller は `request.app.state.injector.get(...)` を直接呼ばず、`Depends` dependency で依存を受ける
 - unsafe `/api` request は純 ASGI の CSRF middleware が既定で検証する。新規 unsafe endpoint に個別 `Depends(require_csrf)` を書かない
@@ -100,7 +101,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - auth の CSRF は cookie/header の timing-safe 比較に加え、session がある unsafe request では `auth_sessions.csrf_token_hash` と照合する
 - auth の session 検証は `require_current_session` dependency から usecase へ委譲し、controller に DB session を持たせない
 - auth controller / usecase / interface は `AuthenticatedSessionContext` を `app.models.auth_context` から import する
-- HTTP error は error envelope で返す。新規 controller は `api_error()` または共通例外 handler を使う
+- HTTP error は RFC 9457 Problem Details (`application/problem+json`) で返す。新規 controller は `api_error()` または共通例外 handler を使い、machine code は `app/models/problem_types.py` の registry に追加する
 - in-memory rate limiter は single-process の最小防御であり、複数 worker / 複数 instance の本番運用では共有 store へ置き換える
 - login/register 失敗 rate limit は IP、email+IP、email 単独の 3 bucket で判定する。bucket への記録は失敗時だけ行い、成功時に IP bucket や email 単独 bucket を消してはいけない
 - duplicate email など register 由来の失敗は、login の email 単独 bucket へ記録しない。register 409 だけで任意アカウントを email 単位にロックアウトできる経路を作らないためである
@@ -108,6 +109,14 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - register 成功 rate limit は `AUTH_RATE_LIMIT_REGISTRATIONS_PER_IP` と `AUTH_RATE_LIMIT_REGISTRATION_WINDOW_SECONDS` の別 bucket で扱う
 - in-memory rate limiter は触った bucket だけを trim し、`AUTH_RATE_LIMIT_MAX_BUCKETS_PER_SCOPE` で scope ごとの bucket 数を bounded にする。上限到達時は active bucket を silent eviction せず、oldest bucket から expired bucket を必要な分だけ償却 reclaim する。expired 掃除後も満杯なら新規 bucket は作らず fail-open で warning を出す。request ごとの全 bucket 走査や shared overflow bucket を追加しない
 - bucket 上限到達後の fail-open は全体封鎖を避けるための single-process 向けトレードオフであり、飽和中の新規キーは per-email 防御の追跡対象外になる。本番でこのリスクを許容できない場合は、Redis 等の共有 store または O(1) メモリの rate limiter へ置き換える
+- `LoginRateLimiterInterface` は async interface である。request path から rate limiter を使う場合は必ず `await` し、sync Redis call や `asyncio.run()` で event loop を塞がない
+- `AUTH_RATE_LIMIT_BACKEND=memory` が既定であり、`redis` を明示した場合だけ Redis shared store を使う。`AUTH_RATE_LIMIT_BACKEND=redis` では `AUTH_RATE_LIMIT_REDIS_URL` が必須で、設定変更後は backend process/container の再起動が必要である
+- Redis rate limiter の score は Redis server `TIME` の Unix epoch seconds を正典にする。複数 worker / instance で原点が異なるため、Redis score に process-local `time.monotonic()` を使ってはいけない
+- Redis rate limiter の check path は `ZCOUNT` を使う read-only 判定にし、trim は record path だけで行う。window 境界は in-memory と同じく `now - window_seconds` ちょうどを有効として扱う
+- Redis rate limiter unavailable policy は `AUTH_RATE_LIMIT_REDIS_UNAVAILABLE_POLICY=fail_closed | fail_open` で選ぶ。既定は `fail_closed` で、通常の bucket 到達と区別するため `auth_rate_limiter.redis_unavailable` log code を残す
+- Redis rate limiter には operation deadline、socket/connect timeout、process-local circuit breaker、connection pool 上限 (`AUTH_RATE_LIMIT_REDIS_MAX_CONNECTIONS`) を設定する。deadline は `connect_timeout + 2 * socket_timeout` 以上にする。Redis provider は blocking pool を使い、pool 枯渇を Redis outage breaker の連続失敗に数えず、pool 枯渇 warning は rate limit する
+- Redis mode では `AUTH_RATE_LIMIT_MAX_BUCKETS_PER_SCOPE` は in-memory 専用である。Redis key は TTL と Redis 側の memory policy で bounded にし、raw email/IP を key に入れず digest 化する
+- 派生プロジェクト向け互換性メモ: `LoginRateLimiterInterface` は async 化済みであり、`reset()` は production interface から削除されている。test cleanup は実装クラスの `reset_for_tests()` を duck typing で呼ぶ
 - `AUTH_RATE_LIMIT_ATTEMPTS_PER_EMAIL_IP` / `AUTH_RATE_LIMIT_ATTEMPTS_PER_IP` は Phase 2 で削除され、`AUTH_RATE_LIMIT_FAILURES_*` へ改名された。旧キーは `extra="ignore"` で無視されるため、既存 `.env` は必ず置き換える
 - production では `/docs`、`/redoc`、`/openapi.json` を公開しない
 - `Status` は healthz などの限定用途に使う。CRUD success response の模範にはしない
@@ -116,10 +125,10 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 
 - `users.language_code` はユーザーの認証済み UI 表示言語 preference であり、許可値は `en` / `ja`、既定値は `ja`
 - `app.models.language` の `SUPPORTED_LANGUAGE_CODES` / `DEFAULT_LANGUAGE_CODE` を backend の言語コード正典とする。DB の `users.language_code` と `auth_oidc_authorization_states.language_code` の CHECK 制約も同じ許可値に揃える
-- `GET /api/auth/me`、password login、register、OIDC login は `languageCode` を返す
-- `PATCH /api/auth/me` は認証済み user の `languageCode` 更新 endpoint。CSRF middleware の対象で、明示 `null` と unsupported code は 422、empty body は no-op 200
-- register は request の `languageCode` を新規 user に保存する。未指定時は `ja`
-- OIDC login start は optional query `languageCode` を受け、auto-provision 時の初期 user language にだけ使う。invalid query は OIDC redirect 契約を壊さず `ja` へフォールバックする。既存 identity / 既存 user link / account deletion reauth では user preference を上書きしない
+- `GET /api/auth/me`、password login、register、OIDC login は `language_code` を返す
+- `PATCH /api/auth/me` は認証済み user の `language_code` 更新 endpoint。CSRF middleware の対象で、明示 `null` と unsupported code は 422、empty body は no-op 200
+- register は request の `language_code` を新規 user に保存する。未指定時は `ja`
+- OIDC login start は optional query `language_code` を受け、auto-provision 時の初期 user language にだけ使う。invalid query は OIDC redirect 契約を壊さず `ja` へフォールバックする。既存 identity / 既存 user link / account deletion reauth では user preference を上書きしない
 - 新しい言語を追加する場合は、`SUPPORTED_LANGUAGE_CODES`、`LanguageCode`、`users.language_code` CHECK、`auth_oidc_authorization_states.language_code` CHECK、frontend `languageOptions`、locale JSON、formatter locale map、translation key parity test を同じ変更で更新する
 
 ## Phase 5 認証永続化規約
@@ -130,7 +139,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - `GET /api/auth/me`、password login、register、OIDC login は `roles` / `permissions` を返す。public response は安定順に sort する
 - `require_permission()` / `require_any_permission()` は Backend の認可境界である。Frontend の roles / permissions は表示制御と route guard 用であり、Backend の permission dependency を省略してはいけない
 - `PUT /api/admin/users/{user_id}/roles` は unsafe `/api` request として CSRF middleware の対象にする。個別 CSRF dependency や CSRF exempt path は追加しない
-- inactive user は role 管理 API / `authz-grant-role` CLI の対象に含める。deleted user は `USER_NOT_FOUND` として扱う
+- inactive user は role 管理 API / `authz-grant-role` CLI の対象に含める。deleted user は `user_not_found` として扱う
 - `authz-sync` は存在しない。catalog 整合性は `authz-check-config`、DB 上の orphan role assignment は `authz-check-assignments` で確認する。retired role の orphan assignment 削除は `authz-prune-unknown-role-assignments --yes` を使い、rename では明示 remap migration/script を使う。初期 admin 付与や復旧は `authz-grant-role --email <email> --role admin` を使う
 - 通常の active user query は必ず `deleted_at IS NULL` を含める。削除済み user を観測してよい lookup は `find_user_by_id_for_authentication()` のように用途名で明示する
 - 削除済み user は login、`/api/auth/me`、session authentication で認証不可。session authentication で deleted / inactive user を観測した場合は、その user の全 active sessions を `revoke_sessions_for_user()` で revoke し、観測 request / session に対して専用 audit event を 1 件だけ残す。missing user は user id の正当性を保証できないため、従来どおり観測 session だけを revoke する
@@ -139,8 +148,8 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - physical delete 時は `auth_sessions.user_id` が CASCADE、`auth_audit_logs.user_id` / `session_id` が SET NULL になる
 - DB の `created_at` / `updated_at` は全 table で `TIMESTAMPTZ` のログ・切り分け用 column とし、business logic の sort / retention / expiry / deletion 判定には使わない。business timestamp は `UnixTimestampMillis` / DB `BIGINT` で保存し、単位は Unix epoch からの経過ミリ秒である。DB comment には `Unix timestamp in milliseconds.` を必ず含める
 - timestamp の source はアプリケーション clock に統一する。`created_at` / `updated_at` / business timestamp に DB server default や `updated_at` trigger は追加しない。boolean flag の server default はこの timestamp 方針とは別に扱う
-- user / sample item の public API 互換名は DB column 名と一致しない場合がある。`createdAt` は `registered_at`、`updatedAt` は `modified_at`、`lastLoginAt` は `last_logged_in_at` から組み立てる。`modified_at` は profile / role / resource content の業務上の変更時刻であり、login activity では更新しない。login activity は `last_logged_in_at` だけを更新する
-- user timestamp の使い分け: `registered_at` は登録時刻、`modified_at` は admin user fields / role assignment / logical deletion の変更時刻、`last_logged_in_at` は最終 login 時刻、`deleted_at` は logical deletion 時刻、`created_at` / `updated_at` は logging / troubleshooting 用。新しい user-owned resource でも public `updatedAt` が必要な場合は `updated_at` ではなく business timestamp の `modified_at` 相当を追加する
+- user / sample item の public API 名は DB column 名と一致しない場合がある。public `created_at` は `registered_at`、`updated_at` は `modified_at`、`last_login_at` は `last_logged_in_at` から Unix timestamp seconds として組み立てる。`modified_at` は profile / role / resource content の業務上の変更時刻であり、login activity では更新しない。login activity は `last_logged_in_at` だけを更新する
+- user timestamp の使い分け: `registered_at` は登録時刻、`modified_at` は admin user fields / role assignment / logical deletion の変更時刻、`last_logged_in_at` は最終 login 時刻、`deleted_at` は logical deletion 時刻、`created_at` / `updated_at` は logging / troubleshooting 用。新しい user-owned resource でも public `updated_at` が必要な場合は DB logging 用 `updated_at` ではなく business timestamp の `modified_at` 相当を追加する
 - `AuthSession.issued_at` は absolute TTL の起点、`created_at` は作成監査時刻。expiry 計算に `created_at` を使わない。OIDC reauth freshness は `auth_sessions.last_oidc_authenticated_at` と `AUTH_OIDC_REAUTH_FRESHNESS_SECONDS` で判定する
 - auth session / audit log の `ip_address` は PostgreSQL `INET` を維持する意図的逸脱であり、Python model / repository boundary は `str | None` を保つ
 - repository は domain error を投げ、HTTP error を投げない。`revoke_session()` は missing session を成功扱いにする冪等 command
@@ -154,9 +163,9 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 ## Phase 6 Account Deletion 規約
 
 - `DELETE /api/auth/me` が self-service account deletion の正規 endpoint。認証済み session と CSRF middleware validation を必須にする
-- request body は camelCase の `confirmEmail` と optional `password`。`confirmEmail` は current user email と一致させるが、誤操作防止であり認証要素ではない。session hijack 耐性は CSRF middleware と cookie security に依存する
-- password user (`users.password_hash IS NOT NULL`) は現在の password 再認証を要求する。OAuth-only user (`password_hash IS NULL`) は OAuth reauthentication 実装まで `confirmEmail` のみで削除を許可する
-- OAuth-only user (`password_hash IS NULL`) の削除は OAuth provider reauthentication 実装まで `confirmEmail` のみで許可している。`confirmEmail` は認証要素ではないため、session と CSRF token の両方が奪取された場合は追加の本人確認なしに不可逆削除できる。顧客データ、課金、業務データを扱う派生プロジェクトでは、account deletion 公開前に OAuth reauthentication、削除猶予期間、または復元 workflow を設計する
+- request body は `snake_case` の `confirm_email` と optional `password`。`confirm_email` は current user email と一致させるが、誤操作防止であり認証要素ではない。session hijack 耐性は CSRF middleware と cookie security に依存する
+- password user (`users.password_hash IS NOT NULL`) は現在の password 再認証を要求する。OAuth-only user (`password_hash IS NULL`) は OAuth reauthentication 実装まで `confirm_email` のみで削除を許可する
+- OAuth-only user (`password_hash IS NULL`) の削除は OAuth provider reauthentication 実装まで `confirm_email` のみで許可している。`confirm_email` は認証要素ではないため、session と CSRF token の両方が奪取された場合は追加の本人確認なしに不可逆削除できる。顧客データ、課金、業務データを扱う派生プロジェクトでは、account deletion 公開前に OAuth reauthentication、削除猶予期間、または復元 workflow を設計する
 - account deletion の password 再認証判定は既存 login rate limiter の IP bucket と email+IP bucket だけを読む。email 単独 bucket は任意 IP からの login 失敗でログイン済み正規ユーザーの退会を妨害できるため、退会再認証 429 の判定には使わない
 - account deletion の password 再認証失敗は既存 login rate limiter の IP bucket と email+IP bucket に記録し、`ACCOUNT_DELETION_REAUTH_FAILED` audit log を current user / current session / request IP / user_agent 付きで残す
 - 成功時は `users.deleted_at` を設定し、`users.is_active` は変更しない。対象 user の全 session を revoke し、所有する `sample_items` を削除する
@@ -171,7 +180,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 新しい user-owned CRUD resource は `/api/samples` をコピー元にする。標準ファイルは次の構成にする。
 
 - `app/models/<resource>.py`: SQLModel table、domain dataclass、cursor が必要なら cursor model
-- `app/models/<resource>_schemas.py`: request / response DTO。public JSON は camelCase
+- `app/models/<resource>_schemas.py`: request / response DTO。public JSON は `snake_case`、日時 response は Unix timestamp seconds
 - `app/models/<resource>_errors.py`: domain errors
 - `app/interfaces/services/<resource>_repository_interface.py`
 - `app/services/<resource>_repository.py`: SQLModel と `UnitOfWorkInterface` を使う永続化実装
@@ -232,7 +241,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - token 非保存を正とする。`access_token` / `refresh_token` は DB、audit log、URL、frontend state に保存しない。保存するのは provider subject と allowlist 済み ID token claims だけである。
 - ID token の署名 alg は安全 allowlist と discovery metadata の積集合だけを許可する。`none` と HS* は無条件で拒否する。JWKS は未知 `kid` の場合だけ cooldown 付きで再取得し、署名不正だけで外向き HTTP を増幅させない。
 - OAuth/OIDC state は DB-backed にし、browser binding cookie と組み合わせて callback を検証する。browser binding cookie は `oidc_binding_<state_lookup_id>`、`HttpOnly`、`SameSite=Lax`、auth cookie と同じ Secure 判定、state TTL と同じ max-age を使い、callback consume 後または terminal failure 後に削除する。
-- `purpose=login` callback は成功時に保存済み internal redirect path へ戻し、失敗時は `/login?oidcError=<machine-code>` へ戻す。`purpose=account_deletion_reauth` は成功時に `oidcReauth=success`、失敗時に `oidcError=<machine-code>` を保存済み settings path に merge する。
+- `purpose=login` callback は成功時に保存済み internal redirect path へ戻し、失敗時は `/login?oidc_error=<machine-code>` へ戻す。`purpose=account_deletion_reauth` は成功時に `oidc_reauth=success`、失敗時に `oidc_error=<machine-code>` を保存済み settings path に merge する。
 - OIDC redirect query code の対応表は以下を正典とする。`OIDC_PROVIDER_ACCESS_DENIED` は IdP 同意画面のキャンセル等の terminal failure、`OIDC_IDENTITY_UNAVAILABLE` は provider subject または email collision が inactive / deleted user を指す場合に使う。`OIDC_IDENTITY_LINK_DISABLED` と `OIDC_PROVISIONING_DISABLED` は email 登録有無で出し分けられるため、password register の 409 と同じ enumeration 許容範囲として扱う。
 
 | domain error | redirect query code | login redirect | reauth redirect | audit event |
@@ -262,5 +271,5 @@ TEST_DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run py
 - OAuth-only account deletion は `auth_sessions.last_oidc_authenticated_at` と `AUTH_OIDC_REAUTH_FRESHNESS_SECONDS` で判定する。削除 reauth flow は `prompt=login` / `max_age=0` を送り、provider `auth_time` が missing、stale、future leeway 超過の場合は fresh とみなさない。
 - `auth_time` 非対応 IdP では OAuth-only self-service deletion は通さない。Backend は `ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` を返し、linked providers が空の場合は frontend が support/admin deletion message を表示する。
 - Account deletion 成功時は `auth_identities` を同一 transaction で物理削除する。削除済み user が provider subject unique index を占有し、同じ provider subject で再登録できなくなることを避ける。
-- `api_error()` は既存呼び出し互換を保ったまま optional `details` を扱う。`ACCOUNT_DELETION_OIDC_REAUTH_REQUIRED` の `error.details` には linked providers の public metadata (`providerId`, `displayName`) だけを含める。
+- `api_error()` は Problem Details の `code` / `detail` / optional `errors` / top-level extensions を `HTTPException.detail` に入れ、handler が `instance` と `application/problem+json` を付ける。`account_deletion_oidc_reauth_required` の `providers` extension には linked providers の public metadata (`provider_id`, `display_name`) だけを含める。
 - OIDC failure audit は bounded にする。有効な未消費 state に到達した通常 failure だけ `OIDC_LOGIN_FAILED` または `OIDC_REAUTH_FAILED` を 1 件記録し、invalid / replayed / rate-limited callback では audit insert を増幅させない。

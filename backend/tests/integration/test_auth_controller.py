@@ -2,17 +2,21 @@ import asyncio
 import os
 from datetime import UTC, datetime
 from http.cookies import SimpleCookie
+from uuid import uuid4
 
 import pytest
+import redis.asyncio as redis
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.bootstrap.create_app import create_app
 from app.config.auth import AuthSettings
+from app.interfaces.libraries.rate_limiter_interface import LoginRateLimiterInterface
 from app.interfaces.services.auth_repository_interface import AuthRepositoryInterface
 from app.interfaces.services.unit_of_work_interface import UnitOfWorkInterface
 from app.libraries.clock import utcnow
 from app.libraries.password_hasher import hash_password
+from app.libraries.redis_login_rate_limiter import RedisLoginRateLimiter
 from app.libraries.session_tokens import hash_token
 from app.models.auth_event_type import AuthEventType
 from app.models.user import User
@@ -22,11 +26,11 @@ pytestmark = pytest.mark.integration
 
 
 def assert_error_code(response, code: str) -> None:
-    assert response.json()["error"]["code"] == code
+    assert response.json()["code"] == code
 
 
 def _csrf(client) -> str:
-    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrfToken"]
+    return client.cookies.get("csrf_token") or client.get("/api/auth/csrf").json()["csrf_token"]
 
 
 def _register(client, email: str, password: str = "Password123!"):
@@ -63,7 +67,7 @@ def _delete_account(
     password: str | None = "Password123!",
     csrf_token: str | None = None,
 ):
-    body = {"confirmEmail": confirm_email}
+    body = {"confirm_email": confirm_email}
     if password is not None:
         body["password"] = password
     return client.request(
@@ -77,6 +81,55 @@ def _delete_account(
 def _restore_auth_cookies(client, session_token: str, csrf_token: str) -> None:
     client.cookies.set("session_token", session_token, domain="testserver.local", path="/")
     client.cookies.set("csrf_token", csrf_token, domain="testserver.local", path="/")
+
+
+async def _delete_redis_prefix(redis_url: str, prefix: str) -> None:
+    client = redis.Redis.from_url(redis_url, max_connections=2)
+    try:
+        keys = [key async for key in client.scan_iter(match=f"{prefix}:*", count=100)]
+        if keys:
+            await client.delete(*keys)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.redis_rate_limiter
+@pytest.mark.auth_tables
+def test_login_rate_limit_uses_redis_backend_over_http(monkeypatch):
+    redis_url = os.getenv("TEST_REDIS_URL")
+    if not redis_url:
+        pytest.skip("TEST_REDIS_URL is required for Redis rate limiter integration tests")
+    prefix = f"test:auth:rate_limit:http:{uuid4().hex}"
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setenv("AUTH_COOKIE_SECURE", "false")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_URL", redis_url)
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_KEY_PREFIX", prefix)
+    monkeypatch.setenv("AUTH_RATE_LIMIT_FAILURES_PER_EMAIL_IP", "2")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_FAILURES_PER_IP", "100")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_FAILURES_PER_EMAIL", "100")
+
+    try:
+        app = create_app()
+        with TestClient(app) as client:
+            statuses = []
+            for _ in range(3):
+                csrf_token = _csrf(client)
+                response = client.post(
+                    "/api/auth/login",
+                    json={
+                        "email": "redis-http@example.com",
+                        "password": "WrongPassword123!",
+                    },
+                    headers={"X-CSRF-Token": csrf_token},
+                )
+                statuses.append(response.status_code)
+
+            assert isinstance(app.state.injector.get(LoginRateLimiterInterface),
+                              RedisLoginRateLimiter)
+            assert statuses == [401, 401, 429]
+    finally:
+        asyncio.run(_delete_redis_prefix(redis_url, prefix))
 
 
 def test_auth_cookie_security_uses_startup_settings(monkeypatch):
@@ -102,7 +155,7 @@ def test_get_me_returns_401_without_session(client):
 
     assert response.status_code == 401
     assert response.headers["Cache-Control"] == "no-store"
-    assert_error_code(response, "UNAUTHORIZED")
+    assert_error_code(response, "unauthorized")
 
 
 def test_auth_get_responses_disable_caching(client):
@@ -113,7 +166,7 @@ def test_auth_get_responses_disable_caching(client):
             "email": "no-store@example.com",
             "password": "Password123!",
         },
-        headers={"X-CSRF-Token": csrf_response.json()["csrfToken"]},
+        headers={"X-CSRF-Token": csrf_response.json()["csrf_token"]},
     )
     me_response = client.get("/api/auth/me")
 
@@ -122,7 +175,7 @@ def test_auth_get_responses_disable_caching(client):
 
 
 def test_register_then_me_returns_current_user(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
 
     register_response = client.post(
         "/api/auth/register",
@@ -143,23 +196,23 @@ def test_register_then_me_returns_current_user(client):
 
 
 def test_register_accepts_language_code_and_me_returns_it(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
 
     register_response = client.post(
         "/api/auth/register",
         json={
             "email": "language-register@example.com",
             "password": "Password123!",
-            "languageCode": "en",
+            "language_code": "en",
         },
         headers={"X-CSRF-Token": csrf_token},
     )
     me_response = client.get("/api/auth/me")
 
     assert register_response.status_code == 201
-    assert register_response.json()["languageCode"] == "en"
+    assert register_response.json()["language_code"] == "en"
     assert me_response.status_code == 200
-    assert me_response.json()["languageCode"] == "en"
+    assert me_response.json()["language_code"] == "en"
 
 
 @pytest.mark.asyncio
@@ -168,7 +221,7 @@ async def test_patch_me_updates_language_code(client, async_session):
 
     response = client.patch(
         "/api/auth/me",
-        json={"languageCode": "en"},
+        json={"language_code": "en"},
         headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
     )
     stored_language = await async_session.scalar(
@@ -178,7 +231,7 @@ async def test_patch_me_updates_language_code(client, async_session):
 
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
-    assert response.json()["languageCode"] == "en"
+    assert response.json()["language_code"] == "en"
     assert stored_language == "en"
 
 
@@ -192,7 +245,7 @@ def test_patch_me_empty_body_is_noop(client):
     )
 
     assert response.status_code == 200
-    assert response.json()["languageCode"] == "ja"
+    assert response.json()["language_code"] == "ja"
 
 
 def test_patch_me_rejects_invalid_null_and_missing_csrf(client):
@@ -200,20 +253,20 @@ def test_patch_me_rejects_invalid_null_and_missing_csrf(client):
 
     invalid_response = client.patch(
         "/api/auth/me",
-        json={"languageCode": "fr"},
+        json={"language_code": "fr"},
         headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
     )
     null_response = client.patch(
         "/api/auth/me",
-        json={"languageCode": None},
+        json={"language_code": None},
         headers={"X-CSRF-Token": client.cookies.get("csrf_token")},
     )
-    missing_csrf_response = client.patch("/api/auth/me", json={"languageCode": "en"})
+    missing_csrf_response = client.patch("/api/auth/me", json={"language_code": "en"})
 
     assert invalid_response.status_code == 422
     assert null_response.status_code == 422
     assert missing_csrf_response.status_code == 403
-    assert_error_code(missing_csrf_response, "CSRF_VALIDATION_FAILED")
+    assert_error_code(missing_csrf_response, "csrf_validation_failed")
 
 
 @pytest.mark.asyncio
@@ -221,7 +274,7 @@ async def test_register_persists_only_session_and_csrf_token_hashes(
     client,
     async_session,
 ):
-    initial_csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    initial_csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -278,12 +331,12 @@ def test_get_csrf_is_idempotent_when_cookie_exists(client):
     first_response = client.get("/api/auth/csrf")
     second_response = client.get("/api/auth/csrf")
 
-    assert second_response.json()["csrfToken"] == first_response.json()["csrfToken"]
+    assert second_response.json()["csrf_token"] == first_response.json()["csrf_token"]
     assert second_response.cookies.get("csrf_token") is None
 
 
 def test_register_duplicate_email_returns_409(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     first_response = client.post(
         "/api/auth/register",
         json={
@@ -294,7 +347,7 @@ def test_register_duplicate_email_returns_409(client):
     )
     assert first_response.status_code == 201
 
-    duplicate_csrf = client.get("/api/auth/csrf").json()["csrfToken"]
+    duplicate_csrf = client.get("/api/auth/csrf").json()["csrf_token"]
     duplicate_response = client.post(
         "/api/auth/register",
         json={
@@ -305,11 +358,11 @@ def test_register_duplicate_email_returns_409(client):
     )
 
     assert duplicate_response.status_code == 409
-    assert_error_code(duplicate_response, "EMAIL_ALREADY_REGISTERED")
+    assert_error_code(duplicate_response, "email_already_registered")
 
 
 def test_register_with_weak_password_returns_422(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
 
     response = client.post(
         "/api/auth/register",
@@ -324,7 +377,7 @@ def test_register_with_weak_password_returns_422(client):
 
 
 def test_login_with_invalid_password_returns_generic_401(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -334,7 +387,7 @@ def test_login_with_invalid_password_returns_generic_401(client):
         headers={"X-CSRF-Token": csrf_token},
     )
 
-    login_csrf = client.get("/api/auth/csrf").json()["csrfToken"]
+    login_csrf = client.get("/api/auth/csrf").json()["csrf_token"]
     response = client.post(
         "/api/auth/login",
         json={
@@ -345,11 +398,11 @@ def test_login_with_invalid_password_returns_generic_401(client):
     )
 
     assert response.status_code == 401
-    assert_error_code(response, "INVALID_CREDENTIALS")
+    assert_error_code(response, "invalid_credentials")
 
 
 def test_login_with_unregistered_email_returns_same_generic_401(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
 
     response = client.post(
         "/api/auth/login",
@@ -361,7 +414,7 @@ def test_login_with_unregistered_email_returns_same_generic_401(client):
     )
 
     assert response.status_code == 401
-    assert_error_code(response, "INVALID_CREDENTIALS")
+    assert_error_code(response, "invalid_credentials")
 
 
 @pytest.mark.asyncio
@@ -375,7 +428,7 @@ async def test_login_finds_case_insensitive_email(
             password_hash=hash_password("Password123!"),
         ))
     await async_session.commit()
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
 
     response = client.post(
         "/api/auth/login",
@@ -391,7 +444,7 @@ async def test_login_finds_case_insensitive_email(
 
 
 def test_login_rotates_existing_session_and_revokes_previous_one(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -419,11 +472,11 @@ def test_login_rotates_existing_session_and_revokes_previous_one(client):
         cookies={"session_token": original_session_token},
     )
     assert old_session_response.status_code == 401
-    assert_error_code(old_session_response, "UNAUTHORIZED")
+    assert_error_code(old_session_response, "unauthorized")
 
 
 def test_logout_clears_cookie_and_rejects_subsequent_me(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -445,11 +498,11 @@ def test_logout_clears_cookie_and_rejects_subsequent_me(client):
 
     me_response = client.get("/api/auth/me")
     assert me_response.status_code == 401
-    assert_error_code(me_response, "UNAUTHORIZED")
+    assert_error_code(me_response, "unauthorized")
 
 
 def test_logout_rejects_csrf_token_not_bound_to_current_session(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -469,7 +522,7 @@ def test_logout_rejects_csrf_token_not_bound_to_current_session(client):
     )
 
     assert response.status_code == 403
-    assert_error_code(response, "CSRF_VALIDATION_FAILED")
+    assert_error_code(response, "csrf_validation_failed")
 
 
 @pytest.mark.asyncio
@@ -547,7 +600,7 @@ async def test_delete_me_requires_valid_csrf_and_keeps_user_active(client, async
         "DELETE",
         "/api/auth/me",
         json={
-            "confirmEmail": "delete-csrf@example.com",
+            "confirm_email": "delete-csrf@example.com",
             "password": "Password123!",
         },
     )
@@ -555,7 +608,7 @@ async def test_delete_me_requires_valid_csrf_and_keeps_user_active(client, async
         "DELETE",
         "/api/auth/me",
         json={
-            "confirmEmail": "delete-csrf@example.com",
+            "confirm_email": "delete-csrf@example.com",
             "password": "Password123!",
         },
         headers={"X-CSRF-Token": "attacker-token"},
@@ -570,9 +623,9 @@ async def test_delete_me_requires_valid_csrf_and_keeps_user_active(client, async
     )
 
     assert missing_header_response.status_code == 403
-    assert_error_code(missing_header_response, "CSRF_VALIDATION_FAILED")
+    assert_error_code(missing_header_response, "csrf_validation_failed")
     assert wrong_session_csrf_response.status_code == 403
-    assert_error_code(wrong_session_csrf_response, "CSRF_VALIDATION_FAILED")
+    assert_error_code(wrong_session_csrf_response, "csrf_validation_failed")
     assert deleted_at is None
 
 
@@ -590,7 +643,7 @@ async def test_delete_me_rejects_mismatched_confirm_email_without_deleting(
     )
 
     assert response.status_code == 400
-    assert_error_code(response, "ACCOUNT_DELETION_CONFIRMATION_MISMATCH")
+    assert_error_code(response, "account_deletion_confirmation_mismatch")
     assert deleted_at is None
     assert client.get("/api/auth/me").status_code == 200
 
@@ -621,11 +674,11 @@ async def test_delete_me_requires_correct_password_for_password_users(client, as
     success_response = _delete_account(client, "delete-password@example.com")
 
     assert missing_password_response.status_code == 400
-    assert_error_code(missing_password_response, "ACCOUNT_DELETION_REAUTH_REQUIRED")
+    assert_error_code(missing_password_response, "account_deletion_reauth_required")
     assert empty_password_response.status_code == 400
-    assert_error_code(empty_password_response, "ACCOUNT_DELETION_REAUTH_REQUIRED")
+    assert_error_code(empty_password_response, "account_deletion_reauth_required")
     assert wrong_password_response.status_code == 400
-    assert_error_code(wrong_password_response, "ACCOUNT_DELETION_INVALID_PASSWORD")
+    assert_error_code(wrong_password_response, "account_deletion_invalid_password")
     assert deleted_at_after_failures is None
     assert success_response.status_code == 204
 
@@ -736,7 +789,7 @@ async def test_delete_me_records_reauth_failure_audit(client, async_session):
     )).one_or_none()
 
     assert response.status_code == 400
-    assert_error_code(response, "ACCOUNT_DELETION_INVALID_PASSWORD")
+    assert_error_code(response, "account_deletion_invalid_password")
     assert audit_row is not None
     assert audit_row.user_agent == "testclient"
 
@@ -767,12 +820,12 @@ async def test_delete_me_second_submit_with_old_cookies_is_unauthorized_and_idem
 
     assert first_response.status_code == 204
     assert second_response.status_code == 401
-    assert_error_code(second_response, "UNAUTHORIZED")
+    assert_error_code(second_response, "unauthorized")
     assert audit_count == 1
 
 
 def test_register_requires_matching_csrf_header(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
 
     response = client.post(
         "/api/auth/register",
@@ -784,11 +837,11 @@ def test_register_requires_matching_csrf_header(client):
     )
 
     assert response.status_code == 403
-    assert_error_code(response, "CSRF_VALIDATION_FAILED")
+    assert_error_code(response, "csrf_validation_failed")
 
 
 def test_register_requires_csrf_cookie_and_header(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
 
     missing_header_response = client.post(
         "/api/auth/register",
@@ -808,14 +861,14 @@ def test_register_requires_csrf_cookie_and_header(client):
     )
 
     assert missing_header_response.status_code == 403
-    assert_error_code(missing_header_response, "CSRF_VALIDATION_FAILED")
+    assert_error_code(missing_header_response, "csrf_validation_failed")
     assert missing_cookie_response.status_code == 403
-    assert_error_code(missing_cookie_response, "CSRF_VALIDATION_FAILED")
+    assert_error_code(missing_cookie_response, "csrf_validation_failed")
 
 
 def test_register_rate_limit_returns_429(client):
     for _ in range(6):
-        csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+        csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
         client.post(
             "/api/auth/register",
             json={
@@ -825,7 +878,7 @@ def test_register_rate_limit_returns_429(client):
             headers={"X-CSRF-Token": csrf_token},
         )
 
-    blocked_csrf = client.get("/api/auth/csrf").json()["csrfToken"]
+    blocked_csrf = client.get("/api/auth/csrf").json()["csrf_token"]
     blocked_response = client.post(
         "/api/auth/register",
         json={
@@ -837,12 +890,12 @@ def test_register_rate_limit_returns_429(client):
 
     assert blocked_response.status_code == 429
     assert blocked_response.headers["Retry-After"] == "900"
-    assert_error_code(blocked_response, "REGISTER_RATE_LIMITED")
+    assert_error_code(blocked_response, "register_rate_limited")
 
 
 def test_register_and_login_share_rate_limit_bucket(client):
     for _ in range(6):
-        csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+        csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
         client.post(
             "/api/auth/register",
             json={
@@ -863,12 +916,12 @@ def test_register_and_login_share_rate_limit_bucket(client):
 
     assert blocked_response.status_code == 429
     assert blocked_response.headers["Retry-After"] == "900"
-    assert_error_code(blocked_response, "LOGIN_RATE_LIMITED")
+    assert_error_code(blocked_response, "login_rate_limited")
 
 
 def test_login_rate_limit_returns_429(client):
     for _ in range(5):
-        csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+        csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
         client.post(
             "/api/auth/login",
             json={
@@ -878,7 +931,7 @@ def test_login_rate_limit_returns_429(client):
             headers={"X-CSRF-Token": csrf_token},
         )
 
-    blocked_csrf = client.get("/api/auth/csrf").json()["csrfToken"]
+    blocked_csrf = client.get("/api/auth/csrf").json()["csrf_token"]
     blocked_response = client.post(
         "/api/auth/login",
         json={
@@ -890,12 +943,12 @@ def test_login_rate_limit_returns_429(client):
 
     assert blocked_response.status_code == 429
     assert blocked_response.headers["Retry-After"] == "900"
-    assert_error_code(blocked_response, "LOGIN_RATE_LIMITED")
+    assert_error_code(blocked_response, "login_rate_limited")
 
 
 @pytest.mark.asyncio
 async def test_me_rejects_expired_session(client, async_session):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -926,13 +979,13 @@ async def test_me_rejects_expired_session(client, async_session):
         """))
 
     assert response.status_code == 401
-    assert_error_code(response, "UNAUTHORIZED")
+    assert_error_code(response, "unauthorized")
     assert rejected_audit_count == 1
 
 
 @pytest.mark.asyncio
 async def test_me_rejects_revoked_session(client, async_session):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -963,7 +1016,7 @@ async def test_me_rejects_revoked_session(client, async_session):
         """))
 
     assert response.status_code == 401
-    assert_error_code(response, "UNAUTHORIZED")
+    assert_error_code(response, "unauthorized")
     assert rejected_audit_count == 1
 
 
@@ -1037,7 +1090,7 @@ async def test_me_revokes_all_user_sessions_when_observing_deleted_or_inactive_u
     )).all()
 
     assert response.status_code == 401
-    assert_error_code(response, "UNAUTHORIZED")
+    assert_error_code(response, "unauthorized")
     assert [row.session_token_hash for row in session_rows] == [
         hash_token(first_session_token),
         hash_token(second_session_token),
@@ -1049,7 +1102,7 @@ async def test_me_revokes_all_user_sessions_when_observing_deleted_or_inactive_u
 
 @pytest.mark.asyncio
 async def test_me_rejected_session_replay_is_bounded_with_replay_count(client, async_session):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -1087,7 +1140,7 @@ async def test_me_rejected_session_replay_is_bounded_with_replay_count(client, a
 
 @pytest.mark.asyncio
 async def test_csrf_unknown_path_rejected_session_replay_is_bounded(client, async_session):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -1134,7 +1187,7 @@ async def test_login_recovers_from_inactive_session_cookie(
     async_session,
     session_state,
 ):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -1175,7 +1228,7 @@ async def test_register_recovers_from_inactive_session_cookie(
     async_session,
     session_state,
 ):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -1208,7 +1261,7 @@ async def test_register_recovers_from_inactive_session_cookie(
 
 
 def test_csrf_endpoint_repairs_active_session_cookie_desynchronization(client):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -1225,7 +1278,7 @@ def test_csrf_endpoint_repairs_active_session_cookie_desynchronization(client):
     )
 
     csrf_response = client.get("/api/auth/csrf")
-    repaired_token = csrf_response.json()["csrfToken"]
+    repaired_token = csrf_response.json()["csrf_token"]
     login_response = client.post(
         "/api/auth/login",
         json={
@@ -1254,7 +1307,7 @@ async def test_register_rolls_back_when_success_audit_fails(
         await original_create_audit_log(audit_log)
 
     monkeypatch.setattr(repository, "create_audit_log", fail_success_audit)
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
 
     with pytest.raises(RuntimeError, match="audit write failed"):
         client.post(
@@ -1280,7 +1333,7 @@ async def test_login_rolls_back_session_rotation_when_success_audit_fails(
     async_session,
     monkeypatch,
 ):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={
@@ -1329,7 +1382,7 @@ async def test_login_updates_last_login_without_changing_public_updated_at_sourc
     client,
     async_session,
 ):
-    csrf_token = client.get("/api/auth/csrf").json()["csrfToken"]
+    csrf_token = client.get("/api/auth/csrf").json()["csrf_token"]
     client.post(
         "/api/auth/register",
         json={

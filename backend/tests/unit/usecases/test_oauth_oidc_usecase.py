@@ -224,12 +224,15 @@ class RateLimiterStub:
         self.is_oidc_authorization_allowed_calls: list[str] = []
         self.record_oidc_authorization_calls: list[str] = []
 
-    def is_oidc_authorization_allowed(self, ip_address: str) -> bool:
+    async def is_oidc_authorization_allowed(self, ip_address: str) -> bool:
         self.is_oidc_authorization_allowed_calls.append(ip_address)
         return self.allowed
 
-    def record_oidc_authorization(self, ip_address: str) -> None:
+    async def record_oidc_authorization(self, ip_address: str) -> None:
         self.record_oidc_authorization_calls.append(ip_address)
+
+    async def aclose(self) -> None:
+        return None
 
 
 class OidcProviderClientStub:

@@ -150,9 +150,11 @@ DATABASE_URL=postgresql+asyncpg://... uv run python manage.py seed-admin
 
 `GET /api/admin/roles` は code catalog から role / permission 一覧を返す。DB catalog は読まない。
 
-`PUT /api/admin/users/{userId}/roles` は role set 置き換えである。未知 role を指定した場合は `422 ROLE_NOT_FOUND`。対象 user が存在しない、または deleted user の場合は `404 USER_NOT_FOUND`。inactive user は role 管理対象として許可する。
+`GET /api/admin/roles` は role catalog collection なので primary list を `data` で返す。一方、`GET /api/admin/users/{user_id}/roles` は特定 user の authorization state という単一 resource representation であり、`roles` / `permissions` を field として返す。これは collection envelope の統一漏れではない。
 
-`/api/admin/users` は user CRUD API である。`GET` は `offset` / `limit` pagination、email search、`isActive` filter、`role` filter を持つ。`POST` は user 作成と初期 role 付与を同一 transaction で行う。`PATCH /api/admin/users/{userId}` は email、password、`isActive`、roles を同一 request で更新し、UI から role API と分けて呼ぶ必要はない。password 変更と `isActive=false` は対象 user の session を revoke する。`DELETE` は logical deletion と cleanup を行い、`USER_MARKED_DELETED` と `USER_DELETED_BY_ADMIN` の audit を残す。
+`PUT /api/admin/users/{user_id}/roles` は role set 置き換えである。未知 role を指定した場合は Problem Details `422 role_not_found`。対象 user が存在しない、または deleted user の場合は `404 user_not_found`。inactive user は role 管理対象として許可する。
+
+`/api/admin/users` は user CRUD API である。`GET` は `offset` / `limit` pagination、email `query`、`is_active` filter、`role` filter を持ち、`data` / `count` / `offset` / `limit` を返す。`POST` は user 作成と初期 role 付与を同一 transaction で行う。`PATCH /api/admin/users/{user_id}` は email、password、`is_active`、roles を同一 request で更新し、UI から role API と分けて呼ぶ必要はない。password 変更と `is_active=false` は対象 user の session を revoke する。`DELETE` は logical deletion と cleanup を行い、`USER_MARKED_DELETED` と `USER_DELETED_BY_ADMIN` の audit を残す。
 
 既存 DB に unknown role assignment が残っている user を admin API で編集する場合、public response には既知 role だけが返る。その既知 role set を `PUT` で保存すると、未知 role assignment は通常の role set 置き換え差分として削除され、`ROLE_REVOKED` audit が残る。retired role を一括削除したい場合は prune CLI を使い、rename の場合は明示 remap を先に行う。
 
@@ -174,8 +176,8 @@ CLI 経由の `authz-grant-role` は `source: "cli"`、`authz-prune-unknown-role
 
 - Docker を作り直したのに旧 DB が残る: PostgreSQL の実データは `docker/postgres/data/` にある。`docker/postgres/init/` を削除しても既存 DB は消えない。DB 初期化は `docker compose down` 後に `rm -rf docker/postgres/data` を実行する。
 - `Can't locate revision identified by '20260808_0005'`: squash 前の local DB が残っている。保持対象データがない local DB は `docker/postgres/data/` を削除して作り直す。
-- `ROLE_NOT_FOUND`: 指定 role code が `backend/app/config/authorization.py` にない。
-- `PERMISSION_DENIED`: `/api/auth/me` の `permissions`、対象 role の `permission_codes`、endpoint の要求 permission を確認する。
+- `role_not_found`: 指定 role code が `backend/app/config/authorization.py` にない。
+- `permission_denied`: `/api/auth/me` の `permissions`、対象 role の `permission_codes`、endpoint の要求 permission を確認する。
 - unknown role warning が出る: `authz-check-assignments` で対象 row を確認し、rename なら remap、retire なら prune を行う。
 - 自分の role 変更が画面に反映されない: Backend は次回 request で再解決するが、Frontend の React Query cache は invalidate または reload が必要な場合がある。
 

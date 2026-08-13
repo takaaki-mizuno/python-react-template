@@ -62,7 +62,7 @@ class AccountDeletionUsecase(AccountDeletionUsecaseInterface):
 
         rate_limit_ip = ip_address or "unknown"
         if auth_context.user.password_hash is not None:
-            if not self._auth_rate_limiter.is_account_deletion_reauth_allowed(
+            if not await self._auth_rate_limiter.is_account_deletion_reauth_allowed(
                     rate_limit_ip, normalized_user_email):
                 raise RateLimitExceededError(self._auth_settings.AUTH_RATE_LIMIT_WINDOW_SECONDS)
             if not password:
@@ -72,7 +72,7 @@ class AccountDeletionUsecase(AccountDeletionUsecaseInterface):
                 auth_context.user.password_hash,
             )
             if not password_matches:
-                self._auth_rate_limiter.record_failure(
+                await self._auth_rate_limiter.record_failure(
                     rate_limit_ip,
                     normalized_user_email,
                     include_email_bucket=False,
@@ -130,8 +130,8 @@ class AccountDeletionUsecase(AccountDeletionUsecaseInterface):
             if provider is None:
                 continue
             details.append({
-                "providerId": provider.provider_id,
-                "displayName": provider.display_name,
+                "provider_id": provider.provider_id,
+                "display_name": provider.display_name,
             })
             seen_provider_ids.add(identity.provider_id)
         return details

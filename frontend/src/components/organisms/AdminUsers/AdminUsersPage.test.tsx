@@ -45,8 +45,8 @@ afterEach(() => {
 test('AdminUsersPage は一覧と empty state を表示する', async () => {
   api.fetchAdminRoles.mockResolvedValue([role()])
   api.fetchAdminUsers.mockResolvedValue({
-    items: [user()],
-    total: 1,
+    data: [user()],
+    count: 1,
     offset: 0,
     limit: 20,
   })
@@ -60,8 +60,8 @@ test('AdminUsersPage は一覧と empty state を表示する', async () => {
 test('AdminUsersPage は create / edit / delete mutation を呼び出す', async () => {
   api.fetchAdminRoles.mockResolvedValue([role()])
   api.fetchAdminUsers.mockResolvedValue({
-    items: [user()],
-    total: 1,
+    data: [user()],
+    count: 1,
     offset: 0,
     limit: 20,
   })
@@ -106,14 +106,18 @@ test('AdminUsersPage は create / edit / delete mutation を呼び出す', async
 test('AdminUsersPage は API error を日本語表示する', async () => {
   api.fetchAdminRoles.mockResolvedValue([role()])
   api.fetchAdminUsers.mockResolvedValue({
-    items: [user()],
-    total: 1,
+    data: [user()],
+    count: 1,
     offset: 0,
     limit: 20,
   })
   api.createAdminUser.mockRejectedValue(
     new ApiError(409, {
-      error: { code: 'EMAIL_ALREADY_REGISTERED', message: 'duplicate' },
+      type: '/problems/email_already_registered',
+      title: 'Email already registered',
+      status: 409,
+      detail: 'duplicate',
+      code: 'email_already_registered',
     }),
   )
 
@@ -142,8 +146,8 @@ test('AdminUsersPage は送信中の Escape で作成ダイアログを閉じな
   })
   api.fetchAdminRoles.mockResolvedValue([role()])
   api.fetchAdminUsers.mockResolvedValue({
-    items: [user()],
-    total: 1,
+    data: [user()],
+    count: 1,
     offset: 0,
     limit: 20,
   })
@@ -167,7 +171,11 @@ test('AdminUsersPage は送信中の Escape で作成ダイアログを閉じな
   expect(screen.getByRole('dialog')).toBeTruthy()
   rejectCreate(
     new ApiError(409, {
-      error: { code: 'EMAIL_ALREADY_REGISTERED', message: 'duplicate' },
+      type: '/problems/email_already_registered',
+      title: 'Email already registered',
+      status: 409,
+      detail: 'duplicate',
+      code: 'email_already_registered',
     }),
   )
   expect(
@@ -178,8 +186,8 @@ test('AdminUsersPage は送信中の Escape で作成ダイアログを閉じな
 test('AdminUsersPage は Escape で作成ダイアログを閉じる', async () => {
   api.fetchAdminRoles.mockResolvedValue([role()])
   api.fetchAdminUsers.mockResolvedValue({
-    items: [user()],
-    total: 1,
+    data: [user()],
+    count: 1,
     offset: 0,
     limit: 20,
   })
@@ -200,8 +208,8 @@ test('AdminUsersPage は mutation 成功後に admin users と auth cache を in
   const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
   api.fetchAdminRoles.mockResolvedValue([role()])
   api.fetchAdminUsers.mockResolvedValue({
-    items: [user()],
-    total: 1,
+    data: [user()],
+    count: 1,
     offset: 0,
     limit: 20,
   })
@@ -247,7 +255,7 @@ function renderPage(queryClient = createTestQueryClient()) {
 function role(): AdminRole {
   return {
     code: 'admin',
-    displayName: 'Admin',
+    display_name: 'Admin',
     description: null,
     permissions: ['admin:access'],
   }
@@ -257,10 +265,10 @@ function user(overrides: Partial<AdminUserListItem> = {}): AdminUserListItem {
   return {
     id: 'user-1',
     email: 'admin@example.com',
-    isActive: true,
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-02T00:00:00Z',
-    lastLoginAt: null,
+    is_active: true,
+    created_at: 1767225600,
+    updated_at: 1767312000,
+    last_login_at: null,
     roles: ['admin'],
     ...overrides,
   }

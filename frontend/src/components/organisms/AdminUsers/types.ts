@@ -1,6 +1,6 @@
 export type AdminUserFormState = {
   email: string
   password: string
-  isActive: boolean
+  is_active: boolean
   roles: Array<string>
 }

@@ -8,11 +8,11 @@ import { defaultLanguage, isLanguageCode } from '@/lib/i18n/languages'
 export const Route = createFileRoute('/{-$locale}/login')({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { redirect: string; oidcError?: string } => {
+  ): { redirect: string; oidc_error?: string } => {
     return {
       redirect: normalizeRedirectHref(search.redirect),
-      ...(typeof search.oidcError === 'string'
-        ? { oidcError: search.oidcError }
+      ...(typeof search.oidc_error === 'string'
+        ? { oidc_error: search.oidc_error }
         : {}),
     }
   },
@@ -41,7 +41,7 @@ function LocalizedLoginRoute() {
   return (
     <LoginPage
       locale={locale}
-      oidcError={search.oidcError}
+      oidc_error={search.oidc_error}
       redirectHref={search.redirect}
     />
   )

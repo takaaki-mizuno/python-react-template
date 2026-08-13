@@ -1,6 +1,8 @@
 # PostgREST互換 Tables/Views API 将来検討メモ
 
 > **現行実装との関係:** 2026-08-03 の Phase 5 時点で、このリポジトリは `/api/db/{db_name}/{resource}` を提供していない。現行の user-facing CRUD 例は `/api/samples` であり、PostgREST 互換 Tables/Views API は未実装の将来検討事項である。この文書を現行 API 契約、実装済み仕様、または品質ゲートの根拠として扱ってはいけない。
+>
+> **REST skill との関係:** このメモは PostgREST wire compatibility を検討するための例外文書であり、template の一般 JSON API 規約 (`snake_case` object response、Unix timestamp seconds、RFC 9457 Problem Details、`data` collection wrapper) とは別 profile である。ここに残る top-level array、`Range-Unit: items`、PostgREST error shape は互換 API を実装する場合だけ再評価する。
 
 このメモは、将来 PostgREST の Tables/Views API に近い互換 API を実装する場合の検討材料として、**仮に** `/{prefix}/{resource}` 形式の 1 階層リソースを採用する案を記録する。実装に着手する場合は、あらためて `documents/plans/` に設計書を作成し、ルーティング、権限、公開対象、PostgreSQL 固有機能、OpenAPI 表現、移行方針を確定する。
 

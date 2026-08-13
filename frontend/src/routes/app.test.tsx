@@ -224,10 +224,11 @@ test('CSRF 403 は /forbidden へ遷移しない', async () => {
       queryFn: () =>
         Promise.reject(
           new ApiError(403, {
-            error: {
-              code: 'CSRF_VALIDATION_FAILED',
-              message: 'CSRF validation failed',
-            },
+            type: '/problems/csrf-validation-failed',
+            title: 'CSRF validation failed',
+            status: 403,
+            detail: 'CSRF validation failed',
+            code: 'csrf_validation_failed',
           }),
         ),
     })
@@ -252,7 +253,11 @@ test('CSRF 以外の 403 は /forbidden へ遷移する', async () => {
       queryFn: () =>
         Promise.reject(
           new ApiError(403, {
-            error: { code: 'FORBIDDEN', message: 'Forbidden' },
+            type: '/problems/forbidden',
+            title: 'Forbidden',
+            status: 403,
+            detail: 'Forbidden',
+            code: 'forbidden',
           }),
         ),
     })
@@ -351,10 +356,11 @@ function ForbiddenMutationButton() {
     mutationFn: () =>
       Promise.reject(
         new ApiError(403, {
-          error: {
-            code: 'PERMISSION_DENIED',
-            message: 'Permission denied',
-          },
+          type: '/problems/permission-denied',
+          title: 'Permission denied',
+          status: 403,
+          detail: 'Permission denied',
+          code: 'permission_denied',
         }),
       ),
   })
